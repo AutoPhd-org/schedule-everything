@@ -3741,7 +3741,7 @@ class TestSettingsCommand:
         settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
         tui = SettingsTUI(SettingsModel(settings_file))
         tui.model.set("settings", "foo", 2)
-        mock_readkey.side_effect = [KeyboardInterrupt(), "q"]
+        mock_readkey.side_effect = [KeyboardInterrupt(), "d"]
 
         assert tui.run() == 0
         rendered = mock_live_class.return_value.__enter__.return_value.update.call_args.args[0]

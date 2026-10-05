@@ -282,6 +282,7 @@ class SettingsTUI:
         self.cursor = 0
         self.scroll_offset = 0
         self.mode = _Mode.BROWSE
+        self._quit_return_mode = _Mode.BROWSE
         self.message = ""
 
         # Drill-down browse state: level 0 = sections, level 1 = keys
@@ -301,6 +302,7 @@ class SettingsTUI:
         self.time_list_values: list[str] = []
         self.time_list_cursor = 0
         self.time_list_editing = False  # True when editing an item inline
+        self.time_list_adding = False
 
         # Compound editor state (weekday_time / day_time)
         self.compound_type: str | None = None   # "weekday_time" or "day_time"
@@ -436,6 +438,23 @@ class SettingsTUI:
     # Rendering
     # --------------------------------------------------------------------- #
 
+    @staticmethod
+    def _append_actions(
+        text: Text,
+        primary: tuple[tuple[str, str], ...],
+        secondary: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        """Show each action once, with local actions above navigation."""
+        for index, actions in enumerate((primary, secondary)):
+            if not actions:
+                continue
+            text.append("\n\n  " if index == 0 else "\n  ")
+            for action_index, (shortcut, label) in enumerate(actions):
+                if action_index:
+                    text.append("  ")
+                text.append(f"[{shortcut}]", style="cyan")
+                text.append(f" {label}", style="dim")
+
     def _render(self) -> Panel:
         match self.mode:
             case _Mode.BROWSE:
@@ -492,8 +511,11 @@ class SettingsTUI:
         if end < len(sections):
             t.append("    ↓ more below\n", style="dim italic")
 
-        t.append("\n\n  [↑↓] Navigate  [Enter] Open section  ", style="dim")
-        t.append("[s] Save  [q] Quit  [e/x] Exit", style="dim")
+        self._append_actions(
+            t,
+            (("↑↓", "Move"), ("Enter", "Open")),
+            (("s", "Save"), ("q", "Quit")),
+        )
 
         if self.message:
             t.append(f"\n\n  {self.message}", style="green")
@@ -512,7 +534,7 @@ class SettingsTUI:
         elif self.cursor >= self.scroll_offset + viewport:
             self.scroll_offset = self.cursor - viewport + 1
 
-        t = Text(no_wrap=True, overflow="ellipsis")
+        t = Text()
         section_label = SECTION_LABELS.get(self.browse_section, self.browse_section)
         t.append(f"  ← {section_label}\n\n", style="bold cyan")
 
@@ -526,9 +548,13 @@ class SettingsTUI:
             kstyle = "bold white" if sel else "white"
             vstyle = "bold yellow" if sel else "dim"
             assert row.key is not None
-            t.append(prefix, style=kstyle)
-            t.append(f"{row.key:<26s}", style=kstyle)
-            t.append(f"{fv}\n", style=vstyle)
+            line = Text(prefix, style=kstyle)
+            line.append(f"{row.key:<26s}", style=kstyle)
+            line.append(fv, style=vstyle)
+            # Keep data rows compact while allowing the action footer to wrap.
+            line.truncate(max(1, self.console.size.width - 4), overflow="ellipsis")
+            t.append_text(line)
+            t.append("\n")
 
         if not self.rows:
             t.append("    (no keys in this section)\n", style="dim")
@@ -544,9 +570,18 @@ class SettingsTUI:
             if meta.help_text:
                 t.append(f"\n  ℹ  {meta.help_text}", style="dim italic")
 
-        t.append("\n\n  [↑↓] Navigate  [Enter] Edit  [Space] Toggle  ", style="dim")
-        t.append("[a] Add  [d] Delete  [Backspace] Back\n", style="dim")
-        t.append("  [s] Save  [q] Quit  [e/x] Exit", style="dim")
+        edit_action = ("Enter", "Edit")
+        if row.key and _get_meta(row.section, row.key).editor == EditorType.TOGGLE:
+            edit_action = ("Space", "Toggle")
+        local_actions = (
+            (("↑↓", "Move"), edit_action, ("a", "Add"), ("d", "Delete"))
+            if self.rows else (("a", "Add"),)
+        )
+        self._append_actions(
+            t,
+            local_actions,
+            (("Esc", "Back"), ("s", "Save"), ("q", "Quit")),
+        )
 
         if self.message:
             t.append(f"\n\n  {self.message}", style="green")
@@ -587,8 +622,12 @@ class SettingsTUI:
                 value = self.llm_model if self.llm_model else "(pi default)"
                 t.append(f"{value}\n", style=vstyle)
 
-        t.append("\n\n  [↑↓] Navigate  [Enter] Edit/Clear  ", style="dim")
-        t.append("[Backspace] Back  [s] Save  [q] Quit  [e/x] Exit", style="dim")
+        action = "Clear" if self._current_row().key == LLM_CLEAR_KEY else "Edit"
+        self._append_actions(
+            t,
+            (("↑↓", "Move"), ("Enter", action)),
+            (("Esc", "Back"), ("s", "Save"), ("q", "Quit")),
+        )
 
         if self.message:
             t.append(f"\n\n  {self.message}", style="green")
@@ -608,7 +647,10 @@ class SettingsTUI:
             prefix = "  ▸ " if sel else "    "
             style = "bold yellow" if sel else ""
             t.append(f"{prefix}{choice}\n", style=style)
-        t.append("\n  [↑↓] Navigate  [Enter] Select  [Esc] Cancel", style="dim")
+        action = "Next" if self.compound_type == "weekday_time" else "Apply"
+        self._append_actions(
+            t, (("↑↓", "Move"), ("Enter", action)), (("Esc", "Cancel"),)
+        )
 
         label = row.key or ""
         if self.compound_type == "weekday_time" and self.compound_step == 0:
@@ -626,7 +668,11 @@ class SettingsTUI:
             prefix = "▸" if sel else " "
             style = "bold yellow" if sel else ""
             t.append(f"  {prefix} [{check}] {choice}\n", style=style)
-        t.append("\n  [↑↓] Navigate  [Space] Toggle  [Enter] Done  [Esc] Cancel", style="dim")
+        self._append_actions(
+            t,
+            (("↑↓", "Move"), ("Space", "Toggle")),
+            (("Enter", "Apply"), ("Esc", "Cancel")),
+        )
         return Panel(t, title=f"  Select: {row.key}  ", border_style="yellow", padding=(1, 2))
 
     # ---- Inline editor -------------------------------------------------- #
@@ -646,7 +692,7 @@ class SettingsTUI:
             )
             if self.message:
                 t.append(f"\n  ⚠  {self.message}", style="bold red")
-            t.append("\n\n  [Enter] Confirm  [Esc] Cancel", style="dim")
+            self._append_actions(t, (("Enter", "Apply"), ("Esc", "Cancel")))
             return Panel(
                 t, title="  Edit: model  ", border_style="yellow", padding=(1, 2)
             )
@@ -681,7 +727,12 @@ class SettingsTUI:
         if self.message:
             t.append(f"\n  ⚠  {self.message}", style="bold red")
 
-        t.append("\n\n  [Enter] Confirm  [Esc] Cancel", style="dim")
+        action = "Apply"
+        if self.mode == _Mode.ADD_KEY:
+            action = "Add"
+        elif self.compound_type == "day_time" and self.compound_step == 0:
+            action = "Next"
+        self._append_actions(t, (("Enter", action), ("Esc", "Cancel")))
         title = f"  Edit: {row.key or 'new key'}  " if self.mode != _Mode.ADD_KEY else "  Add Key  "
         return Panel(t, title=title, border_style="yellow", padding=(1, 2))
 
@@ -698,7 +749,15 @@ class SettingsTUI:
                 prefix = "  ▸ " if sel else "    "
                 style = "bold yellow" if sel else ""
                 t.append(f"{prefix}{v}\n", style=style)
-        t.append("\n  [↑↓] Navigate  [Enter] Edit  [a] Add  [d] Delete  [Esc] Done", style="dim")
+        local_actions = (
+            (("↑↓", "Move"), ("Space", "Edit"), ("a", "Add"), ("d", "Delete"))
+            if self.time_list_values else (("a", "Add"),)
+        )
+        self._append_actions(
+            t,
+            local_actions,
+            (("Enter", "Apply"), ("Esc", "Cancel")),
+        )
         return Panel(t, title=f"  Edit: {row.key}  ", border_style="yellow", padding=(1, 2))
 
     # ---- Confirm quit --------------------------------------------------- #
@@ -707,8 +766,10 @@ class SettingsTUI:
         t = Text()
         t.append("  You have unsaved changes.\n\n", style="bold white")
         t.append("  [s] Save and quit\n", style="green")
-        t.append("  [q/e/x] Quit without saving\n", style="red")
-        t.append("  [Esc] Cancel\n", style="dim")
+        t.append("  [d] Discard and quit\n", style="red")
+        t.append("  [Esc] Keep editing\n", style="dim")
+        if self.message:
+            t.append(f"\n  {self.message}", style="bold red")
         return Panel(t, title="  Unsaved Changes  ", border_style="red", padding=(1, 2))
 
     # --------------------------------------------------------------------- #
@@ -740,11 +801,33 @@ class SettingsTUI:
     # ---- Browse --------------------------------------------------------- #
 
     def _on_browse(self, key: str, rc: Any) -> str | None:
+        if key == "s":
+            try:
+                self._save_all()
+                self.message = "✅ Settings saved"
+            except Exception as exc:
+                self.message = f"❌ Save failed: {exc}"
+            return None
+        # Keep the old exit shortcuts as unadvertised aliases for Quit.
+        if key in ("q", "e", "x"):
+            return self._request_quit()
+        if key in (rc.key.ESC, rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
+            if self.browse_level == 1:
+                self._go_back_to_sections()
+            return None
         if self.browse_level == 0:
             return self._on_sections_view(key, rc)
         if self.browse_section == LLM_SECTION:
             return self._on_llm_view(key, rc)
         return self._on_keys_view(key, rc)
+
+    def _request_quit(self) -> str | None:
+        if not self._is_dirty():
+            return "quit"
+        if self.mode != _Mode.CONFIRM_QUIT:
+            self._quit_return_mode = self.mode
+        self.mode = _Mode.CONFIRM_QUIT
+        return None
 
     def _on_sections_view(self, key: str, rc: Any) -> str | None:
         if key == rc.key.UP:
@@ -753,17 +836,6 @@ class SettingsTUI:
             self._move_section(1)
         elif key in (rc.key.ENTER, "\r", "\n"):
             self._drill_into_section()
-        elif key == "s":
-            try:
-                self._save_all()
-                self.message = "✅ Settings saved"
-            except Exception as exc:
-                self.message = f"❌ Save failed: {exc}"
-        elif key in ("q", "e", "x", "\x1b"):
-            if self._is_dirty():
-                self.mode = _Mode.CONFIRM_QUIT
-            else:
-                return "quit"
         return None
 
     def _on_llm_view(self, key: str, rc: Any) -> str | None:
@@ -781,19 +853,6 @@ class SettingsTUI:
                 self.editing_row = row
                 self.edit_buffer = self.llm_model or ""
                 self.mode = _Mode.LLM_EDIT
-        elif key in (rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
-            self._go_back_to_sections()
-        elif key == "s":
-            try:
-                self._save_all()
-                self.message = "✅ Settings saved"
-            except Exception as exc:
-                self.message = f"❌ Save failed: {exc}"
-        elif key in ("q", "e", "x", "\x1b"):
-            if self._is_dirty():
-                self.mode = _Mode.CONFIRM_QUIT
-            else:
-                return "quit"
         return None
 
     def _on_keys_view(self, key: str, rc: Any) -> str | None:
@@ -813,19 +872,6 @@ class SettingsTUI:
                     self.message = f"Toggled {row.key}"
                 else:
                     self._start_edit()
-        elif key in (rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
-            self._go_back_to_sections()
-        elif key == "s":
-            try:
-                self._save_all()
-                self.message = "✅ Settings saved"
-            except Exception as exc:
-                self.message = f"❌ Save failed: {exc}"
-        elif key in ("q", "e", "x", "\x1b"):
-            if self._is_dirty():
-                self.mode = _Mode.CONFIRM_QUIT
-            else:
-                return "quit"
         elif key == "d":
             row = self._current_row()
             if not row.is_header and row.key:
@@ -907,6 +953,10 @@ class SettingsTUI:
             if self.time_list_editing:
                 self.mode = _Mode.TIME_LIST
                 self.time_list_editing = False
+                self.time_list_adding = False
+                self.time_list_cursor = min(
+                    self.time_list_cursor, max(0, len(self.time_list_values) - 1)
+                )
             else:
                 if self.mode == _Mode.LLM_EDIT:
                     self.browse_section = LLM_SECTION
@@ -983,9 +1033,13 @@ class SettingsTUI:
             if not _valid_time(raw):
                 self.message = "Invalid time (use HH:MM)"
                 return None
-            self.time_list_values[self.time_list_cursor] = raw
+            if self.time_list_adding:
+                self.time_list_values.append(raw)
+            else:
+                self.time_list_values[self.time_list_cursor] = raw
             self.mode = _Mode.TIME_LIST
             self.time_list_editing = False
+            self.time_list_adding = False
             return None
 
         # Normal field
@@ -1067,28 +1121,30 @@ class SettingsTUI:
                 self.time_list_cursor = min(
                     len(self.time_list_values) - 1, self.time_list_cursor + 1
                 )
-        elif key in (rc.key.ENTER, "\r", "\n"):
+        elif key == " ":
             if self.time_list_values:
                 self.edit_buffer = self.time_list_values[self.time_list_cursor]
                 self.time_list_editing = True
+                self.time_list_adding = False
                 self.mode = _Mode.INLINE
         elif key == "a":
-            self.time_list_values.append("00:00")
-            self.time_list_cursor = len(self.time_list_values) - 1
+            self.time_list_cursor = len(self.time_list_values)
             self.edit_buffer = "00:00"
             self.time_list_editing = True
+            self.time_list_adding = True
             self.mode = _Mode.INLINE
         elif key == "d":
             if self.time_list_values:
                 self.time_list_values.pop(self.time_list_cursor)
                 if self.time_list_cursor >= len(self.time_list_values):
                     self.time_list_cursor = max(0, len(self.time_list_values) - 1)
-        elif key in ("\x1b", rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
-            # Save list back to model
+        elif key in (rc.key.ENTER, "\r", "\n"):
             row = self.editing_row
             self.model.set(row.section, row.key or "", list(self.time_list_values))
             self.mode = _Mode.BROWSE
             self.message = f"Updated {row.key}"
+        elif key in (rc.key.ESC, rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
+            self.mode = _Mode.BROWSE
         return None
 
     # ---- Confirm quit --------------------------------------------------- #
@@ -1099,13 +1155,12 @@ class SettingsTUI:
                 self._save_all()
             except Exception as exc:
                 self.message = f"❌ Save failed: {exc}"
-                self.mode = _Mode.BROWSE
                 return None
             return "quit"
-        elif key in ("q", "e", "x"):
+        elif key == "d":
             return "quit"
-        elif key == "\x1b":
-            self.mode = _Mode.BROWSE
+        elif key == rc.key.ESC:
+            self.mode = self._quit_return_mode
         return None
 
     # --------------------------------------------------------------------- #
@@ -1120,6 +1175,8 @@ class SettingsTUI:
         value = self.model.get(row.section, row.key)
         self.editing_row = row
         self.compound_type = None
+        self.time_list_editing = False
+        self.time_list_adding = False
 
         match meta.editor:
             case EditorType.TOGGLE:
@@ -1191,9 +1248,8 @@ class SettingsTUI:
                 try:
                     key = readchar.readkey()
                 except KeyboardInterrupt:
-                    if not self._is_dirty():
+                    if self._request_quit() == "quit":
                         break
-                    self.mode = _Mode.CONFIRM_QUIT
                     self.message = ""
                     live.update(self._render(), refresh=True)
                     continue

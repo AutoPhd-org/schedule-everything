@@ -179,15 +179,36 @@ rmd settings
 ```
 
 ### What it does
+
 - Launches a keyboard-driven TUI screen inside the terminal.
-- Allows navigating sections and configuration keys using arrow keys (`Up` / `Down` or `Left` / `Right`).
+- Allows navigating sections and configuration keys using `Up` / `Down`, with `Enter` to open a section or edit a value.
 - Allows editing numeric or text values inline, toggling boolean values with `Space`, and picking choices/days from lists.
 - Supports adding new custom keys under configurable sections.
-- Allows exiting a sub-editor/picker and going back to the parent section using `Esc`, `Left`, or `Backspace`.
-- Prompts for confirmation when trying to exit with unsaved changes.
+- Shows one shortcut per action in the footer, with local editing actions above navigation and save/quit controls.
+- Uses `Esc` to return from a section or cancel the current editor. At the section list, `Esc` stays in settings; use `q` to quit.
+- Prompts when quitting with unsaved changes: `s` saves and quits, `d` discards and quits, and `Esc` keeps editing. Repeating `q` does not discard changes.
 - Shows a modified marker for unsaved settings or model changes, including on the section list. `Ctrl+C` also opens the quit confirmation when changes are unsaved.
 - Persists changes back to your active `settings.toml` configuration on save (`s`).
 - Includes a **🤖 Model Settings** page (listed at the top) for the optional pi `--model` override. Edit the value as free text (e.g. a `provider/model-id` or pattern), or choose **clear** to reset it and let pi choose. The override is stored in the global `~/.schedule_management/llm.toml` (shared across config sets); credentials and model selection otherwise remain with pi. Pressing `s` saves both `settings.toml` and `llm.toml`.
+
+### Keyboard actions
+
+| Context | Actions |
+| --- | --- |
+| Section list | `↑` / `↓` Move · `Enter` Open · `s` Save · `q` Quit |
+| Settings section | `↑` / `↓` Move · `Enter` Edit (or `Space` Toggle for booleans) · `a` Add · `d` Delete · `Esc` Back · `s` Save · `q` Quit |
+| Model Settings | `↑` / `↓` Move · `Enter` Edit or Clear, depending on the selected row · `Esc` Back · `s` Save · `q` Quit |
+| Choice picker | `↑` / `↓` Move · `Enter` Apply · `Esc` Cancel |
+| Multi-select | `↑` / `↓` Move · `Space` Toggle · `Enter` Apply · `Esc` Cancel |
+| Text/number/time editor | `Enter` Apply · `Esc` Cancel · `Backspace` Delete a character |
+| Multi-step weekday/day editor | `Enter` Next on the first step, Apply on the time step · `Esc` Cancel the entire edit |
+| New key editor | `Enter` Add · `Esc` Cancel |
+| Time list | `↑` / `↓` Move · `Space` Edit item · `a` Add · `d` Delete · `Enter` Apply list · `Esc` Cancel list |
+| Unsaved changes | `s` Save and quit · `d` Discard and quit · `Esc` Keep editing |
+
+Applying a field or list updates the in-memory configuration; use `s` from a browsing panel to write changes to disk. In a time list, cancelling an item edit returns to the list, and cancelling a new item leaves no placeholder behind.
+
+The old `e` / `x` quit shortcuts still work in browsing panels, and `Left` / `Backspace` remain back/cancel aliases in sections, choice pickers, and time lists. The footer displays only the primary shortcuts. Time-list controls have changed: use Space to edit and Enter to apply; Esc, Left, and Backspace now cancel the list instead of applying it.
 
 ## stop
 

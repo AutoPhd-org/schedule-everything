@@ -142,9 +142,9 @@ Schedule Everything 为 macOS 用户提供了桌面集成工具：
 | `rmd view` | 生成 PDF 日程可视化 |
 | `rmd switch <id>` | 切换到不同的 `user_config_n` 配置版本并重载服务 |
 | `rmd mode [j\|p]` | 查看或切换当前模式 (j 模式允许所有提醒，p 模式取消具体日程事件提醒) |
-| `rmd settings` | 交互式 TUI 编辑 `settings.toml` 及可选的 pi 模型覆盖（方向键导航、Enter/Space 编辑、`s` 保存、`q` 退出） |
+| `rmd settings` | 交互式 TUI 编辑 `settings.toml` 及可选的 pi 模型覆盖（↑/↓ 移动、Enter 打开/应用、Esc 返回/取消、Space 切换、`s` 保存、`q` 退出） |
 
-`rmd setup` 在应用日程修改前会预览文件差异。按 `Ctrl+C` 可取消；设置编辑器在有未保存的修改时会先询问是否保存。
+`rmd setup` 在应用日程修改前会预览文件差异，按 `Ctrl+C` 可取消。设置编辑器仅显示当前面板可用的操作；有未保存的修改时，退出会提供 `s` 保存并退出、`d` 放弃修改并退出、Esc 继续编辑三个选项。时间列表中，Space 编辑选中项，Enter 应用整个列表，Esc 取消列表修改。
 
 ## 手动配置和文档
 

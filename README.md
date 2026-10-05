@@ -141,9 +141,9 @@ Schedule Everything provides desktop integrations for macOS users:
 | `rmd view` | Generate a PDF schedule visualization |
 | `rmd switch <id>` | Activate a different `user_config_n` snapshot and reload the service |
 | `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms) |
-| `rmd settings` | Interactive TUI for editing `settings.toml` and the optional pi model override (arrow keys, Enter/Space to edit, `s` to save, `q` to quit) |
+| `rmd settings` | Interactive TUI for editing `settings.toml` and the optional pi model override (↑/↓ to move, Enter to open/apply, Esc to back/cancel, Space to toggle, `s` to save, `q` to quit) |
 
-`rmd setup` previews proposed file changes before applying a schedule modification. Press `Ctrl+C` to cancel; the settings editor asks whether to save unsaved changes before quitting.
+`rmd setup` previews proposed file changes before applying a schedule modification. Press `Ctrl+C` to cancel. The settings editor shows actions for the current panel; quitting with unsaved changes offers `s` to save and quit, `d` to discard and quit, or Esc to keep editing. In time lists, Space edits an item, Enter applies the list, and Esc cancels it.
 
 ## Manual Setup and Docs
 
