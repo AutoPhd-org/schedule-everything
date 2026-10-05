@@ -15,7 +15,7 @@ Before proceeding, ensure you have the following installed:
 *   **Python 3.12+**: [Download Python](https://www.python.org/downloads/)
 *   **Git**: [Download Git](https://git-scm.com/downloads)
 *   **Terminal**: Any standard terminal emulator (Terminal.app, iTerm2, etc.)
-*   **OpenCode CLI**: Required for `rmd setup` and `rmd sync`
+*   **pi CLI**: Required for `rmd setup` and `rmd sync`
 *   **Node.js and Rust**: Required only when running or building the optional Tauri desktop app from source
 
 ## Installation Methods
@@ -44,7 +44,7 @@ It installs `rmd` as the primary CLI and keeps `reminder` as a compatibility ali
     *   Create the `~/SCHEDULE_MANAGEMENT` directory structure.
     *   Ensure required config files exist and scaffold config layout.
     *   Prompt for missing required config values one by one.
-    *   Interactively prompt to install the OpenCode CLI (if the submodule installer is present).
+    *   Interactively prompt to install the pi CLI (if `npm` is available).
     *   Register the background service (on macOS and Linux).
 
 2.  **Finalize Setup**:
@@ -78,9 +78,9 @@ For advanced users or those integrating into existing environments.
     ```
     *Tip: Consider using a virtual environment managed by `uv` or `venv`.*
 
-3.  **Install OpenCode CLI** if you want the AI-assisted commands:
+3.  **Install pi CLI** if you want the AI-assisted commands:
     ```bash
-    ./third_party/opencode/install --no-modify-path
+    npm install -g @earendil-works/pi-coding-agent
     ```
 
 4.  **Create Configuration Directory**:

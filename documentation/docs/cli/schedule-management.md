@@ -8,7 +8,7 @@ Commands for managing your schedule, viewing upcoming events, and controlling th
 
 ## setup
 
-Launch an interactive setup wizard that can configure your model provider credentials and then build or modify schedules with an OpenCode-powered assistant.
+Launch an interactive setup wizard that builds or modifies schedules with a pi-powered assistant. pi owns credentials and model selection; `rmd setup` only carries an optional model override.
 
 ### Syntax
 ```bash
@@ -16,9 +16,9 @@ rmd setup
 ```
 
 ### What it does
-- Prompts for model vendor/model id/api key if no valid model config is detected.
-- Stores model settings in a separate TOML file (`~/.schedule_management/llm.toml`).
-- Uses OpenCode (`opencode run`) as the setup-agent runtime.
+- Credentials and model selection are handled by pi (its own auth store and provider env vars); authenticate with `pi` first.
+- Optionally override the model via `~/.schedule_management/llm.toml` (a single `model = "..."` line; leave it unset to use pi's default).
+- Uses pi (`pi`) as the setup-agent runtime.
 - Checks whether a complete local schedule configuration already exists.
 - Routes to either a build flow (new schedule) or a modify flow (existing schedule).
 - Reads or writes `profile.md` in the same config directory as `settings.toml`.
@@ -26,10 +26,12 @@ rmd setup
 - In modify flow, reads `profile.md` first so edits stay aligned with the user's long-term context.
 - Writes the first accepted schedule to `user_config_0`, then versions later accepted edits as `user_config_n+1`.
 - Switches the active config snapshot after an accepted modification.
+- Before applying a modification, shows a diff of the proposed schedule files (up to 100 lines) and asks for approval. Rejecting it lets you request a revision.
 - Uses evidence-informed defaults around sleep regularity, physical activity, movement breaks, and daytime light exposure when the user leaves details open.
 - Only after you confirm the summary does it generate TOML configuration files.
-- During build/modify turns, the OpenCode-backed agent can attach local files/images and reason over local context files when needed.
+- During build/modify turns, the pi-backed agent can attach local files/images and read local context files when needed. The CLI limits its tools to reading and searching; it applies generated files after your approval.
 - Recommends `rmd view` and supports iterative adjustments.
+- Press `Ctrl+C` or close terminal input to cancel the setup conversation without applying a pending schedule.
 
 ## switch
 
@@ -117,7 +119,7 @@ rmd sync
 ### What it does
 - Loads today's untitled pomodoro/potato blocks from the active schedule.
 - Reads tasks from `tasks/tasks.json` and sorts them by priority.
-- Uses the same OpenCode-backed model configuration flow as `rmd setup`.
+- Uses the same pi-backed model configuration flow as `rmd setup`.
 - Shows a preview table before writing `synced_schedule.toml`.
 - If you reject the preview, asks for a reason and regenerates using that feedback.
 - Applies the accepted overlay only to the matching day, so base odd/even templates stay unchanged.
@@ -183,7 +185,9 @@ rmd settings
 - Supports adding new custom keys under configurable sections.
 - Allows exiting a sub-editor/picker and going back to the parent section using `Esc`, `Left`, or `Backspace`.
 - Prompts for confirmation when trying to exit with unsaved changes.
+- Shows a modified marker for unsaved settings or model changes, including on the section list. `Ctrl+C` also opens the quit confirmation when changes are unsaved.
 - Persists changes back to your active `settings.toml` configuration on save (`s`).
+- Includes a **🤖 Model Settings** page (listed at the top) for the optional pi `--model` override. Edit the value as free text (e.g. a `provider/model-id` or pattern), or choose **clear** to reset it and let pi choose. The override is stored in the global `~/.schedule_management/llm.toml` (shared across config sets); credentials and model selection otherwise remain with pi. Pressing `s` saves both `settings.toml` and `llm.toml`.
 
 ## stop
 

@@ -1,6 +1,7 @@
 """Tests for the `rmd setup` command flow and helpers."""
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -97,17 +98,36 @@ def test_has_completed_configuration_invalid_toml(tmp_path):
 
 def test_llm_config_round_trip(tmp_path):
     config_path = tmp_path / "llm.toml"
-    expected = LLMConfig(
-        vendor="openai_compatible",
-        model="gpt-4.1-mini",
-        api_key="secret-key",
-        base_url="https://example.com/v1",
-    )
+    expected = LLMConfig(model="gpt-4.1-mini")
 
     save_llm_config(config_path, expected)
     loaded = load_llm_config(config_path)
 
     assert loaded == expected
+
+
+def test_llm_config_round_trip_none_model(tmp_path):
+    config_path = tmp_path / "llm.toml"
+
+    save_llm_config(config_path, LLMConfig(model=None))
+    loaded = load_llm_config(config_path)
+
+    assert loaded == LLMConfig(model=None)
+
+
+def test_load_llm_config_ignores_legacy_vendor_fields(tmp_path):
+    config_path = tmp_path / "llm.toml"
+    config_path.write_text(
+        'vendor = "openai"\n'
+        'model = "gpt-4.1-mini"\n'
+        'api_key = "secret"\n'
+        'base_url = "https://example.com/v1"\n',
+        encoding="utf-8",
+    )
+
+    loaded = load_llm_config(config_path)
+
+    assert loaded == LLMConfig(model="gpt-4.1-mini")
 
 
 def test_profile_markdown_round_trip(tmp_path):
@@ -121,25 +141,26 @@ def test_profile_markdown_round_trip(tmp_path):
     assert loaded == "# Basic Information\n- Role: CS PhD student"
 
 
-def test_llm_client_uses_opencode_cli_and_streams_stdout():
-    llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="secret")
-    )
+def test_llm_client_uses_pi_cli_and_streams_stdout():
+    llm_client = setup_cmd_module.LLMClient(LLMConfig(model="gpt-4.1-mini"))
 
     with (
         patch.object(
             setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
         ),
         patch("subprocess.run") as run_mock,
     ):
         event = {
-            "type": "text",
-            "part": {"type": "text", "text": '{"ok": true}'},
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"ok": true}'}],
+            },
         }
         run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
+            args=["pi"],
             returncode=0,
             stdout=json.dumps(event) + "\n",
             stderr="",
@@ -152,14 +173,62 @@ def test_llm_client_uses_opencode_cli_and_streams_stdout():
     assert streamed_chunks == ['{"ok": true}']
 
     command = run_mock.call_args.args[0]
-    assert command[0] == "/usr/local/bin/opencode"
-    assert command[1] == "run"
-    assert command[2:4] == ["--model", "openai/gpt-4.1-mini"]
-    assert "--format" in command
-    assert "json" in command
+    assert command[0] == "/usr/local/bin/pi"
+    assert command[1:3] == ["--mode", "json"]
+    assert "--print" in command
+    assert command[command.index("--tools") + 1] == "read,grep,find,ls"
+    # model is passed through as-is, no provider prefixing
+    assert "--model" in command
+    idx = command.index("--model")
+    assert command[idx + 1] == "gpt-4.1-mini"
+    assert "--system-prompt" in command
+    assert "system" in command
+    assert command[-1] == "user"
 
+    # pi owns credentials: we never inject provider API keys / base URL
     env = run_mock.call_args.kwargs["env"]
-    assert env["OPENAI_API_KEY"] == "secret"
+    for key in (
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OPENAI_BASE_URL",
+        "OPENCODE_CLIENT",
+    ):
+        assert key not in env or env[key] == os.environ.get(key), (
+            f"{key} must not be injected by the client"
+        )
+
+
+def test_llm_client_omits_model_flag_when_unset():
+    llm_client = setup_cmd_module.LLMClient(LLMConfig(model=None))
+
+    with (
+        patch.object(
+            setup_cmd_module.LLMClient,
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
+        ),
+        patch("subprocess.run") as run_mock,
+    ):
+        event = {
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"ok": true}'}],
+            },
+        }
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=["pi"],
+            returncode=0,
+            stdout=json.dumps(event) + "\n",
+            stderr="",
+        )
+
+        llm_client.generate("system", "user")
+
+    command = run_mock.call_args.args[0]
+    assert "--model" not in command
 
 
 def test_local_file_tools_can_read_and_edit(tmp_path):
@@ -203,10 +272,8 @@ def test_local_file_tools_can_read_and_edit(tmp_path):
     assert blocked["ok"] is False
 
 
-def test_llm_client_passes_attachment_via_file_flag(tmp_path):
-    llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="secret")
-    )
+def test_llm_client_passes_attachment_as_positional_at_path(tmp_path):
+    llm_client = setup_cmd_module.LLMClient(LLMConfig(model="gpt-4.1-mini"))
 
     attachment = setup_cmd_module.SourceAttachment(
         path=tmp_path / "plan.png",
@@ -217,17 +284,20 @@ def test_llm_client_passes_attachment_via_file_flag(tmp_path):
     with (
         patch.object(
             setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
         ),
         patch("subprocess.run") as run_mock,
     ):
         event = {
-            "type": "text",
-            "part": {"type": "text", "text": '{"ok": true}'},
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": '{"ok": true}'}],
+            },
         }
         run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
+            args=["pi"],
             returncode=0,
             stdout=json.dumps(event) + "\n",
             stderr="",
@@ -237,106 +307,25 @@ def test_llm_client_passes_attachment_via_file_flag(tmp_path):
 
     assert result == '{"ok": true}'
     command = run_mock.call_args.args[0]
-    assert "--file" in command
-    assert str(attachment.path) in command
+    assert f"@{attachment.path}" in command
+    assert "--file" not in command
 
 
-def test_llm_client_maps_openai_compatible_base_url():
+def test_llm_client_raises_when_pi_fails():
     llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(
-            vendor="openai_compatible",
-            model="gpt-4.1-mini",
-            api_key="secret",
-            base_url="https://example.test/v1/chat/completions",
-        )
+        LLMConfig(model="gpt-4.1-mini")
     )
 
     with (
         patch.object(
             setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
-        ),
-        patch("subprocess.run") as run_mock,
-    ):
-        event = {
-            "type": "text",
-            "part": {"type": "text", "text": '{"ok": true}'},
-        }
-        run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
-            returncode=0,
-            stdout=json.dumps(event) + "\n",
-            stderr="",
-        )
-
-        llm_client.generate("system", "user")
-
-    env = run_mock.call_args.kwargs["env"]
-    assert env["OPENAI_API_KEY"] == "secret"
-    assert env["OPENAI_BASE_URL"] == "https://example.test/v1"
-
-
-def test_llm_client_maps_anthropic_and_gemini_models():
-    anthropic_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="anthropic", model="claude-sonnet", api_key="secret")
-    )
-    gemini_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="gemini", model="gemini-2.5-flash", api_key="secret")
-    )
-
-    with (
-        patch.object(
-            setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
-        ),
-        patch("subprocess.run") as run_mock,
-    ):
-        event = {
-            "type": "text",
-            "part": {"type": "text", "text": '{"ok": true}'},
-        }
-        run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
-            returncode=0,
-            stdout=json.dumps(event) + "\n",
-            stderr="",
-        )
-
-        anthropic_client.generate("system", "user")
-        first_call = run_mock.call_args
-
-        gemini_client.generate("system", "user")
-        second_call = run_mock.call_args
-
-    first_command = first_call.args[0]
-    assert first_command[2:4] == ["--model", "anthropic/claude-sonnet"]
-    first_env = first_call.kwargs["env"]
-    assert first_env["ANTHROPIC_API_KEY"] == "secret"
-
-    second_command = second_call.args[0]
-    assert second_command[2:4] == ["--model", "google/gemini-2.5-flash"]
-    second_env = second_call.kwargs["env"]
-    assert second_env["GOOGLE_API_KEY"] == "secret"
-    assert second_env["GOOGLE_GENERATIVE_AI_API_KEY"] == "secret"
-
-
-def test_llm_client_raises_when_opencode_fails():
-    llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="secret")
-    )
-
-    with (
-        patch.object(
-            setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
         ),
         patch("subprocess.run") as run_mock,
     ):
         run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
+            args=["pi"],
             returncode=1,
             stdout="",
             stderr="provider auth failed",
@@ -345,31 +334,33 @@ def test_llm_client_raises_when_opencode_fails():
         with pytest.raises(RuntimeError) as exc:
             llm_client.generate("system", "user")
 
-    assert "OpenCode CLI execution failed" in str(exc.value)
+    assert "pi CLI execution failed" in str(exc.value)
 
 
-def test_llm_client_raises_when_opencode_reports_error_event():
+def test_llm_client_raises_when_pi_reports_error_event():
     llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="secret")
+        LLMConfig(model="gpt-4.1-mini")
     )
 
     with (
         patch.object(
             setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
         ),
         patch("subprocess.run") as run_mock,
     ):
         event = {
-            "type": "error",
-            "error": {
-                "name": "ProviderAuthError",
-                "data": {"message": "Invalid provider API key"},
+            "type": "message_end",
+            "message": {
+                "role": "assistant",
+                "content": [],
+                "stopReason": "error",
+                "errorMessage": "Invalid provider API key",
             },
         }
         run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
+            args=["pi"],
             returncode=0,
             stdout=json.dumps(event) + "\n",
             stderr="",
@@ -378,25 +369,60 @@ def test_llm_client_raises_when_opencode_reports_error_event():
         with pytest.raises(RuntimeError) as exc:
             llm_client.generate("system", "user")
 
-    assert "OpenCode CLI reported an error" in str(exc.value)
+    assert "pi CLI reported an error" in str(exc.value)
     assert "Invalid provider API key" in str(exc.value)
+
+
+def test_llm_client_does_not_accept_text_before_pi_error():
+    llm_client = setup_cmd_module.LLMClient(LLMConfig())
+    events = [
+        {
+            "type": "message_end",
+            "message": {"role": "assistant", "content": [{"type": "text", "text": "partial"}]},
+        },
+        {"type": "error", "error": "request failed"},
+    ]
+    with (
+        patch.object(setup_cmd_module.LLMClient, "_resolve_pi_bin", return_value="pi"),
+        patch("subprocess.run") as run_mock,
+    ):
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=["pi"], returncode=0,
+            stdout="\n".join(json.dumps(event) for event in events), stderr="",
+        )
+        with pytest.raises(RuntimeError, match="request failed"):
+            llm_client.generate("system", "user")
+
+
+def test_llm_client_rejects_json_events_without_assistant_message():
+    llm_client = setup_cmd_module.LLMClient(LLMConfig())
+    with (
+        patch.object(setup_cmd_module.LLMClient, "_resolve_pi_bin", return_value="pi"),
+        patch("subprocess.run") as run_mock,
+    ):
+        run_mock.return_value = subprocess.CompletedProcess(
+            args=["pi"], returncode=0,
+            stdout=json.dumps({"type": "agent_start"}), stderr="",
+        )
+        with pytest.raises(RuntimeError, match="no assistant message"):
+            llm_client.generate("system", "user")
 
 
 def test_llm_client_raises_when_stdout_empty_but_stderr_present():
     llm_client = setup_cmd_module.LLMClient(
-        LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="secret")
+        LLMConfig(model="gpt-4.1-mini")
     )
 
     with (
         patch.object(
             setup_cmd_module.LLMClient,
-            "_resolve_opencode_bin",
-            return_value="/usr/local/bin/opencode",
+            "_resolve_pi_bin",
+            return_value="/usr/local/bin/pi",
         ),
         patch("subprocess.run") as run_mock,
     ):
         run_mock.return_value = subprocess.CompletedProcess(
-            args=["opencode"],
+            args=["pi"],
             returncode=0,
             stdout="",
             stderr="rate limit exceeded",
@@ -405,43 +431,38 @@ def test_llm_client_raises_when_stdout_empty_but_stderr_present():
         with pytest.raises(RuntimeError) as exc:
             llm_client.generate("system", "user")
 
-    assert "OpenCode CLI stderr" in str(exc.value)
+    assert "pi CLI stderr" in str(exc.value)
     assert "rate limit exceeded" in str(exc.value)
 
 
-def test_resolve_opencode_bin_prefers_env_override(monkeypatch):
-    monkeypatch.setenv("REMINDER_OPENCODE_BIN", "/custom/opencode")
+def test_resolve_pi_bin_prefers_env_override(monkeypatch):
+    monkeypatch.setenv("REMINDER_PI_BIN", "/custom/pi")
 
     with patch("shutil.which") as which_mock:
-        resolved = setup_cmd_module.LLMClient._resolve_opencode_bin()
+        resolved = setup_cmd_module.LLMClient._resolve_pi_bin()
 
-    assert resolved == "/custom/opencode"
+    assert resolved == "/custom/pi"
     which_mock.assert_not_called()
 
 
-def test_resolve_opencode_bin_uses_path_lookup(monkeypatch):
-    monkeypatch.delenv("REMINDER_OPENCODE_BIN", raising=False)
+def test_resolve_pi_bin_uses_path_lookup(monkeypatch):
+    monkeypatch.delenv("REMINDER_PI_BIN", raising=False)
 
-    with patch("shutil.which", return_value="/usr/local/bin/opencode"):
-        resolved = setup_cmd_module.LLMClient._resolve_opencode_bin()
+    with patch("shutil.which", return_value="/usr/local/bin/pi"):
+        resolved = setup_cmd_module.LLMClient._resolve_pi_bin()
 
-    assert resolved == "/usr/local/bin/opencode"
+    assert resolved == "/usr/local/bin/pi"
 
 
-def test_resolve_opencode_bin_errors_with_submodule_install_hint(tmp_path, monkeypatch):
-    monkeypatch.delenv("REMINDER_OPENCODE_BIN", raising=False)
+def test_resolve_pi_bin_errors_with_npm_install_hint(monkeypatch):
+    monkeypatch.delenv("REMINDER_PI_BIN", raising=False)
 
-    with (
-        patch("shutil.which", return_value=None),
-        patch(
-            "schedule_management.commands.setup_agent.workflow._resolve_opencode_submodule_dir",
-            return_value=tmp_path,
-        ),
-    ):
+    with patch("shutil.which", return_value=None):
         with pytest.raises(RuntimeError) as exc:
-            setup_cmd_module.LLMClient._resolve_opencode_bin()
+            setup_cmd_module.LLMClient._resolve_pi_bin()
 
-    assert "Install it with" in str(exc.value)
+    assert "npm install -g @earendil-works/pi-coding-agent" in str(exc.value)
+    assert "REMINDER_PI_BIN" in str(exc.value)
 
 
 def test_load_source_attachment_detects_image_without_image_extension(tmp_path):
@@ -503,7 +524,7 @@ def test_turn_requests_manual_image_transcription_detection():
 
 
 def test_setup_command_routes_to_modify_when_config_exists(tmp_path):
-    llm = LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="k")
+    llm = LLMConfig(model="gpt-4.1-mini")
 
     with (
         patch(
@@ -619,7 +640,7 @@ focus = 50
         ),
     ):
         result = setup_cmd_module.modify_schedule_agent(
-            LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="k"),
+            LLMConfig(model="gpt-4.1-mini"),
             config_dir,
         )
 
@@ -638,7 +659,7 @@ focus = 50
 
 
 def test_setup_command_routes_to_build_when_config_missing(tmp_path):
-    llm = LLMConfig(vendor="openai", model="gpt-4.1-mini", api_key="k")
+    llm = LLMConfig(model="gpt-4.1-mini")
 
     with (
         patch(
@@ -665,6 +686,38 @@ def test_setup_command_routes_to_build_when_config_missing(tmp_path):
     build_mock.assert_called_once_with(llm, tmp_path)
 
 
+def test_setup_command_cancels_when_input_closes(tmp_path):
+    with (
+        patch("schedule_management.commands.setup.ensure_llm_config", return_value=LLMConfig()),
+        patch("schedule_management.commands.setup._resolve_config_dir", return_value=tmp_path),
+        patch("schedule_management.commands.setup.has_completed_configuration", return_value=(False, "missing")),
+        patch("schedule_management.commands.setup_agent.configuration.CONSOLE.input", side_effect=EOFError),
+        patch("schedule_management.commands.setup.build_schedule_agent") as build_mock,
+    ):
+        assert setup_command(MagicMock()) == 1
+    build_mock.assert_not_called()
+
+
+def test_prompt_non_empty_stops_on_eof():
+    with patch("schedule_management.commands.setup_agent.configuration.CONSOLE.input", side_effect=EOFError) as input_mock:
+        with pytest.raises(EOFError, match="Setup input closed"):
+            setup_cmd_module._prompt_non_empty("What changed? ")
+    input_mock.assert_called_once()
+
+
+def test_modify_preview_shows_actual_file_diff(tmp_path):
+    from schedule_management.commands.setup_agent import interaction
+
+    _write(tmp_path / "settings.toml", "[settings]\nfocus = 25\n")
+    with patch.object(interaction.CONSOLE, "print") as print_mock:
+        interaction._render_bundle_preview(
+            tmp_path, {"settings.toml": "[settings]\nfocus = 50\n"}
+        )
+    preview = print_mock.call_args.args[0].renderable.plain
+    assert "-focus = 25" in preview
+    assert "+focus = 50" in preview
+
+
 def test_setup_command_is_registered_in_parser():
     parser = create_parser()
 
@@ -687,8 +740,8 @@ def test_prompt_templates_include_required_keys():
         assert "settings_toml" in prompt
         assert "odd_weeks_toml" in prompt
         assert "even_weeks_toml" in prompt
-        assert "read_file" in prompt
-        assert "write_file" in prompt
+        assert "read-only file tools" in prompt
+        assert "Never write or edit local files yourself" in prompt
 
     assert "Never say you cannot see/view images" in BUILD_SYSTEM_PROMPT
     assert "at least 7 hours" in BUILD_SYSTEM_PROMPT

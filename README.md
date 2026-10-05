@@ -37,14 +37,14 @@ curl -fsSL https://raw.githubusercontent.com/PhDeasy-org/schedule-everything/mai
 
 Or from a local clone:
 ```bash
-git clone --recurse-submodules https://github.com/PhDeasy-org/schedule-everything.git
+git clone https://github.com/PhDeasy-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
-./third_party/opencode/install --no-modify-path
 ```
 
-`install.sh` sets up the local environment, copies files, scaffolds the configuration, and registers background services. OpenCode is
-required for AI-assisted commands such as `rmd setup` and `rmd sync`.
+`install.sh` sets up the local environment, copies files, scaffolds the configuration, and registers background services. pi is
+required for AI-assisted commands such as `rmd setup` and `rmd sync`; the installer
+can install it via `npm install -g @earendil-works/pi-coding-agent`.
 
 ### 2. Build Your Schedule with One Command!
 
@@ -53,9 +53,10 @@ rmd setup
 ```
 
 After a short conversation about your workday, constraints, and habits,
-`rmd setup` stores model settings in `~/.schedule_management/llm.toml`, builds
-or updates `profile.md`, shows a summary for confirmation, and only then
-writes your schedule files into `user_config_0`. Later accepted changes are
+`rmd setup` builds or updates `profile.md`, shows a summary for confirmation,
+and only then writes your schedule files into `user_config_0`. pi owns
+credentials and model selection (authenticate with `pi` first); an optional
+model override can be set in `~/.schedule_management/llm.toml`. Later accepted changes are
 saved as `user_config_1`, `user_config_2`, and so on under the same config
 root while `tasks/` remains shared.
 
@@ -140,7 +141,9 @@ Schedule Everything provides desktop integrations for macOS users:
 | `rmd view` | Generate a PDF schedule visualization |
 | `rmd switch <id>` | Activate a different `user_config_n` snapshot and reload the service |
 | `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms) |
-| `rmd settings` | Interactive TUI for editing `settings.toml` (arrow keys, Enter/Space to edit, `s` to save, `q` to quit) |
+| `rmd settings` | Interactive TUI for editing `settings.toml` and the optional pi model override (arrow keys, Enter/Space to edit, `s` to save, `q` to quit) |
+
+`rmd setup` previews proposed file changes before applying a schedule modification. Press `Ctrl+C` to cancel; the settings editor asks whether to save unsaved changes before quitting.
 
 ## Manual Setup and Docs
 

@@ -7,9 +7,11 @@ instead of console formatting details.
 
 from __future__ import annotations
 
+from difflib import unified_diff
 from pathlib import Path
 
 from rich.panel import Panel
+from rich.text import Text
 
 from schedule_management.commands.setup_agent.console import CONSOLE
 
@@ -36,7 +38,7 @@ def _render_conversation_message(message: str) -> None:
         return
     CONSOLE.print(
         Panel.fit(
-            text,
+            Text(text),
             title="Conversation",
             border_style="blue",
         )
@@ -48,7 +50,7 @@ def _render_missing_information(items: list[str]) -> None:
         return
     CONSOLE.print("[bold yellow]I still need the following information:[/]")
     for item in items:
-        CONSOLE.print(f"[yellow]- {item}[/]")
+        CONSOLE.print(Text(f"- {item}", style="yellow"))
 
 
 def _render_schedule_summary(summary: str) -> None:
@@ -57,9 +59,42 @@ def _render_schedule_summary(summary: str) -> None:
         return
     CONSOLE.print(
         Panel.fit(
-            text,
+            Text(text),
             title="Schedule Summary",
             border_style="magenta",
+        )
+    )
+
+
+def _render_bundle_preview(config_dir: Path, bundle: dict[str, str]) -> None:
+    """Show the proposed file changes before a modification is accepted."""
+    lines: list[str] = []
+    for file_name, proposed in bundle.items():
+        path = config_dir / file_name
+        current = path.read_text(encoding="utf-8") if path.exists() else ""
+        if current == proposed:
+            continue
+        lines.extend(
+            unified_diff(
+                current.splitlines(),
+                proposed.splitlines(),
+                fromfile=f"current/{file_name}",
+                tofile=f"proposed/{file_name}",
+                lineterm="",
+            )
+        )
+
+    if not lines:
+        lines = ["No schedule file content changes were proposed."]
+    elif len(lines) > 100:
+        omitted = len(lines) - 100
+        lines = [*lines[:100], f"... {omitted} more diff lines omitted"]
+
+    CONSOLE.print(
+        Panel(
+            Text("\n".join(lines)),
+            title="Proposed schedule changes",
+            border_style="cyan",
         )
     )
 

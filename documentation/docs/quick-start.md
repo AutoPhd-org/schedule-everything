@@ -11,13 +11,13 @@ If you prefer hand-editing TOML, the manual path is included later on this page.
 
 ## Fastest Path: AI-Assisted Setup
 
-### 1. Install the project and OpenCode
+### 1. Install the project and pi
 
 ```bash
-git clone --recurse-submodules https://github.com/sergiudm/schedule-everything.git
+git clone https://github.com/sergiudm/schedule-everything.git
 cd schedule-everything
 ./install.sh
-./third_party/opencode/install --no-modify-path
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 ### 2. Run the profile-first planner
@@ -28,7 +28,7 @@ rmd setup
 
 What happens:
 
-- It stores your model settings in `~/.schedule_management/llm.toml`.
+- pi handles credentials and model selection; authenticate with `pi` first. An optional model override can be placed in `~/.schedule_management/llm.toml`.
 - It creates or refines `profile.md` next to your schedule files.
 - It asks follow-up questions until that profile is detailed enough to plan from.
 - It shows a summary before writing the schedule.

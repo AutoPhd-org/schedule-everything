@@ -52,24 +52,28 @@ def setup_command(args) -> int:
 
     is_complete, reason = has_completed_configuration(config_dir)
 
-    if is_complete:
+    try:
+        if is_complete:
+            CONSOLE.print(
+                "[bold green]" + _t("Detected an existing completed configuration in") + "[/] "
+                f"[cyan]{config_dir}[/]."
+            )
+            if _ask_yes_no(_t("Do you want to modify existing schedules?"), default=False):
+                return modify_schedule_agent(llm_config, config_dir)
+            CONSOLE.print("[bright_black]" + _t("No changes made.") + "[/]")
+            return 0
+
         CONSOLE.print(
-            "[bold green]" + _t("Detected an existing completed configuration in") + "[/] "
-            f"[cyan]{config_dir}[/]."
+            "[bold yellow]" + _t("No valid completed configuration detected") + f"[/] ({reason})."
         )
-        if _ask_yes_no(_t("Do you want to modify existing schedules?"), default=False):
-            return modify_schedule_agent(llm_config, config_dir)
+        if _ask_yes_no(_t("Do you want to build a new schedule?"), default=True):
+            return build_schedule_agent(llm_config, config_dir)
+
         CONSOLE.print("[bright_black]" + _t("No changes made.") + "[/]")
         return 0
-
-    CONSOLE.print(
-        "[bold yellow]" + _t("No valid completed configuration detected") + f"[/] ({reason})."
-    )
-    if _ask_yes_no(_t("Do you want to build a new schedule?"), default=True):
-        return build_schedule_agent(llm_config, config_dir)
-
-    CONSOLE.print("[bright_black]" + _t("No changes made.") + "[/]")
-    return 0
+    except (EOFError, KeyboardInterrupt):
+        CONSOLE.print("[bold yellow]" + _t("Setup cancelled by user.") + "[/]")
+        return 1
 
 
 def __getattr__(name: str):

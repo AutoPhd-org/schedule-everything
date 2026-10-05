@@ -1,3 +1,3 @@
-vendor = "gemini"
-model = "gemini-3.1-pro-preview"
-api_key = ""
+# Optional pi --model override. Credentials and model selection are managed
+# by pi itself; see `pi --help`. When unset, pi uses its default model.
+# model = "provider/model-id"

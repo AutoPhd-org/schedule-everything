@@ -14,10 +14,14 @@ from typing import Any
 
 @dataclass
 class LLMConfig:
-    vendor: str
-    model: str
-    api_key: str
-    base_url: str | None = None
+    """Optional model override for the pi-backed agent.
+
+    Credentials and model selection are owned by pi itself (its own auth
+    store and provider env vars). This config only carries an optional
+    ``--model`` override passed straight through to the pi CLI.
+    """
+
+    model: str | None = None
 
 
 @dataclass

@@ -1,5 +1,5 @@
 """
-Interactive setup command with OpenCode-powered schedule generation.
+Interactive setup command with pi-powered schedule generation.
 
 This module now focuses on the high-level build and modify flows while helper
 logic lives in dedicated setup-agent submodules.
@@ -31,7 +31,7 @@ from schedule_management.commands.setup_agent.configuration import (
     _interpret_confirmation,
     _prompt_non_empty,
     _resolve_config_dir,
-    _resolve_llm_config_path,
+    _resolve_llm_config_path,  # noqa: F401 - re-exported by the setup facade
     ensure_llm_config,
     has_completed_configuration,
     load_llm_config,
@@ -42,6 +42,7 @@ from schedule_management.commands.setup_agent.interaction import (
     _append_conversation_history,
     _merge_request_with_details,
     _render_conversation_message,
+    _render_bundle_preview,
     _render_current_files,
     _render_missing_information,
     _render_schedule_summary,
@@ -64,7 +65,7 @@ from schedule_management.commands.setup_agent.profile_store import (
     _write_profile_markdown,
 )
 from schedule_management.commands.setup_agent.response_parser import (
-    _parse_agent_turn,
+    _parse_agent_turn,  # noqa: F401 - re-exported by the setup facade
     _request_agent_turn,
 )
 from schedule_management.commands.setup_agent.tools import LocalFileTools
@@ -79,27 +80,6 @@ def _build_local_file_tools(config_dir: Path) -> LocalFileTools:
         Path.home(),
     ]
     return LocalFileTools(allowed_roots=roots)
-
-
-def _resolve_opencode_submodule_dir() -> Path:
-    return (Path(__file__).resolve().parents[4] / "third_party" / "opencode").resolve()
-
-
-def _normalize_openai_base_url(base_url: str) -> str:
-    normalized = base_url.strip().rstrip("/")
-
-    if normalized.endswith("/v1/chat/completions"):
-        normalized = normalized[: -len("/chat/completions")]
-    elif normalized.endswith("/chat/completions"):
-        normalized = normalized[: -len("/chat/completions")]
-    elif normalized.endswith("/v1/responses"):
-        normalized = normalized[: -len("/responses")]
-    elif normalized.endswith("/responses"):
-        normalized = normalized[: -len("/responses")]
-
-    if not normalized.endswith("/v1"):
-        normalized = f"{normalized}/v1"
-    return normalized
 
 
 def _add_text_attachment(user_prompt: str, attachment: SourceAttachment | None) -> str:
@@ -122,107 +102,37 @@ def _add_text_attachment(user_prompt: str, attachment: SourceAttachment | None) 
 
 
 class LLMClient:
-    """OpenCode-backed runtime adapter for setup-agent turns."""
+    """pi-backed runtime adapter for setup-agent turns."""
 
     def __init__(self, config: LLMConfig):
         self.config = config
 
     @staticmethod
-    def _resolve_opencode_bin() -> str:
-        explicit = os.getenv("REMINDER_OPENCODE_BIN", "").strip()
+    def _resolve_pi_bin() -> str:
+        explicit = os.getenv("REMINDER_PI_BIN", "").strip()
         if explicit:
             return explicit
 
-        discovered = shutil.which("opencode")
+        discovered = shutil.which("pi")
         if discovered:
             return discovered
 
-        submodule_dir = _resolve_opencode_submodule_dir()
-        if submodule_dir.exists():
-            install_script = submodule_dir / "install"
-            raise RuntimeError(
-                "OpenCode CLI not found in PATH. Install it with "
-                f"'{install_script}' or set REMINDER_OPENCODE_BIN."
-            )
-
         raise RuntimeError(
-            "OpenCode CLI not found in PATH and opencode submodule is missing. "
-            "Run 'git submodule update --init --recursive third_party/opencode' "
-            "or set REMINDER_OPENCODE_BIN."
+            "pi CLI not found in PATH. Install it with "
+            "'npm install -g @earendil-works/pi-coding-agent' "
+            "or set REMINDER_PI_BIN."
         )
 
-    def _resolve_model(self) -> str:
-        model = self.config.model.strip()
-        if not model:
-            raise RuntimeError("Model is empty in llm.toml")
-
-        if "/" in model:
-            return model
-
-        provider_prefix = {
-            "openai": "openai",
-            "openai_compatible": "openai",
-            "anthropic": "anthropic",
-            "gemini": "google",
-        }.get(self.config.vendor)
-
-        if provider_prefix is None:
-            raise RuntimeError(f"Unsupported vendor: {self.config.vendor}")
-
-        return f"{provider_prefix}/{model}"
-
-    def _build_provider_environment(self) -> dict[str, str]:
-        api_key = self.config.api_key.strip()
-        if not api_key:
-            raise RuntimeError("Missing API key in llm.toml")
-
-        vendor = self.config.vendor
-        env: dict[str, str] = {}
-
-        if vendor in {"openai", "openai_compatible"}:
-            env["OPENAI_API_KEY"] = api_key
-            if vendor == "openai_compatible":
-                if not self.config.base_url:
-                    raise RuntimeError(
-                        "Missing base_url for openai_compatible vendor in llm.toml"
-                    )
-                env["OPENAI_BASE_URL"] = _normalize_openai_base_url(
-                    self.config.base_url
-                )
-            return env
-
-        if vendor == "anthropic":
-            env["ANTHROPIC_API_KEY"] = api_key
-            return env
-
-        if vendor == "gemini":
-            env["GOOGLE_API_KEY"] = api_key
-            env["GEMINI_API_KEY"] = api_key
-            env["GOOGLE_GENERATIVE_AI_API_KEY"] = api_key
-            return env
-
-        raise RuntimeError(f"Unsupported vendor: {vendor}")
-
     @staticmethod
-    def _compose_prompt(
-        system_prompt: str,
+    def _compose_user_prompt(
         user_prompt: str,
         attachment: SourceAttachment | None,
     ) -> str:
-        enriched_user = _add_text_attachment(user_prompt, attachment)
-        return (
-            "Follow the system instructions strictly for this single turn.\n"
-            "<system>\n"
-            f"{system_prompt.strip()}\n"
-            "</system>\n\n"
-            "<user>\n"
-            f"{enriched_user.strip()}\n"
-            "</user>\n\n"
-            "Return only the final assistant response for this turn."
-        )
+        """Enrich the user prompt with attachment text for the pi CLI call."""
+        return _add_text_attachment(user_prompt, attachment).strip()
 
     @staticmethod
-    def _extract_opencode_error_message(error_payload: Any) -> str:
+    def _extract_pi_error_message(error_payload: Any) -> str:
         if isinstance(error_payload, str):
             return error_payload.strip()
 
@@ -243,9 +153,47 @@ class LLMClient:
 
         return str(error_payload).strip()
 
+    @staticmethod
+    def _extract_message_text(message: Any) -> str:
+        """Pull assistant text out of a pi message object.
+
+        pi emits ``message.content`` either as a list of parts
+        (``[{"type": "text", "text": "..."}]``) or, on some adapters, as a
+        bare string. Concatenate text parts in order and return the joined
+        result (empty string when nothing was produced).
+        """
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str):
+            return content
+        if not isinstance(content, list):
+            return ""
+
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                if item.get("type") == "text":
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text)
+                else:
+                    text = item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text)
+            elif isinstance(item, str) and item.strip():
+                parts.append(item)
+        return "".join(parts)
+
     @classmethod
-    def _parse_opencode_json_events(cls, stdout: str) -> tuple[str, str | None]:
-        texts: list[str] = []
+    def _parse_pi_json_events(cls, stdout: str) -> tuple[str, str | None]:
+        """Parse pi ``--mode json --print`` newline-delimited events.
+
+        Returns ``(assistant_text, error_or_None)``. Assistant text is taken
+        from the latest assistant ``message_end``/``turn_end``/``agent_end``
+        event so partial streaming deltas do not fragment the final answer.
+        Errors are collected from explicit ``type:"error"`` events and from
+        assistant messages whose ``stopReason`` is ``"error"``.
+        """
+        assistant_text = ""
         errors: list[str] = []
 
         for raw_line in stdout.splitlines():
@@ -262,23 +210,31 @@ class LLMClient:
                 continue
 
             event_type = event.get("type")
-            if event_type == "text":
-                part = event.get("part")
-                if not isinstance(part, dict):
-                    continue
-                text = part.get("text")
-                if isinstance(text, str) and text.strip():
-                    texts.append(text.strip())
-                continue
 
             if event_type == "error":
-                message = cls._extract_opencode_error_message(event.get("error"))
+                message = cls._extract_pi_error_message(event.get("error"))
                 if message:
                     errors.append(message)
+                continue
 
-        rendered_text = "\n\n".join(texts).strip()
+            if event_type in {"message_end", "turn_end", "agent_end"}:
+                message = event.get("message")
+                if not isinstance(message, dict):
+                    continue
+                if message.get("role") != "assistant":
+                    continue
+
+                if message.get("stopReason") == "error":
+                    err = message.get("errorMessage")
+                    if isinstance(err, str) and err.strip():
+                        errors.append(err.strip())
+
+                extracted = cls._extract_message_text(message)
+                if extracted.strip():
+                    assistant_text = extracted.strip()
+
         rendered_error = "\n".join(errors).strip() or None
-        return rendered_text, rendered_error
+        return assistant_text, rendered_error
 
     def generate(
         self,
@@ -290,29 +246,30 @@ class LLMClient:
         on_tool_activity: Callable[[str], None] | None = None,
     ) -> str:
         command = [
-            self._resolve_opencode_bin(),
-            "run",
-            "--model",
-            self._resolve_model(),
-            "--format",
+            self._resolve_pi_bin(),
+            "--mode",
             "json",
+            "--print",
+            "--tools",
+            "read,grep,find,ls",
         ]
+        if self.config.model:
+            command.extend(["--model", self.config.model])
+        command.extend(["--system-prompt", system_prompt.strip()])
         if attachment is not None:
-            command.extend(["--file", str(attachment.path)])
+            command.append(f"@{attachment.path}")
 
-        command.append(self._compose_prompt(system_prompt, user_prompt, attachment))
+        command.append(self._compose_user_prompt(user_prompt, attachment))
 
+        # pi owns credentials and model selection; inherit the user's
+        # environment so pi reads its own auth store and provider env vars.
         env = os.environ.copy()
-        env.update(self._build_provider_environment())
-        env.setdefault("OPENCODE_CLIENT", "schedule-management-setup")
 
         if on_tool_activity is not None:
             if file_tools is None:
-                on_tool_activity("OpenCode agent is running...")
+                on_tool_activity("pi agent is running...")
             else:
-                on_tool_activity(
-                    "OpenCode agent is running with built-in tooling support..."
-                )
+                on_tool_activity("pi agent is reading schedule context...")
 
         completed = subprocess.run(
             command,
@@ -324,7 +281,7 @@ class LLMClient:
 
         stdout = completed.stdout.strip()
         stderr = completed.stderr.strip()
-        parsed_text, parsed_error = self._parse_opencode_json_events(stdout)
+        parsed_text, parsed_error = self._parse_pi_json_events(stdout)
 
         if completed.returncode != 0:
             detail = (
@@ -334,20 +291,20 @@ class LLMClient:
                 or stdout
                 or f"exit code {completed.returncode}"
             )
-            raise RuntimeError(f"OpenCode CLI execution failed: {detail}")
+            raise RuntimeError(f"pi CLI execution failed: {detail}")
+
+        if parsed_error:
+            raise RuntimeError(f"pi CLI reported an error: {parsed_error}")
 
         response_text = parsed_text
-        if not response_text and parsed_error:
-            raise RuntimeError(f"OpenCode CLI reported an error: {parsed_error}")
-
         if not response_text and stdout:
-            response_text = stdout
+            raise RuntimeError("pi CLI returned no assistant message in its JSON output")
 
         if not response_text and stderr:
-            raise RuntimeError(f"OpenCode CLI stderr: {stderr}")
+            raise RuntimeError(f"pi CLI stderr: {stderr}")
 
         if not response_text:
-            raise RuntimeError("OpenCode CLI returned an empty response")
+            raise RuntimeError("pi CLI returned an empty response")
 
         if on_text is not None:
             on_text(response_text)
@@ -516,6 +473,10 @@ def modify_schedule_agent(llm_config: LLMConfig, config_dir: Path) -> int:
                 and not (config_dir / "habits.toml").exists()
             ):
                 bundle["habits.toml"] = DEFAULT_HABITS_TOML
+
+            _render_bundle_preview(config_dir, bundle)
+            if current_profile and current_profile != _load_profile_markdown(config_dir):
+                CONSOLE.print("[cyan]The profile draft will also be updated.[/]")
 
             pending_config_id = get_next_config_id(config_dir.parent)
             if not _ask_yes_no(

@@ -1,19 +1,16 @@
 """
 Interactive config helpers for the setup agent.
 
-This module owns the persisted LLM settings file and the terminal prompts used
-to create or validate it.
+This module owns the persisted optional-model settings file plus the terminal
+prompts shared by the build/modify flows. Credentials and model selection are
+owned by the pi CLI; we only carry an optional ``--model`` override.
 """
 
 from __future__ import annotations
 
-import getpass
 import json
 import os
 import stat
-import sys
-import termios
-import tty
 from pathlib import Path
 from typing import Any
 
@@ -23,14 +20,6 @@ from rich.panel import Panel
 from schedule_management.config_layout import resolve_active_config_dir
 from schedule_management.commands.setup_agent.console import CONSOLE
 from schedule_management.commands.setup_agent.models import LLMConfig
-
-SUPPORTED_VENDORS: list[tuple[str, str]] = [
-    ("openai", "OpenAI"),
-    ("openai_compatible", "OpenAI compatible"),
-    ("anthropic", "Anthropic"),
-    ("gemini", "Gemini"),
-]
-SUPPORTED_VENDOR_SET = {item[0] for item in SUPPORTED_VENDORS}
 
 REQUIRED_CONFIG_FILES = (
     "settings.toml",
@@ -61,7 +50,7 @@ def _ask_yes_no(prompt: str, *, default: bool) -> bool:
                 .lower()
             )
         except EOFError:
-            return default
+            raise EOFError("Setup input closed") from None
 
         if answer == "":
             return default
@@ -73,15 +62,12 @@ def _ask_yes_no(prompt: str, *, default: bool) -> bool:
 
 
 def _prompt_non_empty(prompt: str, *, secret: bool = False) -> str:
+    del secret  # retained for signature compatibility with call sites
     while True:
         try:
-            if secret:
-                CONSOLE.print(f"[bold cyan]{prompt}[/]")
-                value = getpass.getpass(" > ")
-            else:
-                value = CONSOLE.input(f"[bold cyan]{prompt}[/]")
+            value = CONSOLE.input(f"[bold cyan]{prompt}[/]")
         except EOFError:
-            value = ""
+            raise EOFError("Setup input closed") from None
         value = value.strip()
         if value:
             return value
@@ -124,101 +110,20 @@ def _interpret_confirmation(answer: str) -> bool | None:
     return None
 
 
-def _draw_vendor_menu(options: list[tuple[str, str]], index: int) -> None:
-    if CONSOLE.is_terminal:
-        CONSOLE.clear()
-    CONSOLE.print("[bold cyan]Select model vendor[/]")
-    CONSOLE.print("[bright_black]Use Up/Down (or j/k) and Enter[/]\n")
-    for idx, (_, label) in enumerate(options):
-        if idx == index:
-            CONSOLE.print(f"[bold black on bright_cyan]> {label}[/]")
-        else:
-            CONSOLE.print(f"  [white]{label}[/]")
-
-
-def _select_vendor_with_arrows(options: list[tuple[str, str]]) -> str | None:
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return None
-
-    fd = sys.stdin.fileno()
-    old_attrs = termios.tcgetattr(fd)
-    index = 0
-
-    try:
-        sys.stdout.write("\033[?25l")
-        tty.setcbreak(fd)
-        while True:
-            _draw_vendor_menu(options, index)
-            key = sys.stdin.read(1)
-
-            if key in {"\r", "\n"}:
-                return options[index][0]
-            if key == "\x03":
-                raise KeyboardInterrupt()
-            if key == "\x1b":
-                seq = sys.stdin.read(2)
-                if seq == "[A":
-                    index = (index - 1) % len(options)
-                elif seq == "[B":
-                    index = (index + 1) % len(options)
-            elif key.lower() == "k":
-                index = (index - 1) % len(options)
-            elif key.lower() == "j":
-                index = (index + 1) % len(options)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
-        sys.stdout.write("\033[?25h\n")
-        sys.stdout.flush()
-
-
-def _select_vendor_fallback(options: list[tuple[str, str]]) -> str:
-    CONSOLE.print("[bold cyan]Select model vendor:[/]")
-    for idx, (_, label) in enumerate(options, 1):
-        CONSOLE.print(f"  [green]{idx}[/]. [white]{label}[/]")
-
-    while True:
-        choice = CONSOLE.input("[bold cyan]Enter number:[/] ").strip()
-        try:
-            value = int(choice)
-        except ValueError:
-            CONSOLE.print("[bold yellow]Please enter a valid number.[/]")
-            continue
-
-        if 1 <= value <= len(options):
-            return options[value - 1][0]
-        CONSOLE.print("[bold yellow]Choice out of range.[/]")
-
-
-def _select_vendor() -> str:
-    arrow_choice = _select_vendor_with_arrows(SUPPORTED_VENDORS)
-    if arrow_choice:
-        return arrow_choice
-    return _select_vendor_fallback(SUPPORTED_VENDORS)
-
-
 def _parse_llm_config(raw: dict[str, Any]) -> LLMConfig | None:
-    vendor = str(raw.get("vendor", "")).strip().lower()
-    model = str(raw.get("model", "")).strip()
-    api_key = str(raw.get("api_key", "")).strip()
-    base_url = raw.get("base_url")
-    base_url_str = str(base_url).strip() if base_url is not None else None
+    """Build an LLMConfig from a parsed llm.toml table.
 
-    if vendor not in SUPPORTED_VENDOR_SET:
+    Only the optional ``model`` key is honored; any legacy ``vendor`` /
+    ``api_key`` / ``base_url`` keys are ignored so existing files keep working
+    without forcing a migration. Returns ``None`` only when the table shape is
+    fundamentally invalid (not a dict / non-string model).
+    """
+    model_raw = raw.get("model")
+    if model_raw is None:
+        return LLMConfig(model=None)
+    if not isinstance(model_raw, str):
         return None
-    if not model or not api_key:
-        return None
-    if vendor == "openai_compatible" and not base_url_str:
-        return None
-
-    if vendor != "openai_compatible":
-        base_url_str = None
-
-    return LLMConfig(
-        vendor=vendor,
-        model=model,
-        api_key=api_key,
-        base_url=base_url_str,
-    )
+    return LLMConfig(model=model_raw.strip() or None)
 
 
 def load_llm_config(path: Path) -> LLMConfig | None:
@@ -242,13 +147,12 @@ def _toml_string(value: str) -> str:
 
 
 def save_llm_config(path: Path, config: LLMConfig) -> None:
-    lines = [
-        f"vendor = {_toml_string(config.vendor)}",
-        f"model = {_toml_string(config.model)}",
-        f"api_key = {_toml_string(config.api_key)}",
-    ]
-    if config.base_url:
-        lines.append(f"base_url = {_toml_string(config.base_url)}")
+    lines: list[str] = ["# Optional pi --model override. Credentials and model"]
+    lines.append("# selection are managed by pi itself; see `pi --help`.")
+    if config.model:
+        lines.append(f"model = {_toml_string(config.model)}")
+    else:
+        lines.append("# model = \"provider/model-id\"")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -260,35 +164,27 @@ def save_llm_config(path: Path, config: LLMConfig) -> None:
 
 
 def ensure_llm_config() -> LLMConfig:
+    """Return the optional model override, if any.
+
+    pi owns credentials and model selection, so there is nothing to prompt
+    for here. We simply read the optional override from disk; a missing or
+    empty file means "let pi choose".
+    """
     llm_path = _resolve_llm_config_path()
     existing = load_llm_config(llm_path)
-    if existing:
+    if existing is not None:
         return existing
 
+    config = LLMConfig(model=None)
+    save_llm_config(llm_path, config)
     CONSOLE.print(
         Panel.fit(
-            "No valid LLM configuration detected. Please set it up now.",
+            "No model override set. pi will use its own credentials and default "
+            f"model. Optional overrides go in [cyan]{llm_path}[/].",
             title="Setup",
             border_style="yellow",
         )
     )
-
-    vendor = _select_vendor()
-    model = _prompt_non_empty("Model ID: ")
-    api_key = _prompt_non_empty("API key: ", secret=True)
-
-    base_url = None
-    if vendor == "openai_compatible":
-        base_url = _prompt_non_empty("Base URL (for example: https://host/v1): ")
-
-    config = LLMConfig(
-        vendor=vendor,
-        model=model,
-        api_key=api_key,
-        base_url=base_url,
-    )
-    save_llm_config(llm_path, config)
-    CONSOLE.print(f"[bold green]Saved LLM settings to[/] [cyan]{llm_path}[/]")
     return config
 
 

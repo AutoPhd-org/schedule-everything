@@ -56,10 +56,10 @@ curl -fsSL https://raw.githubusercontent.com/PhDeasy-org/schedule-everything/mai
 
 或者从本地克隆安装：
 ```bash
-git clone --recurse-submodules https://github.com/PhDeasy-org/schedule-everything.git
+git clone https://github.com/PhDeasy-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
-./third_party/opencode/install --no-modify-path
+npm install -g @earendil-works/pi-coding-agent
 ```
 
 ### 2. 用 AI 创建你的日程
@@ -68,8 +68,9 @@ cd schedule-everything
 rmd setup
 ```
 
-这个流程会把模型配置保存到 `~/.schedule_management/llm.toml`，构建或更新
-`profile.md`，并在真正写入日程文件之前先给你一个摘要确认。首次生成会写到
+这个流程会构建或更新 `profile.md`，并在真正写入日程文件之前先给你一个
+摘要确认。凭据和模型选择由 pi 负责（请先用 `pi` 完成认证）；可选的模型
+覆盖可以写在 `~/.schedule_management/llm.toml`。首次生成会写到
 `user_config_0`；之后每次确认过的修改都会在同一配置根目录下生成新的
 `user_config_n` 版本，而 `tasks/` 会继续共用。
 
@@ -141,7 +142,9 @@ Schedule Everything 为 macOS 用户提供了桌面集成工具：
 | `rmd view` | 生成 PDF 日程可视化 |
 | `rmd switch <id>` | 切换到不同的 `user_config_n` 配置版本并重载服务 |
 | `rmd mode [j\|p]` | 查看或切换当前模式 (j 模式允许所有提醒，p 模式取消具体日程事件提醒) |
-| `rmd settings` | 交互式 TUI 编辑 `settings.toml`（方向键导航、Enter/Space 编辑、`s` 保存、`q` 退出） |
+| `rmd settings` | 交互式 TUI 编辑 `settings.toml` 及可选的 pi 模型覆盖（方向键导航、Enter/Space 编辑、`s` 保存、`q` 退出） |
+
+`rmd setup` 在应用日程修改前会预览文件差异。按 `Ctrl+C` 可取消；设置编辑器在有未保存的修改时会先询问是否保存。
 
 ## 手动配置和文档
 

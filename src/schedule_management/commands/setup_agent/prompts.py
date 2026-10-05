@@ -96,16 +96,12 @@ user gives more specific instructions:
 """.strip()
 
 FILE_TOOLING_RULES = """
-Local file tool capabilities (vendor-native function/tool calling is enabled):
-- list_directory(path, include_hidden, max_entries)
-- read_file(path, start_line, end_line, max_chars)
-- write_file(path, content, create_parents)
-- replace_in_file(path, old_text, new_text, count)
+The pi runtime provides read-only file tools (read, grep, find, ls).
 
 Tool usage policy:
-1) When you need file content or structure, call tools instead of guessing.
-2) When modifying files, prefer minimal edits; use replace_in_file when practical.
-3) Keep all operational details in `actions`; do not expose tool traces in `conversation`.
+1) When you need file content or structure, use the available read-only tools instead of guessing.
+2) Never write or edit local files yourself. Return proposed schedule content in the JSON response; the CLI writes it only after user approval.
+3) Keep tool activity in `actions`; do not expose tool traces in `conversation`.
 4) After tool calls, continue the same turn and return valid JSON per schema.
 """.strip()
 

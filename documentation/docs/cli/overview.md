@@ -29,7 +29,7 @@ The CLI commands are organized into these main categories:
 Commands for managing your schedule and service:
 - [`rmd update`](schedule-management.md#update) - Reload config and restart service
 - [`rmd switch`](schedule-management.md#switch) - Change the active `user_config_n` snapshot and reload the service
-- [`rmd setup`](schedule-management.md#setup) - Interactive AI-assisted setup powered by OpenCode with profile-first intake, evidence-informed schedule planning, and optional file-aware reasoning
+- [`rmd setup`](schedule-management.md#setup) - Interactive AI-assisted setup powered by pi with profile-first intake, evidence-informed schedule planning, and optional file-aware reasoning
 - [`rmd sync`](schedule-management.md#sync) - Generate and confirm today's pomodoro/potato task assignments
 - [`rmd view`](schedule-management.md#view) - Generate schedule visualization
 - [`rmd status`](schedule-management.md#status) - Show upcoming events, including synced task titles when present

@@ -11,7 +11,6 @@ from pathlib import Path
 from datetime import datetime, time, date
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-import schedule_management
 import schedule_management.reminder as reminder
 import schedule_management.runner as schedule_runner
 from schedule_management.synced_schedule import (
@@ -3441,7 +3440,7 @@ class TestSettingsCommand:
 
     def test_settings_model_task_types_auto_populated(self, tmp_path):
         """Test that task_types section is auto-populated with defaults when missing."""
-        from schedule_management.commands.settings import SettingsModel, DEFAULT_TASK_TYPES
+        from schedule_management.commands.settings import SettingsModel
 
         settings_file = tmp_path / "settings.toml"
         settings_file.write_text(
@@ -3497,7 +3496,6 @@ class TestSettingsCommand:
     def test_settings_tui_task_types_add_prefill(self, tmp_path):
         """Test that adding a task type pre-fills the next available number."""
         from schedule_management.commands.settings import SettingsModel, SettingsTUI, _Mode
-        import readchar
 
         settings_file = tmp_path / "settings.toml"
         settings_file.write_text(
@@ -3567,6 +3565,188 @@ class TestSettingsCommand:
         tui._handle_key(readchar.key.ENTER)
         assert tui.mode == _Mode.INLINE
         assert "cannot be empty" in tui.message
+
+    def test_settings_sections_list_includes_llm_first(self, tmp_path):
+        """The synthetic Model Settings page is always present at the top."""
+        from schedule_management.commands.settings import (
+            LLM_SECTION,
+            SettingsModel,
+            SettingsTUI,
+        )
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+
+        tui = SettingsTUI(SettingsModel(settings_file))
+        sections = tui._sections_list()
+
+        assert sections[0] == LLM_SECTION
+        assert "settings" in sections
+
+    def test_llm_model_adapter_round_trip(self, tmp_path):
+        """_load_llm_model / _save_llm_model round-trip against llm.toml."""
+        from schedule_management.commands import settings as settings_module
+
+        llm_path = tmp_path / "llm.toml"
+        monkey = patch.object(
+            settings_module, "_resolve_llm_config_path", return_value=llm_path
+        )
+        with monkey:
+            assert settings_module._load_llm_model() is None
+
+            settings_module._save_llm_model("openai/gpt-4.1-mini")
+            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
+
+            # Clearing persists a valid file that reloads as None
+            settings_module._save_llm_model(None)
+            assert settings_module._load_llm_model() is None
+
+    def test_settings_llm_page_edit_and_clear(self, tmp_path):
+        """Editing and clearing the model from the Model Settings page."""
+        from schedule_management.commands import settings as settings_module
+        from schedule_management.commands.settings import (
+            LLM_CLEAR_KEY,
+            LLM_SECTION,
+            SettingsModel,
+            SettingsTUI,
+            _Mode,
+        )
+        import readchar
+
+        llm_path = tmp_path / "llm.toml"
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+
+        with patch.object(
+            settings_module, "_resolve_llm_config_path", return_value=llm_path
+        ):
+            tui = SettingsTUI(SettingsModel(settings_file))
+            assert tui.llm_model is None
+
+            # Drill into the Model Settings page
+            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
+            tui._drill_into_section()
+            assert tui.browse_section == LLM_SECTION
+            assert [r.key for r in tui.rows] == ["model", LLM_CLEAR_KEY]
+
+            # Edit the model row
+            tui.cursor = 0
+            tui._handle_key(readchar.key.ENTER)
+            assert tui.mode == _Mode.LLM_EDIT
+            for ch in "openai/gpt-4.1-mini":
+                tui._handle_key(ch)
+            tui._handle_key(readchar.key.ENTER)
+            assert tui.mode == _Mode.BROWSE
+            assert tui.llm_model == "openai/gpt-4.1-mini"
+            assert tui.llm_dirty is True
+
+            # Persist via 's'
+            tui._handle_key("s")
+            assert tui.llm_dirty is False
+            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
+
+            # Now clear it
+            tui.cursor = 1  # clear row
+            tui._handle_key(readchar.key.ENTER)
+            assert tui.llm_model is None
+            assert tui.llm_dirty is True
+            tui._handle_key("s")
+            assert settings_module._load_llm_model() is None
+
+    def test_settings_llm_page_blank_edit_clears(self, tmp_path):
+        """Submitting an empty model value clears the override."""
+        from schedule_management.commands import settings as settings_module
+        from schedule_management.commands.settings import (
+            LLM_SECTION,
+            SettingsModel,
+            SettingsTUI,
+            _Mode,
+        )
+        import readchar
+
+        llm_path = tmp_path / "llm.toml"
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+
+        with patch.object(
+            settings_module, "_resolve_llm_config_path", return_value=llm_path
+        ):
+            # Seed an existing override
+            settings_module._save_llm_model("anthropic/claude-sonnet")
+            tui = SettingsTUI(SettingsModel(settings_file))
+
+            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
+            tui._drill_into_section()
+            tui.cursor = 0
+            tui._handle_key(readchar.key.ENTER)
+            assert tui.mode == _Mode.LLM_EDIT
+            # Clear the buffer, then confirm blank
+            tui.edit_buffer = ""
+            tui._handle_key(readchar.key.ENTER)
+            assert tui.llm_model is None
+            assert tui.llm_dirty is True
+
+    def test_settings_llm_dirty_blocks_quit(self, tmp_path):
+        """Unsaved model changes route to confirm-quit instead of quitting."""
+        from schedule_management.commands import settings as settings_module
+        from schedule_management.commands.settings import (
+            LLM_SECTION,
+            SettingsModel,
+            SettingsTUI,
+            _Mode,
+        )
+
+        llm_path = tmp_path / "llm.toml"
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+
+        with patch.object(
+            settings_module, "_resolve_llm_config_path", return_value=llm_path
+        ):
+            tui = SettingsTUI(SettingsModel(settings_file))
+            tui.llm_model = "openai/gpt-4.1-mini"
+            tui.llm_dirty = True
+
+            # On the llm page, 'q' should defer to confirm-quit, not quit
+            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
+            tui._drill_into_section()
+            result = tui._handle_key("q")
+            assert result is None  # did not quit
+            assert tui.mode == _Mode.CONFIRM_QUIT
+
+            # 's' saves both and quits
+            result = tui._handle_key("s")
+            assert result == "quit"
+            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
+
+    def test_settings_section_title_shows_unsaved_model_change(self, tmp_path):
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+        tui = SettingsTUI(SettingsModel(settings_file))
+        tui.llm_model = "test/model"
+        tui.llm_dirty = True
+
+        assert "modified" in tui._render_sections_view().title
+
+    @patch("schedule_management.commands.settings.Live")
+    @patch("readchar.readkey")
+    def test_settings_ctrl_c_with_changes_opens_quit_confirmation(
+        self, mock_readkey, mock_live_class, tmp_path
+    ):
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
+        tui = SettingsTUI(SettingsModel(settings_file))
+        tui.model.set("settings", "foo", 2)
+        mock_readkey.side_effect = [KeyboardInterrupt(), "q"]
+
+        assert tui.run() == 0
+        rendered = mock_live_class.return_value.__enter__.return_value.update.call_args.args[0]
+        assert "Unsaved Changes" in rendered.title
+        assert mock_readkey.call_count == 2
 
 
 
@@ -3854,5 +4034,3 @@ class TestHistoryCommand:
         assert _format_duration(
             datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 1, 9, 0)
         ) == "< 1 min"
-
-

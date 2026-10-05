@@ -501,9 +501,6 @@ def sync_command(args) -> int:
 
     try:
         llm_config = ensure_llm_config()
-    except KeyboardInterrupt:
-        CONSOLE.print("[bold yellow]" + _t("Sync cancelled by user.") + "[/]")
-        return 1
     except Exception as exc:
         CONSOLE.print("[bold red]" + _t("Failed to initialize LLM config:") + "[/] " + str(exc))
         return 1

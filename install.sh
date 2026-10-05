@@ -706,36 +706,39 @@ setup_autocompletion() {
     fi
 }
 
-# Install OpenCode CLI if submodule exists
-install_opencode() {
-    if [[ -f "third_party/opencode/install" ]]; then
-        if ! command -v opencode &> /dev/null; then
-            if [[ "$AUTO_YES" == "true" ]]; then
-                log_info "Skipping OpenCode CLI installation in non-interactive mode."
-                return 0
-            fi
-            echo
-            while true; do
-                read -r -p "Install OpenCode CLI? (required for AI-assisted commands) [Y/n]: " install_oc
-                case "$install_oc" in
-                    [yY]|[yY][eE][sS]|"")
-                        log_info "Installing OpenCode CLI..."
-                        chmod +x third_party/opencode/install
-                        ./third_party/opencode/install --no-modify-path
-                        log_success "OpenCode CLI installed to \$HOME/.opencode/bin/opencode"
-                        break
-                        ;;
-                    [nN]|[nN][oO])
-                        log_info "Skipping OpenCode CLI installation"
-                        break
-                        ;;
-                    *)
-                        log_warning "Invalid input. Please answer with y or n."
-                        ;;
-                esac
-            done
-        fi
+# Install pi CLI if missing and npm is available
+install_pi() {
+    if command -v pi &> /dev/null; then
+        return 0
     fi
+
+    if ! command -v npm &> /dev/null; then
+        return 0
+    fi
+
+    if [[ "$AUTO_YES" == "true" ]]; then
+        log_info "Skipping pi CLI installation in non-interactive mode."
+        return 0
+    fi
+    echo
+    while true; do
+        read -r -p "Install pi CLI? (required for AI-assisted commands) [Y/n]: " install_pi_answer
+        case "$install_pi_answer" in
+            [yY]|[yY][eE][sS]|"")
+                log_info "Installing pi CLI..."
+                npm install -g @earendil-works/pi-coding-agent
+                log_success "pi CLI installed"
+                break
+                ;;
+            [nN]|[nN][oO])
+                log_info "Skipping pi CLI installation"
+                break
+                ;;
+            *)
+                log_warning "Invalid input. Please answer with y or n."
+                ;;
+        esac
+    done
 }
 
 # Display usage (platform-specific)
@@ -754,11 +757,11 @@ display_usage() {
     echo "  $INSTALL_DIR/start_reminders.sh"
     echo "  $INSTALL_DIR/stop_reminders.sh"
     echo
-    if ! command -v opencode &> /dev/null; then
-        echo "OpenCode CLI installation (required for AI-assisted commands):"
-        echo "  $INSTALL_DIR/third_party/opencode/install --no-modify-path"
-        echo "  To use it, add its path to your environment or run:"
-        echo "    export REMINDER_OPENCODE_BIN=\$HOME/.opencode/bin/opencode"
+    if ! command -v pi &> /dev/null; then
+        echo "pi CLI installation (required for AI-assisted commands):"
+        echo "  npm install -g @earendil-works/pi-coding-agent"
+        echo "  To use a non-PATH binary, run:"
+        echo "    export REMINDER_PI_BIN=/path/to/pi"
         echo
     fi
     if [[ "$OS_TYPE" == "macos" ]]; then
@@ -810,11 +813,6 @@ main() {
         elif command -v curl &>/dev/null && command -v tar &>/dev/null; then
             log_info "Downloading repository tarball..."
             curl -sSL "${REPO_URL}/archive/refs/heads/main.tar.gz" | tar -xz -C "${TEMP_DIR}" --strip-components=1
-            
-            # Fetch opencode submodule
-            log_info "Downloading opencode submodule..."
-            mkdir -p "${TEMP_DIR}/third_party/opencode"
-            curl -sSL "https://github.com/anomalyco/opencode/archive/refs/heads/main.tar.gz" | tar -xz -C "${TEMP_DIR}/third_party/opencode" --strip-components=1 || true
         else
             log_error "Required tools missing. Please install curl/tar or git."
             exit 1
@@ -837,7 +835,7 @@ main() {
     create_venv
     configure_configs
     install_dependencies
-    install_opencode
+    install_pi
     
     if [[ "$OS_TYPE" == "macos" ]]; then
         create_launch_agent
