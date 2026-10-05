@@ -1,0 +1,26 @@
+name: Browser Tests
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Check bundled assets match frontend source
+        run: git diff --exit-code -- src/schedule_management/web/static
+      - run: uv run pytest tests/test_browser_server.py tests/test_web_api.py tests/test_web_services.py tests/test_web_sync_helpers.py -q

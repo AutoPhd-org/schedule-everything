@@ -16,7 +16,7 @@ Before proceeding, ensure you have the following installed:
 *   **Git**: [Download Git](https://git-scm.com/downloads)
 *   **Terminal**: Any standard terminal emulator (Terminal.app, iTerm2, etc.)
 *   **pi CLI**: Required for `rmd setup` and `rmd sync`
-*   **Node.js and Rust**: Required only when running or building the optional Tauri desktop app from source
+*   **Node.js**: Needed only to rebuild browser assets from source. The Python package includes them.
 
 ## Installation Methods
 
@@ -119,41 +119,30 @@ pip install schedule-management
 ```
 After installation, follow steps 3-6 from the "Manual Installation" section above.
 
-## Optional macOS Desktop Tools
+## Browser Workspace
 
-### Daily Command Center App
-
-The source tree includes a Tauri 2 desktop app named **Schedule Everything**.
-It is a daily command center for the same local files used by the CLI:
-tasks, deadlines, habits, today's schedule, and accepted sync overlays.
-
-From the repository root:
+Launch the local browser interface:
 
 ```bash
-npm install
-npm run tauri:dev
+rmd web
 ```
 
-To create standalone macOS bundles:
+Your tasks, schedules, settings, and habit records remain in the same local
+files used by the CLI. The browser includes task creation and editing,
+completion/cancellation, deadlines, habit checks, AI schedule conversations,
+sync proposal review, configuration editing, mode and schedule switching,
+reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
+postponement, and procrastination details preserved. All tasks are shown.
 
-```bash
-npm run tauri:build
-```
+Launching again reuses an open workspace tab. The app asks the browser to bring
+it forward; browser focus permissions can prevent it from becoming the active
+tab. If the tab has been closed, a new tab opens on the existing server.
+The server listens only on `127.0.0.1` and continues running when the terminal
+closes. CLI commands remain available.
 
-The build command first packages `schedule-gui-bridge` as a Python sidecar,
-then runs the Tauri release build. Outputs are written to:
-
-```text
-src-tauri/target/release/bundle/macos/Schedule Everything.app
-src-tauri/target/release/bundle/dmg/Schedule Everything_0.1.0_<arch>.dmg
-```
-
-### Übersicht Desktop Widget
-
-Schedule Everything also provides an interactive macOS desktop widget (`rmd-tasks.widget`) powered by [Übersicht](https://tracesof.net/uebersicht/).
-
-- **Installation**: Prompts automatically during `./install.sh` on macOS, or can be installed via `python -c "from schedule_management.desktop_widget import install_widget; install_widget()"`.
-- **Interactive Deletion**: Tasks rendered on your desktop wallpaper can be deleted directly via GUI clicks with a two-step inline confirmation (`[✕]` button transforms to `[Confirm?]` on first click, executing `rmd rm <id>` and re-rendering on second click).
+The installed package includes the browser assets; Node.js is only needed to
+rebuild them during development. No native desktop app or widget is shipped.
+See [Browser workspace](browser.md) for details.
 
 ## Verifying Installation
 

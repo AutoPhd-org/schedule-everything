@@ -134,20 +134,12 @@ auto_cleanup_days = 30          # Auto-cleanup completed tasks after N days
 show_completed = false          # Show completed tasks in list
 ```
 
-## Desktop Widget Section (macOS)
+## Browser Settings
 
-Configure the macOS Übersicht desktop widget behavior:
-
-```toml
-[desktop_widget]
-enabled = true                  # Show task list as an Übersicht desktop widget
-refresh_frequency = 30          # Widget refresh interval in seconds (5 - 3600)
-```
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `enabled` | boolean | `true` | When `true`, enables rendering the active task list on the macOS desktop via Übersicht. |
-| `refresh_frequency` | integer | `30` | Refresh interval in seconds (between 5 and 3600 seconds). |
+Launch `rmd web`, then open **Settings** to edit task types, reminders, schedules,
+habits, your profile, or the optional AI model override. The configuration editor
+validates TOML and refuses to overwrite a file that changed since it was loaded.
+The browser uses the same active configuration as the CLI.
 
 ## Sound File Configuration
 

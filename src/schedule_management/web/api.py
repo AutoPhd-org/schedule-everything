@@ -1,8 +1,7 @@
 """
-JSON command bridge for the Tauri desktop app.
+Structured command dispatch for the local browser app.
 
-The bridge accepts one JSON request and writes one JSON response. It avoids rich
-console output so the Rust side can parse responses reliably.
+Handlers return JSON-serializable results for the authenticated HTTP server.
 """
 
 from __future__ import annotations
@@ -13,8 +12,8 @@ from collections.abc import Callable
 from typing import Any
 
 from schedule_management.commands.sync import accept_sync_plan, generate_sync_proposal
-from schedule_management.gui.services import (
-    GuiError,
+from schedule_management.web.services import (
+    WebError,
     deadline_add,
     deadline_delete,
     deadline_update,
@@ -27,10 +26,21 @@ from schedule_management.gui.services import (
     task_history,
     task_update,
 )
+from schedule_management.web.workspace import (
+    config_read, config_save, export_pdf, service_action, setup_accept,
+    setup_turn, workspace_info,
+)
 
 BridgeHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
 COMMANDS: dict[str, BridgeHandler] = {
+    "config_read": config_read,
+    "config_save": config_save,
+    "workspace_info": workspace_info,
+    "service_action": service_action,
+    "setup_turn": setup_turn,
+    "setup_accept": setup_accept,
+    "export_pdf": export_pdf,
     "status_snapshot": status_snapshot,
     "task_add": task_add,
     "task_update": task_update,
@@ -51,14 +61,14 @@ COMMANDS: dict[str, BridgeHandler] = {
 
 def _coerce_feedback(value: Any) -> list[str]:
     if not isinstance(value, list):
-        raise GuiError("invalid_input", "feedback must be a list.")
+        raise WebError("invalid_input", "feedback must be a list.")
     return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _coerce_plan(payload: dict[str, Any]) -> dict[str, Any]:
     plan = payload.get("plan")
     if not isinstance(plan, dict):
-        raise GuiError("invalid_input", "plan is required.")
+        raise WebError("invalid_input", "plan is required.")
     return plan
 
 
@@ -78,6 +88,8 @@ def _error_response(
 
 
 def dispatch(request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        return _error_response("invalid_request", "request must be an object.")
     command = request.get("command")
     payload = request.get("payload", {})
     if not isinstance(command, str) or not command.strip():
@@ -91,7 +103,7 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
 
     try:
         return {"ok": True, "data": handler(payload)}
-    except GuiError as exc:
+    except WebError as exc:
         return {"ok": False, "error": exc.to_dict()}
     except Exception as exc:
         return _error_response("internal_error", str(exc))
@@ -102,9 +114,9 @@ def _read_request(argv: list[str]) -> dict[str, Any]:
     try:
         request = json.loads(raw_request)
     except json.JSONDecodeError as exc:
-        raise GuiError("invalid_json", f"invalid JSON request: {exc}") from exc
+        raise WebError("invalid_json", f"invalid JSON request: {exc}") from exc
     if not isinstance(request, dict):
-        raise GuiError("invalid_request", "request must be an object.")
+        raise WebError("invalid_request", "request must be an object.")
     return request
 
 
@@ -113,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         request = _read_request(args)
         response = dispatch(request)
-    except GuiError as exc:
+    except WebError as exc:
         response = {"ok": False, "error": exc.to_dict()}
     print(json.dumps(response, ensure_ascii=False))
     return 0

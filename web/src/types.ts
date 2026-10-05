@@ -49,6 +49,7 @@ export type HistoryItem = {
   priority: number;
   startedAt: string;
   endedAt: string;
+  status?: string;
   duration: string;
 };
 
@@ -61,6 +62,7 @@ export type Snapshot = {
     deadlinesPath: string;
     habitsPath: string;
     recordsPath: string;
+    error?: string | null;
   };
   today: {
     date: string;

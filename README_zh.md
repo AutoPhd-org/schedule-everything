@@ -101,36 +101,24 @@ rmd switch 0
 当今天已经有同步 overlay 时，`rmd status` 会显示块类型和具体任务标题，例如 `pomodoro: 完成方案初稿`。
 `rmd update` 会重新加载提醒服务；如果配置目录本身是 git 仓库，会先拉取最新日程，否则跳过 git 步骤并直接按本地文件重载。
 
-### 5. 可选的 macOS 桌面工具 (Daily Command Center 与 Übersicht 桌面组件)
+### 5. 浏览器工作区
 
-Schedule Everything 为 macOS 用户提供了桌面集成工具：
+```bash
+rmd web
+```
 
-- **Tauri 2 桌面应用 (Daily Command Center)**：和 CLI 使用同一套本地配置、任务、截止日期、习惯记录和 sync overlay 文件，提供快速添加任务/截止日期、勾选习惯、预览并确认 `rmd sync` 方案等操作。
-
-  你可以直接从 GitHub Releases 下载预构建好的 DMG 安装包，或者自行编译：
-  ```bash
-  npm install
-  npm run tauri:dev
-  npm run tauri:build
-  ```
-  `npm run tauri:build` 会把 Python JSON bridge 打包成 sidecar，并把 macOS 应用包输出到 `src-tauri/target/release/bundle/`。
-
-- **Übersicht 桌面组件 (Desktop Widget)**：可在 macOS 桌面壁纸上实时渲染显示任务列表 (`rmd-tasks.widget`)。
-  - **交互式任务删除**：桌面组件上展示的任务支持直接通过 GUI 操作进行删除。任务右侧提供 `[✕]` 按钮，采用两步内联确认机制：
-    - **首次点击**：按钮转换为 `[Confirm?]` 并带有红色高亮提示，进入 3 秒安全确认窗口。
-    - **二次点击**：确认删除，后台自动执行 `rmd rm <id>` 并立即重新渲染桌面组件。
-    - **自动重置**：若 3 秒内未点击确认，按钮将自动还原为 `[✕]`。
-
-> [!TIP]
-> **macOS “已损坏” 提示解决方法**：由于 GitHub Releases 提供的预编译 DMG 是未签名的，macOS Gatekeeper 安全机制在下载打开时会拦截并提示“已损坏，应移至废纸篓”。你可以将应用拖入 `/Applications` 后，在终端运行以下命令来解除限制：
-> ```bash
-> xattr -r -d com.apple.quarantine "/Applications/Schedule Everything.app"
-> ```
+数据仍保存在本机，与 CLI 共用同一套文件。启动后可直接在浏览器中管理任务、
+截止日期、习惯、日程、设置、提醒模式，预览并接受 AI 排程，下载 PDF。
+任务按类型分组，重要程度、延迟提醒和拖延信息保持可见。
+再次启动会复用已打开的工作区标签页，不再创建重复标签页；浏览器权限可能限制
+自动切换到前台。关闭标签页后，再次启动会在原有服务上打开新标签页。
+CLI 继续可用。项目不再提供原生桌面应用或桌面组件。
 
 ## 常用命令
 
 | 命令 | 作用 |
 | --- | --- |
+| `rmd web` | 打开本地浏览器工作区，复用已有标签页 |
 | `rmd setup` | 用基于画像的 AI 流程构建或修改日程 |
 | `rmd sync` | 为今天的 pomodoro/potato 生成任务分配，并先预览后确认 |
 | `rmd status [-v]` | 查看当前状态和今天日程，包含同步后的任务标题 |

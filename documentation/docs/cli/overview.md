@@ -172,3 +172,10 @@ If commands fail with configuration errors:
 - Learn about [Schedule Management Commands](schedule-management.md)
 - Explore [Task Management Commands](task-management.md)
 - See Configuration and Settings for detailed syntax
+
+
+## Browser workspace
+
+Run `rmd web` to manage the same local data through the browser. The task board
+groups all tasks by type and retains importance and reminder details. Existing
+CLI syntax and task numbering are unchanged. See [Browser workspace](../browser.md).

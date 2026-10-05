@@ -187,3 +187,8 @@ Use these when you need to answer a focused question quickly.
 - This package targets Python 3.12+, so modern typing and standard-library features are preferred.
 - Most user-visible behavior is covered by tests under `tests/`, especially CLI behavior and runner logic.
 - Compatibility modules like [reminder.py](./reminder.py) and [reminder_macos.py](./reminder_macos.py) exist to keep older imports stable; avoid removing them casually.
+
+
+The local browser interface lives in `web/` (Python services/server) and the
+repository-level `web/` (TypeScript source). Launch with `rmd web`. Run
+`npm run build` after frontend edits to refresh the bundled static assets.

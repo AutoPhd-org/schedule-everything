@@ -109,67 +109,30 @@ tail -f ~/schedule_management/logs/stdout.log
 tail -f ~/schedule_management/logs/stderr.log
 ```
 
-## Daily Command Center App
+## Browser Workspace
 
-Schedule Everything also ships with an optional Tauri 2 macOS app. The app is
-designed for day-to-day operations: it shows the current/next event, today's
-timeline, tasks, deadlines, habits, quick entry forms, and a preview/accept
-flow for `rmd sync`.
-
-It does not replace the CLI setup flow. Run `rmd setup` first so the local
-config exists, then launch the app from source:
+Launch the local browser interface:
 
 ```bash
-npm install
-npm run tauri:dev
+rmd web
 ```
 
-Build standalone app bundles with:
+Your tasks, schedules, settings, and habit records remain in the same local
+files used by the CLI. The browser includes task creation and editing,
+completion/cancellation, deadlines, habit checks, AI schedule conversations,
+sync proposal review, configuration editing, mode and schedule switching,
+reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
+postponement, and procrastination details preserved. All tasks are shown.
 
-```bash
-npm run tauri:build
-```
+Launching again reuses an open workspace tab. The app asks the browser to bring
+it forward; browser focus permissions can prevent it from becoming the active
+tab. If the tab has been closed, a new tab opens on the existing server.
+The server listens only on `127.0.0.1` and continues running when the terminal
+closes. CLI commands remain available.
 
-The build includes a PyInstaller sidecar for the desktop JSON bridge and writes
-the packaged app and DMG under `src-tauri/target/release/bundle/`.
-
-## macOS Übersicht Desktop Widget
-
-Schedule Everything includes an interactive desktop widget for [Übersicht](https://tracesof.net/uebersicht/) (`rmd-tasks.widget`), allowing you to view and manage your active tasks directly on your macOS desktop background.
-
-### Overview & Capabilities
-
-The widget renders `rmd ls` task items on the desktop wallpaper in real-time, matching category themes and priority colors.
-
-### Interactive Task Deletion
-
-Tasks displayed on the Übersicht desktop widget can be removed directly via GUI interaction with a two-step inline confirmation workflow:
-
-1. **Initiate Deletion (`[✕]`)**: Each task item rendered on the widget includes an inline `[✕]` delete button. Clicking `[✕]` transitions the button state to `[Confirm?]` with a prominent red highlight.
-2. **Two-Step Inline Confirmation**:
-   - **Click 1 (`[✕]` -> `[Confirm?]`)**: Activates a 3-second confirmation window.
-   - **Click 2 (`[Confirm?]` -> `...`)**: Executes `rmd rm <id>` asynchronously via Übersicht's execution bridge and immediately re-renders the updated task list on completion.
-   - **Timeout Cancellation**: If `[Confirm?]` is not clicked within 3 seconds, the action times out and the button automatically resets back to `[✕]`.
-
-### Installation & Maintenance
-
-- **Automated Installer**: Running `./install.sh` on macOS interactively prompts to set up the Übersicht widget under `~/Library/Application Support/Übersicht/widgets/rmd-tasks.widget`.
-- **Python Module**:
-  ```python
-  from schedule_management.desktop_widget import install_widget, uninstall_widget
-
-  # Install widget template with configured rmd binary path
-  install_widget()
-
-  # Uninstall widget
-  uninstall_widget()
-  ```
-- **Configuration (`settings.toml`)**:
-  ```toml
-  [desktop_widget]
-  enabled = true          # Enable Übersicht desktop widget
-  refresh_frequency = 30  # Widget refresh interval in seconds
-  ```
+The installed package includes the browser assets; Node.js is only needed to
+rebuild them during development. No native desktop app or widget is shipped.
+See [Browser workspace](../browser.md) for details.
 
 ## macOS-Specific Configuration
 

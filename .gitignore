@@ -12,11 +12,6 @@ build/
 docs/
 dist/
 node_modules/
-build/gui-sidecar/
-src-tauri/gen/
-src-tauri/target/
-src-tauri/binaries/schedule-gui-bridge-*
-*.spec
 
 schedule_visualization/
 
@@ -31,3 +26,11 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 
 .qoder
+
+# Keep browser documentation reviewable alongside the tracked documentation.
+!documentation/docs/
+documentation/docs/*
+!documentation/docs/browser.md
+!documentation/docs/platform/
+documentation/docs/platform/*
+!documentation/docs/platform/linux.md

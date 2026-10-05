@@ -45,7 +45,6 @@ SECTION_LABELS: dict[str, str] = {
     "time_points": "🔔  Notifications",
     "tasks": "📋  Task Scheduling",
     "paths": "📁  File Paths",
-    "desktop_widget": "🖥️  Desktop Widget",
     "task_types": "🏷️  Task Types",
     "llm": "🤖  Model Settings",
 }
@@ -136,10 +135,6 @@ FIELD_REGISTRY: dict[tuple[str, str], FieldMeta] = {
         EditorType.WEEKDAY_TIME, "Weekday and time for weekly review"),
     ("tasks", "monthly_review"): FieldMeta(
         EditorType.DAY_TIME, "Day-of-month and time for monthly review"),
-    ("desktop_widget", "enabled"): FieldMeta(
-        EditorType.TOGGLE, "Show task list as desktop widget (macOS)"),
-    ("desktop_widget", "refresh_frequency"): FieldMeta(
-        EditorType.NUMBER, "Widget refresh interval in seconds", min_val=5, max_val=3600),
 }
 
 # Fallback metadata for sections with user-defined keys.

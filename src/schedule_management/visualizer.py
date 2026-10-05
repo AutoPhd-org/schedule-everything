@@ -545,7 +545,7 @@ class ScheduleVisualizer:
     # MAIN VISUALIZATION METHOD
     # ==========================================================================
 
-    def visualize(self) -> None:
+    def visualize(self, output_path: Path | None = None) -> None:
         """
         Generate the complete schedule visualization PDF.
 
@@ -570,7 +570,8 @@ class ScheduleVisualizer:
         else:
             desktop_path = Path.home() / "Desktop"
 
-        pdf_filename = desktop_path / "schedule_visualization.pdf"
+        pdf_filename = output_path or desktop_path / "schedule_visualization.pdf"
+        pdf_filename.parent.mkdir(parents=True, exist_ok=True)
 
         # Configure fonts
         plt.rcParams["font.family"] = "sans-serif"

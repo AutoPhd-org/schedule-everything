@@ -34,10 +34,6 @@ config_dir = "config"
 
 reports_path = "~/Desktop/reports"
 
-[desktop_widget]
-enabled = true  # If true, shows task list as an Übersicht desktop widget (macOS only).
-refresh_frequency = 30  # Widget refresh interval in seconds.
-
 [task_types]
 1 = "read papers"
 2 = "gym work"

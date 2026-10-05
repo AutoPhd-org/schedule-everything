@@ -12,7 +12,7 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PhDeasy-org/schedule-everything)
 [中文版本](README_zh.md)
 
-Schedule Everything is a local-first, AI-assisted scheduling CLI for building a
+Schedule Everything is a local-first, AI-assisted scheduling workspace with a browser interface and CLI for building a
 durable weekly routine and then turning today's focus blocks into concrete
 work.
 
@@ -100,36 +100,36 @@ the specific assigned event, for example `pomodoro: Finish proposal draft`.
 repository, it pulls the latest schedule changes first; otherwise it skips the
 git step and reloads your local files as-is.
 
-### 5. Optional macOS Desktop Tools (Daily Command Center & Übersicht Widget)
+### 5. Open the Browser Workspace
 
-Schedule Everything provides desktop integrations for macOS users:
+Launch the local browser interface:
 
-- **Tauri 2 Daily Command Center**: A desktop app that uses the same local config, tasks, deadlines, habits, and sync overlay files as the CLI, presenting them as a daily command center with quick task/deadline entry, habit checks, and `rmd sync` proposal review.
+```bash
+rmd web
+```
 
-  You can download a pre-built DMG from GitHub Releases or build it yourself:
-  ```bash
-  npm install
-  npm run tauri:dev
-  npm run tauri:build
-  ```
-  `npm run tauri:build` packages the Python JSON bridge as a sidecar and writes the macOS bundles under `src-tauri/target/release/bundle/`.
+Your tasks, schedules, settings, and habit records remain in the same local
+files used by the CLI. The browser includes task creation and editing,
+completion/cancellation, deadlines, habit checks, AI schedule conversations,
+sync proposal review, configuration editing, mode and schedule switching,
+reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
+postponement, and procrastination details preserved. All tasks are shown.
 
-- **Übersicht Desktop Widget**: Displays your task list as a live, interactive desktop wallpaper widget (`rmd-tasks.widget`).
-  - **Interactive Task Deletion**: Tasks displayed on the desktop widget can be deleted directly via GUI actions. Each task row includes an inline delete button `[✕]`.
-    - **First click**: The button transforms to `[Confirm?]` with a red highlight for a 3-second safety window.
-    - **Second click**: Confirms deletion, executes `rmd rm <id>` in the background, and immediately re-renders the widget.
-    - **Auto-reset**: If `[Confirm?]` is not clicked within 3 seconds, it safely resets to `[✕]`.
+Launching again reuses an open workspace tab. The app asks the browser to bring
+it forward; browser focus permissions can prevent it from becoming the active
+tab. If the tab has been closed, a new tab opens on the existing server.
+The server listens only on `127.0.0.1` and continues running when the terminal
+closes. CLI commands remain available.
 
-> [!TIP]
-> **macOS "App is damaged" Workaround**: Since pre-built DMGs are unsigned, macOS Gatekeeper may show a warning saying the app is damaged. You can easily fix this by dragging the app to `/Applications` and running:
-> ```bash
-> xattr -r -d com.apple.quarantine "/Applications/Schedule Everything.app"
-> ```
+The installed package includes the browser assets; Node.js is only needed to
+rebuild them during development. No native desktop app or widget is shipped.
+See [Browser workspace](documentation/docs/browser.md) for details.
 
 ## Core Commands
 
 | Command | What it does |
 | --- | --- |
+| `rmd web` | Open the local browser workspace, reusing an existing tab |
 | `rmd setup` | Build or modify your schedule with a profile-first AI workflow |
 | `rmd sync` | Assign today's pomodoro/potato blocks to tasks with preview + approval |
 | `rmd status [-v]` | Show what is happening now and today's schedule, including synced titles |

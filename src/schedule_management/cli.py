@@ -76,6 +76,7 @@ from schedule_management.commands.service import (
 )
 from schedule_management.commands.setup import setup_command
 from schedule_management.commands.settings import settings_command
+from schedule_management.commands.browser import browser_command
 
 
 # =============================================================================
@@ -143,6 +144,18 @@ def create_parser() -> argparse.ArgumentParser:
         title=_t("Available commands"),
         metavar="<command>",
     )
+    web_parser = subparsers.add_parser(
+        "web", help="Open the local browser workspace (reuses an existing tab)"
+    )
+    web_parser.add_argument(
+        "--no-open", action="store_true",
+        help="Start the local server without opening a browser",
+    )
+    web_parser.add_argument(
+        "--port", type=int, default=0,
+        help="Local port for a new server (default: automatically chosen)",
+    )
+    web_parser.set_defaults(func=browser_command)
 
     # -------------------------------------------------------------------------
     # Task Management Commands

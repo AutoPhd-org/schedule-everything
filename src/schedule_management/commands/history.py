@@ -80,6 +80,13 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
                 "priority": task.get("priority", 0),
             })
 
+        elif action == "updated":
+            metadata = entry.get("metadata", {})
+            old_task = metadata.get("old_task", {}) if isinstance(metadata, dict) else {}
+            old_description = old_task.get("description") if isinstance(old_task, dict) else None
+            if old_description and old_description != description:
+                open_adds[description].extend(open_adds.pop(old_description, []))
+
         elif action in ("deleted", "cancelled", "dropped"):
             if open_adds[description]:
                 add_record = open_adds[description].pop(0)

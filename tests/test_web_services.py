@@ -10,7 +10,7 @@ from conftest import TEST_CONFIG_DIR
 
 def test_status_snapshot_returns_daily_panels(monkeypatch):
     from schedule_management.config import ScheduleConfig
-    from schedule_management.gui.services import status_snapshot
+    from schedule_management.web.services import status_snapshot
 
     monkeypatch.setattr(ScheduleConfig, "should_skip_today", lambda self: False)
 
@@ -38,7 +38,7 @@ def test_status_snapshot_returns_daily_panels(monkeypatch):
 
 
 def test_task_add_updates_existing_task_and_logs(monkeypatch, tmp_path):
-    from schedule_management.gui.services import task_add
+    from schedule_management.web.services import task_add
 
     tasks_path = tmp_path / "tasks.json"
     task_log_path = tmp_path / "tasks.log"
@@ -64,7 +64,7 @@ def test_task_add_updates_existing_task_and_logs(monkeypatch, tmp_path):
 
 
 def test_task_delete_removes_by_description(tmp_path, monkeypatch):
-    from schedule_management.gui.services import task_delete
+    from schedule_management.web.services import task_delete
 
     tasks_path = tmp_path / "tasks.json"
     task_log_path = tmp_path / "tasks.log"
@@ -92,7 +92,7 @@ def test_task_delete_removes_by_description(tmp_path, monkeypatch):
 
 
 def test_deadline_add_accepts_iso_date(tmp_path, monkeypatch):
-    from schedule_management.gui.services import deadline_add
+    from schedule_management.web.services import deadline_add
 
     deadlines_path = tmp_path / "ddl.json"
     deadlines_path.write_text("[]", encoding="utf-8")
@@ -109,7 +109,7 @@ def test_deadline_add_accepts_iso_date(tmp_path, monkeypatch):
 
 
 def test_deadline_delete_reports_missing_event(tmp_path, monkeypatch):
-    from schedule_management.gui.services import GuiError, deadline_delete
+    from schedule_management.web.services import WebError, deadline_delete
 
     deadlines_path = tmp_path / "ddl.json"
     deadlines_path.write_text("[]", encoding="utf-8")
@@ -118,14 +118,14 @@ def test_deadline_delete_reports_missing_event(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loaders, "DDL_PATH", str(deadlines_path))
 
-    with pytest.raises(GuiError) as exc_info:
+    with pytest.raises(WebError) as exc_info:
         deadline_delete({"event": "Missing"})
 
     assert exc_info.value.code == "not_found"
 
 
 def test_habit_mark_writes_today_record(monkeypatch, tmp_path):
-    from schedule_management.gui.services import habit_mark
+    from schedule_management.web.services import habit_mark
 
     record_path = tmp_path / "record.json"
     habit_path = tmp_path / "habits.toml"
@@ -136,7 +136,7 @@ def test_habit_mark_writes_today_record(monkeypatch, tmp_path):
     monkeypatch.setattr(loaders, "HABIT_PATH", str(habit_path))
     monkeypatch.setattr(loaders, "RECORD_PATH", str(record_path))
     monkeypatch.setattr(
-        "schedule_management.gui.services._today",
+        "schedule_management.web.services._today",
         lambda: date(2026, 4, 28),
     )
 
@@ -149,7 +149,7 @@ def test_habit_mark_writes_today_record(monkeypatch, tmp_path):
 
 
 def test_task_update_rejects_duplicate_description(tmp_path, monkeypatch):
-    from schedule_management.gui.services import GuiError, task_update
+    from schedule_management.web.services import WebError, task_update
 
     tasks_path = tmp_path / "tasks.json"
     tasks_path.write_text(
@@ -166,7 +166,7 @@ def test_task_update_rejects_duplicate_description(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loaders, "TASKS_PATH", str(tasks_path))
 
-    with pytest.raises(GuiError) as exc_info:
+    with pytest.raises(WebError) as exc_info:
         task_update(
             {
                 "originalDescription": "Read notes",
@@ -183,7 +183,7 @@ def test_task_update_rejects_duplicate_description(tmp_path, monkeypatch):
 
 
 def test_deadline_update_rejects_duplicate_event(tmp_path, monkeypatch):
-    from schedule_management.gui.services import GuiError, deadline_update
+    from schedule_management.web.services import WebError, deadline_update
 
     deadlines_path = tmp_path / "ddl.json"
     deadlines_path.write_text(
@@ -200,7 +200,7 @@ def test_deadline_update_rejects_duplicate_event(tmp_path, monkeypatch):
 
     monkeypatch.setattr(loaders, "DDL_PATH", str(deadlines_path))
 
-    with pytest.raises(GuiError) as exc_info:
+    with pytest.raises(WebError) as exc_info:
         deadline_update(
             {
                 "originalEvent": "Pay invoice",
@@ -217,7 +217,7 @@ def test_deadline_update_rejects_duplicate_event(tmp_path, monkeypatch):
 
 
 def test_task_add_wraps_save_failure(monkeypatch):
-    from schedule_management.gui import services
+    from schedule_management.web import services
 
     monkeypatch.setattr(services, "load_tasks", lambda: [])
 
@@ -226,7 +226,7 @@ def test_task_add_wraps_save_failure(monkeypatch):
 
     monkeypatch.setattr(services, "save_tasks", fail_save)
 
-    with pytest.raises(services.GuiError) as exc_info:
+    with pytest.raises(services.WebError) as exc_info:
         services.task_add({"description": "Draft proposal", "priority": 9})
 
     assert exc_info.value.code == "storage_error"

@@ -24,4 +24,3 @@ license-files = ["LICENSE"]
 [project.scripts]
 rmd = "schedule_management.reminder:main"
 reminder = "schedule_management.reminder:main"
-schedule-gui-bridge = "schedule_management.gui.bridge:main"

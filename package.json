@@ -2,18 +2,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "vitest run",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "npm run build:sidecar && tauri build",
-    "build:sidecar": "uv run --with pyinstaller python scripts/build-gui-sidecar.py"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0",
     "lucide": "^0.468.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^22.0.0",
     "jsdom": "^25.0.0",
     "typescript": "^5.6.0",

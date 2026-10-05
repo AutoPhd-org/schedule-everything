@@ -4034,3 +4034,13 @@ class TestHistoryCommand:
         assert _format_duration(
             datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 1, 9, 0)
         ) == "< 1 min"
+
+
+def test_browser_command_preserves_cli_and_accepts_launch_options():
+    from schedule_management.cli import create_parser
+    from schedule_management.commands.browser import browser_command
+    parser = create_parser()
+    args = parser.parse_args(["web", "--no-open", "--port", "8765"])
+    assert args.func is browser_command
+    assert args.no_open and args.port == 8765
+    assert parser.parse_args(["ls", "--type", "1"]).task_type == "1"

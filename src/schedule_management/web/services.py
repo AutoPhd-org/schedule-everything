@@ -1,14 +1,14 @@
 """
-Structured service operations for the Schedule Everything desktop GUI.
+Structured service operations for the Schedule Everything browser interface.
 
 This module wraps existing schedule-management storage and schedule helpers
 without printing CLI tables or prompts. Functions accept JSON-like payloads and
-return JSON-serializable dictionaries for the Tauri bridge.
+return JSON-serializable dictionaries for the local HTTP API.
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from schedule_management.commands import status as status_commands
@@ -47,8 +47,8 @@ from schedule_management.synced_schedule import (
 )
 
 
-class GuiError(Exception):
-    """Structured error for GUI bridge responses."""
+class WebError(Exception):
+    """Structured error for browser API responses."""
 
     def __init__(
         self,
@@ -110,7 +110,7 @@ def _snapshot_runtime_paths() -> RuntimePaths:
 def _require_text(payload: dict[str, Any], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise GuiError("invalid_input", f"{key} is required.")
+        raise WebError("invalid_input", f"{key} is required.")
     return value.strip()
 
 
@@ -119,9 +119,9 @@ def _require_priority(payload: dict[str, Any]) -> int:
     try:
         priority = int(value)
     except (TypeError, ValueError):
-        raise GuiError("invalid_input", "priority must be an integer.") from None
+        raise WebError("invalid_input", "priority must be an integer.") from None
     if priority < 1 or priority > 10:
-        raise GuiError("invalid_input", "priority must be between 1 and 10.")
+        raise WebError("invalid_input", "priority must be between 1 and 10.")
     return priority
 
 
@@ -129,7 +129,7 @@ def _save_tasks_or_error(tasks: list[dict[str, Any]]) -> None:
     try:
         save_tasks(tasks)
     except Exception as exc:
-        raise GuiError("storage_error", f"failed to save tasks: {exc}") from exc
+        raise WebError("storage_error", f"failed to save tasks: {exc}") from exc
 
 
 def _log_task_or_error(
@@ -140,21 +140,21 @@ def _log_task_or_error(
     try:
         log_task_action(action, task, metadata)
     except Exception as exc:
-        raise GuiError("storage_error", f"failed to log task action: {exc}") from exc
+        raise WebError("storage_error", f"failed to log task action: {exc}") from exc
 
 
 def _save_deadlines_or_error(deadlines: list[dict[str, Any]]) -> None:
     try:
         save_deadlines(deadlines)
     except Exception as exc:
-        raise GuiError("storage_error", f"failed to save deadlines: {exc}") from exc
+        raise WebError("storage_error", f"failed to save deadlines: {exc}") from exc
 
 
 def _save_habit_records_or_error(records: list[dict[str, Any]]) -> None:
     try:
         save_habit_records(records)
     except Exception as exc:
-        raise GuiError("storage_error", f"failed to save habit records: {exc}") from exc
+        raise WebError("storage_error", f"failed to save habit records: {exc}") from exc
 
 
 def _parse_deadline_date(raw_date: str) -> str:
@@ -175,7 +175,7 @@ def _parse_deadline_date(raw_date: str) -> str:
             parsed = date(current.year + 1, month, day)
         return parsed.isoformat()
     except ValueError as exc:
-        raise GuiError("invalid_input", f"invalid deadline date: {exc}") from exc
+        raise WebError("invalid_input", f"invalid deadline date: {exc}") from exc
 
 
 def _load_task_types() -> dict[str, str]:
@@ -351,10 +351,15 @@ def status_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
     status_commands.ODD_PATH = str(runtime_paths.odd_path)
     status_commands.EVEN_PATH = str(runtime_paths.even_path)
 
+    configuration_error = None
     try:
         schedule, parity, is_skipped, config = get_today_schedule_for_status()
     except Exception as exc:
-        raise GuiError("config_error", f"failed to load schedule: {exc}") from exc
+        # A fresh install must still be able to build or repair its schedule
+        # entirely in the browser.
+        from schedule_management.time_utils import get_week_parity
+        schedule, parity, is_skipped, config = {}, get_week_parity(), False, None
+        configuration_error = str(exc)
 
     current_event, next_event, time_to_next = get_current_and_next_events(
         schedule,
@@ -372,6 +377,7 @@ def status_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
             "deadlinesPath": str(runtime_paths.ddl_path),
             "habitsPath": str(runtime_paths.habit_path),
             "recordsPath": str(runtime_paths.record_path),
+            "error": configuration_error,
         },
         "today": {
             "date": current_date.isoformat(),
@@ -410,7 +416,7 @@ def task_add(payload: dict[str, Any]) -> dict[str, Any]:
         sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
         task_type = sorted_type_ids[0] if sorted_type_ids else "1"
     elif task_type not in task_types:
-        raise GuiError("invalid_input", f"unknown task type: {task_type}")
+        raise WebError("invalid_input", f"unknown task type: {task_type}")
 
     postpone = payload.get("postpone")
     alarm_from: str | None = None
@@ -418,9 +424,9 @@ def task_add(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             postpone_days = int(postpone)
         except (TypeError, ValueError):
-            raise GuiError("invalid_input", "postpone must be an integer.") from None
+            raise WebError("invalid_input", "postpone must be an integer.") from None
         if postpone_days < 0:
-            raise GuiError("invalid_input", "postpone days must be non-negative.")
+            raise WebError("invalid_input", "postpone days must be non-negative.")
         if postpone_days > 0:
             from datetime import timedelta
             alarm_from = (_today() + timedelta(days=postpone_days)).isoformat()
@@ -466,31 +472,66 @@ def task_update(payload: dict[str, Any]) -> dict[str, Any]:
             task.get("description") == description
             and task.get("description") != original_description
         ):
-            raise GuiError("duplicate", f"task already exists: {description}")
+            raise WebError("duplicate", f"task already exists: {description}")
 
     for index, task in enumerate(tasks):
         if task.get("description") == original_description:
-            updated = {"description": description, "priority": priority}
+            updated = {**task, "description": description, "priority": priority}
+            if "type" in payload:
+                task_type = str(payload["type"])
+                if task_type not in _load_task_types():
+                    raise WebError("invalid_input", f"unknown task type: {task_type}")
+                updated["type"] = task_type
+            if "postpone" in payload:
+                try:
+                    days = int(payload["postpone"])
+                    if days < 0:
+                        raise ValueError
+                    if days:
+                        updated["alarm_from"] = (_today() + timedelta(days=days)).isoformat()
+                    else:
+                        updated.pop("alarm_from", None)
+                except (TypeError, ValueError, OverflowError):
+                    raise WebError("invalid_input", "postpone must be a non-negative integer.") from None
             old_task = dict(task)
             tasks[index] = updated
             _save_tasks_or_error(tasks)
             _log_task_or_error("updated", updated, {"old_task": old_task})
+            if original_description != description:
+                from schedule_management.data.loaders import PROCRASTINATE_PATH
+                from pathlib import Path
+                import json
+                records = load_procrastinate_records()
+                if original_description in records:
+                    record = records.pop(original_description)
+                    records[description] = {**record, "description": description}
+                    Path(PROCRASTINATE_PATH).write_text(
+                        json.dumps(list(records.values()), ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
             return updated
 
-    raise GuiError("not_found", f"task not found: {original_description}")
+    raise WebError("not_found", f"task not found: {original_description}")
 
 
 def task_delete(payload: dict[str, Any]) -> dict[str, Any]:
     description = _require_text(payload, "description")
+    action = payload.get("action", "deleted")
+    if action not in {"deleted", "cancelled", "dropped"}:
+        raise WebError("invalid_input", "invalid task action.")
     tasks = load_tasks()
     deleted = [task for task in tasks if task.get("description") == description]
     if not deleted:
-        raise GuiError("not_found", f"task not found: {description}")
+        raise WebError("not_found", f"task not found: {description}")
 
     remaining = [task for task in tasks if task.get("description") != description]
     _save_tasks_or_error(remaining)
     for task in deleted:
-        _log_task_or_error("deleted", dict(task))
+        _log_task_or_error(action, dict(task))
+    from schedule_management.data import save_procrastinate_list
+    records = load_procrastinate_records()
+    if description in records:
+        save_procrastinate_list(set(records) - {description})
     return {"description": description, "deleted": len(deleted)}
 
 
@@ -525,7 +566,7 @@ def deadline_update(payload: dict[str, Any]) -> dict[str, Any]:
 
     for item in deadlines:
         if item.get("event") == event and item.get("event") != original_event:
-            raise GuiError("duplicate", f"deadline already exists: {event}")
+            raise WebError("duplicate", f"deadline already exists: {event}")
 
     for index, item in enumerate(deadlines):
         if item.get("event") == original_event:
@@ -538,7 +579,7 @@ def deadline_update(payload: dict[str, Any]) -> dict[str, Any]:
             _save_deadlines_or_error(deadlines)
             return updated
 
-    raise GuiError("not_found", f"deadline not found: {original_event}")
+    raise WebError("not_found", f"deadline not found: {original_event}")
 
 
 def deadline_delete(payload: dict[str, Any]) -> dict[str, Any]:
@@ -546,7 +587,7 @@ def deadline_delete(payload: dict[str, Any]) -> dict[str, Any]:
     deadlines = load_deadlines()
     deleted = [item for item in deadlines if item.get("event") == event]
     if not deleted:
-        raise GuiError("not_found", f"deadline not found: {event}")
+        raise WebError("not_found", f"deadline not found: {event}")
     remaining = [item for item in deadlines if item.get("event") != event]
     _save_deadlines_or_error(remaining)
     return {"event": event, "deleted": len(deleted)}
@@ -555,7 +596,7 @@ def deadline_delete(payload: dict[str, Any]) -> dict[str, Any]:
 def habit_mark(payload: dict[str, Any]) -> dict[str, Any]:
     raw_ids = payload.get("habitIds", [])
     if not isinstance(raw_ids, list):
-        raise GuiError("invalid_input", "habitIds must be a list.")
+        raise WebError("invalid_input", "habitIds must be a list.")
 
     habits = load_habits()
     valid_ids: list[str] = []
@@ -568,7 +609,7 @@ def habit_mark(payload: dict[str, Any]) -> dict[str, Any]:
             invalid_ids.append(habit_id)
 
     if invalid_ids:
-        raise GuiError(
+        raise WebError(
             "invalid_input",
             "one or more habit IDs are invalid.",
             {"invalidIds": invalid_ids},
@@ -594,7 +635,7 @@ def habit_mark(payload: dict[str, Any]) -> dict[str, Any]:
     return new_record
 
 
-def _history_rows(count: int = 5) -> list[dict[str, Any]]:
+def _history_rows(count: int | None = 5) -> list[dict[str, Any]]:
     try:
         log_entries = load_task_log()
     except Exception:
@@ -604,7 +645,7 @@ def _history_rows(count: int = 5) -> list[dict[str, Any]]:
     activities = _pair_task_activities(log_entries)
     if not activities:
         return []
-    recent = activities[-count:]
+    recent = activities[-count:] if count is not None else activities[:]
     recent.reverse()
     return [
         {
@@ -613,12 +654,15 @@ def _history_rows(count: int = 5) -> list[dict[str, Any]]:
             "startedAt": a["started_at"].isoformat(),
             "endedAt": a["ended_at"].isoformat(),
             "duration": _format_duration(a["started_at"], a["ended_at"]),
+            "status": a["status"],
         }
         for a in recent
     ]
 
 
 def task_history(payload: dict[str, Any]) -> dict[str, Any]:
+    if payload.get("all") is True:
+        return {"activities": _history_rows(None)}
     count = payload.get("count", 10)
     try:
         count = int(count)
@@ -639,16 +683,16 @@ def settings_get_task_types(payload: dict[str, Any]) -> dict[str, Any]:
 def settings_set_task_types(payload: dict[str, Any]) -> dict[str, Any]:
     raw_types = payload.get("taskTypes")
     if not isinstance(raw_types, dict):
-        raise GuiError("invalid_input", "taskTypes must be an object.")
+        raise WebError("invalid_input", "taskTypes must be an object.")
 
     validated: dict[str, str] = {}
     for key, value in raw_types.items():
         key_str = str(key).strip()
         value_str = str(value).strip() if value is not None else ""
         if not key_str:
-            raise GuiError("invalid_input", "task type keys must be non-empty.")
+            raise WebError("invalid_input", "task type keys must be non-empty.")
         if not value_str:
-            raise GuiError("invalid_input", f"task type '{key_str}' name must be non-empty.")
+            raise WebError("invalid_input", f"task type '{key_str}' name must be non-empty.")
         validated[key_str] = value_str
 
     runtime_paths = _snapshot_runtime_paths()
@@ -657,13 +701,13 @@ def settings_set_task_types(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         model = SettingsModel(runtime_paths.settings_path)
     except Exception as exc:
-        raise GuiError("config_error", f"failed to load settings: {exc}") from exc
+        raise WebError("config_error", f"failed to load settings: {exc}") from exc
 
     model.data["task_types"] = validated
     model.dirty = True
     try:
         model.save()
     except Exception as exc:
-        raise GuiError("storage_error", f"failed to save settings: {exc}") from exc
+        raise WebError("storage_error", f"failed to save settings: {exc}") from exc
 
     return {"taskTypes": validated}

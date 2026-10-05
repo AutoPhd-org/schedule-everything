@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
         'intro',
         'installation',
         'quick-start',
+        'browser',
       ],
     },
     {

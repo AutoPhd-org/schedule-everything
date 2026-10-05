@@ -125,3 +125,10 @@ odd/even week templates.
 - [Configuration Overview](configuration/overview.md)
 - [Weekly Schedules](configuration/weekly-schedules.md)
 - [CLI Overview](cli/overview.md)
+
+
+## Browser workspace
+
+Run `rmd web` to manage the same local data through the browser. The task board
+groups all tasks by type and retains importance and reminder details. Existing
+CLI syntax and task numbering are unchanged. See [Browser workspace](browser.md).

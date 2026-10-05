@@ -605,66 +605,6 @@ test_installation() {
     log_success "All tests passed"
 }
 
-# Install desktop widget (macOS only)
-install_desktop_widget() {
-    if [[ "$OS_TYPE" != "macos" ]]; then
-        return 0
-    fi
-
-    local widget_dir="$HOME/Library/Application Support/Übersicht/widgets/rmd-tasks.widget"
-    if [[ -d "$widget_dir" ]]; then
-        log_info "Desktop widget is already installed"
-        return 0
-    fi
-
-    if [[ "$AUTO_YES" == "true" ]]; then
-        log_info "Skipping desktop widget installation in non-interactive mode"
-        return 0
-    fi
-
-    while true; do
-        read -r -p "Install desktop widget to show tasks on your desktop? (requires Übersicht) [Y/n]: " install_widget
-        case "$install_widget" in
-            [yY]|[yY][eE][sS]|"")
-                break
-                ;;
-            [nN]|[nN][oO])
-                log_info "Skipping desktop widget installation"
-                return 0
-                ;;
-            *)
-                log_warning "Invalid input. Please answer with y or n."
-                ;;
-        esac
-    done
-
-    # Install Übersicht if not present
-    if ! mdfind "kMDItemCFBundleIdentifier == 'tracesOf.Uebersicht'" | grep -q .; then
-        if ! command -v brew &> /dev/null; then
-            log_warning "Homebrew not found. Cannot install Übersicht automatically."
-            log_info "Install Übersicht from https://tracesof.net/uebersicht/ and re-run the installer."
-            return 0
-        fi
-        log_info "Installing Übersicht via Homebrew..."
-        if ! brew install --cask ubersicht; then
-            log_error "Failed to install Übersicht"
-            return 0
-        fi
-        log_success "Übersicht installed"
-    else
-        log_success "Übersicht is already installed"
-    fi
-
-    # Install widget using the Python module
-    source "$INSTALL_DIR/.venv/bin/activate"
-    export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-    if python -c "from schedule_management.desktop_widget import install_widget; install_widget('$INSTALL_DIR/rmd')" 2>/dev/null; then
-        log_success "Desktop widget installed at $widget_dir"
-    else
-        log_error "Failed to install desktop widget"
-    fi
-}
-
 # Setup shell autocompletion
 setup_autocompletion() {
     log_info "Setting up shell autocompletion..."
@@ -846,7 +786,6 @@ main() {
     request_permissions
     create_scripts
     test_installation
-    install_desktop_widget
     setup_autocompletion
     display_usage
 

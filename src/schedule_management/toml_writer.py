@@ -9,6 +9,8 @@ This avoids adding tomli_w as an external dependency.
 from pathlib import Path
 from typing import Any
 
+import json
+import re
 import tomllib
 
 
@@ -27,8 +29,7 @@ def _format_value(value: Any) -> str:
     if isinstance(value, float):
         return str(value)
     if isinstance(value, str):
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+        return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         items = ", ".join(_format_value(item) for item in value)
         return f"[{items}]"
@@ -49,6 +50,7 @@ def dump_toml(data: dict[str, dict[str, Any]], path: Path) -> None:
         if not isinstance(values, dict):
             continue
         for key, value in values.items():
-            lines.append(f"{key} = {_format_value(value)}")
+            quoted_key = key if re.fullmatch(r"[A-Za-z0-9_-]+", str(key)) else json.dumps(str(key), ensure_ascii=False)
+            lines.append(f"{quoted_key} = {_format_value(value)}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
