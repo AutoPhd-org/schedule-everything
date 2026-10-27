@@ -278,12 +278,19 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
     if removed:
         _save_deadlines_or_error(deadlines)
 
+    task_types = _load_task_types()
     rows: list[dict[str, Any]] = []
     for item in sorted(deadlines, key=lambda value: str(value.get("deadline", ""))):
         event = str(item.get("event", "")).strip()
         raw_deadline = str(item.get("deadline", "")).strip()
         if not event or not raw_deadline:
             continue
+        raw_type = item.get("type")
+        type_id = (str(raw_type).strip() if raw_type is not None else "") or None
+        type_fields = {
+            "type": type_id,
+            "typeName": task_types.get(type_id, type_id) if type_id else None,
+        }
         try:
             deadline_date = datetime.strptime(raw_deadline, "%Y-%m-%d").date()
         except ValueError:
@@ -293,6 +300,7 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
                     "deadline": raw_deadline,
                     "daysLeft": None,
                     "status": "invalid",
+                    **type_fields,
                 }
             )
             continue
@@ -302,6 +310,7 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
                 "deadline": deadline_date.isoformat(),
                 "daysLeft": (deadline_date - current_date).days,
                 "status": _deadline_status(deadline_date, current_date),
+                **type_fields,
             }
         )
     return rows
@@ -535,21 +544,36 @@ def task_delete(payload: dict[str, Any]) -> dict[str, Any]:
     return {"description": description, "deleted": len(deleted)}
 
 
+def _apply_deadline_type(item: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Keep legacy deadlines untyped and preserve types omitted by older clients."""
+    if "type" not in payload:
+        return
+    raw_type = payload.get("type")
+    type_id = str(raw_type).strip() if raw_type is not None else ""
+    if type_id and type_id not in _load_task_types() and type_id != str(item.get("type")):
+        raise WebError("invalid_input", f"unknown deadline type: {type_id}")
+    if type_id:
+        item["type"] = type_id
+    else:
+        item.pop("type", None)
+
+
 def deadline_add(payload: dict[str, Any]) -> dict[str, Any]:
     event = _require_text(payload, "event")
     deadline = _parse_deadline_date(_require_text(payload, "date"))
     deadlines = load_deadlines()
-    new_deadline = {
-        "event": event,
-        "deadline": deadline,
-        "added": datetime.now(timezone.utc).isoformat(),
-    }
-
     existing_index = None
     for index, item in enumerate(deadlines):
         if item.get("event") == event:
             existing_index = index
             break
+    new_deadline = {
+        **(deadlines[existing_index] if existing_index is not None else {}),
+        "event": event,
+        "deadline": deadline,
+        "added": datetime.now(timezone.utc).isoformat(),
+    }
+    _apply_deadline_type(new_deadline, payload)
     if existing_index is None:
         deadlines.append(new_deadline)
     else:
@@ -571,10 +595,12 @@ def deadline_update(payload: dict[str, Any]) -> dict[str, Any]:
     for index, item in enumerate(deadlines):
         if item.get("event") == original_event:
             updated = {
+                **item,
                 "event": event,
                 "deadline": deadline,
                 "added": str(item.get("added") or datetime.now(timezone.utc).isoformat()),
             }
+            _apply_deadline_type(updated, payload)
             deadlines[index] = updated
             _save_deadlines_or_error(deadlines)
             return updated

@@ -36,6 +36,8 @@ export type DeadlineItem = {
   deadline: string;
   daysLeft: number | null;
   status: string;
+  type: string | null;
+  typeName: string | null;
 };
 
 export type HabitItem = {

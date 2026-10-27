@@ -108,6 +108,87 @@ def test_deadline_add_accepts_iso_date(tmp_path, monkeypatch):
     assert json.loads(deadlines_path.read_text(encoding="utf-8"))[0]["event"] == "Submit paper"
 
 
+def test_deadline_type_round_trip_and_legacy_updates(tmp_path, monkeypatch):
+    from schedule_management.web import services
+
+    deadlines_path = tmp_path / "ddl.json"
+    deadlines_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr("schedule_management.data.loaders.DDL_PATH", str(deadlines_path))
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work", "2": "Personal"})
+
+    created = services.deadline_add({"event": "Submit paper", "date": "2026-10-27", "type": "1"})
+    assert created["type"] == "1"
+    assert json.loads(deadlines_path.read_text())[0]["type"] == "1"
+
+    updated = services.deadline_update(
+        {"originalEvent": "Submit paper", "event": "Submit draft", "date": "2026-10-28", "type": "2"}
+    )
+    assert updated["type"] == "2"
+    assert updated["added"] == created["added"]
+
+    # Existing callers can still change dates without supplying a type.
+    services.deadline_update(
+        {"originalEvent": "Submit draft", "event": "Submit draft", "date": "2026-10-29"}
+    )
+    services.deadline_add({"event": "Submit draft", "date": "2026-10-30"})
+    assert json.loads(deadlines_path.read_text())[0]["type"] == "2"
+
+    services.deadline_update(
+        {"originalEvent": "Submit draft", "event": "Submit draft", "date": "2026-10-30", "type": ""}
+    )
+    assert "type" not in json.loads(deadlines_path.read_text())[0]
+
+
+@pytest.mark.parametrize("operation", ["add", "update"])
+def test_deadline_rejects_unknown_type_without_writing(tmp_path, monkeypatch, operation):
+    from schedule_management.web import services
+
+    deadlines_path = tmp_path / "ddl.json"
+    original = json.dumps([{"event": "Submit paper", "deadline": "2026-10-27", "type": "1"}])
+    deadlines_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr("schedule_management.data.loaders.DDL_PATH", str(deadlines_path))
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work"})
+    handler = services.deadline_add if operation == "add" else services.deadline_update
+    with pytest.raises(services.WebError, match="unknown deadline type") as exc_info:
+        handler({"originalEvent": "Submit paper", "event": "Submit paper", "date": "2026-10-28", "type": "99"})
+    assert exc_info.value.code == "invalid_input"
+    assert deadlines_path.read_text() == original
+
+
+def test_deadline_update_preserves_removed_type(tmp_path, monkeypatch):
+    from schedule_management.web import services
+
+    deadlines_path = tmp_path / "ddl.json"
+    deadlines_path.write_text(
+        json.dumps([{"event": "Legacy deadline", "deadline": "2026-10-27", "type": "99"}]), encoding="utf-8"
+    )
+    monkeypatch.setattr("schedule_management.data.loaders.DDL_PATH", str(deadlines_path))
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work"})
+    updated = services.deadline_update(
+        {"originalEvent": "Legacy deadline", "event": "Renamed deadline", "date": "2026-10-28", "type": "99"}
+    )
+    assert updated["type"] == "99"
+
+
+def test_deadline_snapshot_types_and_urgency_are_deterministic(monkeypatch):
+    from schedule_management.web import services
+
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work"})
+    monkeypatch.setattr(services, "load_deadlines", lambda: [
+        {"event": "Typed", "deadline": "2026-10-27", "type": "1"},
+        {"event": "Legacy", "deadline": "2026-10-26"},
+        {"event": "Removed type", "deadline": "2026-10-25", "type": "99"},
+        {"event": "Bad date", "deadline": "invalid", "type": "1"},
+    ])
+    rows = {row["event"]: row for row in services._deadline_rows(date(2026, 10, 26))}
+    assert (rows["Typed"]["type"], rows["Typed"]["typeName"], rows["Typed"]["daysLeft"], rows["Typed"]["status"]) == ("1", "Work", 1, "urgent")
+    assert rows["Legacy"]["type"] is None
+    assert rows["Legacy"]["typeName"] is None
+    assert rows["Legacy"]["status"] == "today"
+    assert (rows["Removed type"]["typeName"], rows["Removed type"]["status"]) == ("99", "overdue")
+    assert (rows["Bad date"]["typeName"], rows["Bad date"]["status"]) == ("Work", "invalid")
+
+
 def test_deadline_delete_reports_missing_event(tmp_path, monkeypatch):
     from schedule_management.web.services import WebError, deadline_delete
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { groupTasks, renderApp } from "./render";
 import type { BridgeClient, Snapshot } from "./types";
 
@@ -8,7 +8,7 @@ const snapshot: Snapshot = {
   schedule:{isSkipped:false,current:'Write proposal',next:'Break',timeToNext:'15m',events:[{time:'09:00',label:'Write proposal',block:'pomodoro',syncable:true}],hasSyncedOverlay:true},
   taskTypes:{'1':'Coding','2':'Writing','3':'Reading'},
   tasks:[{description:'Write notes',priority:10,type:'2',typeName:'Writing',alarmFrom:null,procrastinated:false,procrastinateDays:null},...Array.from({length:12},(_,i)=>({description:`Task ${i}`,priority:9-i%5,type:'1',typeName:'Coding',alarmFrom:null,procrastinated:false,procrastinateDays:null})),{description:'Read paper',priority:5,type:'3',typeName:'Reading',alarmFrom:'2026-10-07',procrastinated:true,procrastinateDays:2}],
-  deadlines:[{event:'Conference',deadline:'2026-10-06',daysLeft:1,status:'urgent'}],
+  deadlines:[{event:'Conference',deadline:'2026-10-06',daysLeft:1,status:'urgent',type:'2',typeName:'Writing'}],
   habits:[{id:'1',description:'Exercise',completed:false}],history:[]
 };
 let root: HTMLElement;
@@ -18,11 +18,16 @@ const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
 const click=(selector:string)=>root.querySelector<HTMLButtonElement>(selector)!.click();
 beforeEach(()=>{
   document.body.innerHTML='<div id="app"></div>';root=document.querySelector('#app')!;
+  window.localStorage.clear();
+  delete document.documentElement.dataset.theme;
+  delete document.documentElement.dataset.themePreference;
+  vi.stubGlobal('matchMedia',vi.fn(()=>({matches:false,addEventListener:vi.fn()})));
   HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
   HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   send=vi.fn(async(command:string)=>command==='status_snapshot'?structuredClone(snapshot):command==='workspace_info'?{configIds:[0,1],activeId:0,mode:'j',rootDir:'/local/config'}:{});
   client={send}; vi.spyOn(window,'confirm').mockReturnValue(true);
 });
+afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('browser workspace',()=>{
   it('groups all tasks by type without truncating or changing importance order',async()=>{
     const groups=groupTasks(snapshot);expect(groups.map(g=>g.name)).toEqual(['Coding','Writing','Reading']);expect(groups[0].tasks).toHaveLength(12);expect(groups[0].tasks[0].priority).toBe(9);
@@ -45,6 +50,90 @@ describe('browser workspace',()=>{
   it('opens and saves configuration with a revision',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:{file:'settings',content:'[settings]',revision:'r1',activeId:0,message:'Saved'});await renderApp(root,client);click('[data-page="settings"]');click('[data-action="open-config"]');await flush();expect(root.querySelector('[name="configContent"]')).not.toBeNull();click('[data-action="config-save"]');await flush();expect(send).toHaveBeenCalledWith('config_save',expect.objectContaining({revision:'r1',activeId:0,content:'[settings]'}));});
   it('reviews sync proposals before applying them',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:command==='sync_generate'?{summary:'A focused day',plan:{target_date:'2026-10-05',parity:'even',weekday:'monday',assignments:{}},preview:[]}:{});await renderApp(root,client);click('[data-page="schedule"]');click('[data-action="sync-generate"]');await flush();expect(send).not.toHaveBeenCalledWith('sync_accept',expect.anything());click('[data-action="sync-accept"]');await flush();expect(send).toHaveBeenCalledWith('sync_accept',expect.objectContaining({plan:expect.anything()}));});
   it('conducts schedule conversations and confirms summaries',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:command==='setup_turn'?{sessionId:'session-1',phase:'summary',conversation:'Your routine',question_to_user:'Ready?',schedule_summary:'Work 9–5',profile_markdown:null,bundle:null}:{});await renderApp(root,client);click('[data-page="schedule"]');root.querySelector<HTMLTextAreaElement>('[name="message"]')!.value='I work 9 to 5';root.querySelector('#setup-form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();expect(root.textContent).toContain('Work 9–5');click('[data-action="setup-confirm"]');await flush();expect(send).toHaveBeenCalledWith('setup_turn',expect.objectContaining({sessionId:'session-1',confirmSummary:true}));});
+
+  it('adds a deadline with a shared task type',async()=>{
+    await renderApp(root,client);click('[data-action="add-deadline"]');await flush();
+    root.querySelector<HTMLInputElement>('[name="event"]')!.value='Submit draft';
+    root.querySelector<HTMLInputElement>('[name="date"]')!.value='2026-10-10';
+    root.querySelector<HTMLSelectElement>('[name="type"]')!.value='2';
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();
+    expect(send).toHaveBeenCalledWith('deadline_add',expect.objectContaining({event:'Submit draft',date:'2026-10-10',type:'2'}));
+  });
+
+  it('shows deadline categories on both pages and keeps the selected type when editing',async()=>{
+    await renderApp(root,client);
+    expect(root.querySelector('.deadline-list .type-badge')?.textContent).toBe('Writing');
+    click('[data-page="routines"]');
+    expect(root.querySelector('.deadline-list .type-badge')?.textContent).toBe('Writing');
+    click('[data-deadline="0"][data-operation="edit"]');
+    expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('2');
+    root.querySelector<HTMLInputElement>('[name="event"]')!.value='Conference draft';
+    root.querySelector('dialog form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();
+    expect(send).toHaveBeenCalledWith('deadline_update',expect.objectContaining({event:'Conference draft',originalEvent:'Conference',type:'2'}));
+  });
+
+  it('supports uncategorized deadlines and preserves unavailable categories',async()=>{
+    const data=structuredClone(snapshot);
+    data.deadlines[0].type=null;data.deadlines[0].typeName=null;
+    send.mockImplementation(async(command:string)=>command==='status_snapshot'?data:{});
+    await renderApp(root,client);
+    expect(root.querySelector('.type-badge')?.textContent).toBe('Uncategorized');
+    click('[data-deadline="0"][data-operation="edit"]');
+    expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('');
+    data.deadlines[0].type='99';data.deadlines[0].typeName='Retired category';
+    await renderApp(root,client);click('[data-deadline="0"][data-operation="edit"]');
+    expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('99');
+  });
+
+  it('prioritizes deadlines without changing edit targets and shows all of them on the routines page',async()=>{
+    const data=structuredClone(snapshot);
+    data.deadlines=[7,-1,0,2].map((days,i)=>({event:`Deadline ${i}`,deadline:'2026-10-05',daysLeft:days,status:days<0?'overdue':days===0?'today':'soon',type:null,typeName:null}));
+    send.mockImplementation(async(command:string)=>command==='status_snapshot'?data:{});
+    await renderApp(root,client);
+    expect([...root.querySelectorAll('.deadline-list strong')].map(el=>el.textContent)).toEqual(['Deadline 1','Deadline 2','Deadline 3']);
+    expect(root.querySelector('[data-metric="overdue"] .status-value')?.textContent).toBe('1');
+    expect(root.querySelector('[data-metric="today"] .status-value')?.textContent).toBe('1');
+    click('[data-deadline="1"][data-operation="edit"]');
+    expect(root.querySelector<HTMLInputElement>('[name="event"]')!.value).toBe('Deadline 1');
+    root.querySelector('dialog')!.remove();click('[data-page="routines"]');
+    expect(root.querySelectorAll('.deadline-list li')).toHaveLength(4);
+  });
+
+  it('excludes postponed tasks from ready high-importance counts and keeps category colors stable during search',async()=>{
+    const data=structuredClone(snapshot);data.tasks[0].alarmFrom='2026-10-06';
+    send.mockImplementation(async(command:string)=>command==='status_snapshot'?data:{});
+    await renderApp(root,client);
+    const ready=data.tasks.filter(task=>task.priority>=8&&!task.alarmFrom).length;
+    expect(root.querySelector('[data-metric="priority"] .status-value')?.textContent).toBe(String(ready));
+    expect(root.querySelector('.status-danger')).toBeNull();
+    const group=[...root.querySelectorAll('.task-group')].find(el=>el.querySelector('h3')?.textContent==='Reading')!;
+    const originalClass=group.className;
+    const search=root.querySelector<HTMLInputElement>('[name="search"]')!;search.value='Read paper';search.dispatchEvent(new Event('input'));
+    expect(root.querySelector('.task-group')?.className).toBe(originalClass);
+  });
+
+  it('follows system appearance by default and remembers explicit theme choices',async()=>{
+    vi.stubGlobal('matchMedia',vi.fn(()=>({matches:true,addEventListener:vi.fn()})));
+    await renderApp(root,client);
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(root.querySelector('[data-theme-choice="system"]')?.getAttribute('aria-pressed')).toBe('true');
+    click('[data-theme-choice="light"]');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(window.localStorage.getItem('schedule-everything-theme')).toBe('light');
+    delete document.documentElement.dataset.themePreference;
+    await renderApp(root,client);
+    expect(root.querySelector('[data-theme-choice="light"]')?.getAttribute('aria-pressed')).toBe('true');
+    click('[data-theme-choice="dark"]');click('[data-page="activity"]');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+  });
+
+  it('switches themes without discarding unsaved form contents',async()=>{
+    await renderApp(root,client);click('[data-page="schedule"]');
+    const message=root.querySelector<HTMLTextAreaElement>('[name="message"]')!;message.value='An unsaved schedule request';
+    click('[data-theme-choice="dark"]');
+    expect(root.querySelector('[name="message"]')).toBe(message);
+    expect(message.value).toBe('An unsaved schedule request');
+  });
 });
 
 it('loads all task history on request',async()=>{

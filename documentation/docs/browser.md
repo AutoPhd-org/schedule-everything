@@ -20,11 +20,31 @@ browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | Search all tasks grouped by task type; add, edit, postpone, complete, cancel, or drop tasks |
+| Overview | See overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, and nearest deadlines; search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; generate, revise, discard, and accept sync proposals; build or modify a weekly schedule through a conversation; download the schedule PDF |
-| Routines & deadlines | Record today's habits; add, edit, and remove deadlines |
+| Routines & deadlines | Record today's habits; add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Review recent or all task outcomes; download weekly or monthly productivity reports |
-| Settings | Edit task types, TOML schedules, habits, profile, and optional model settings; switch schedule versions and modes; reload or stop reminders |
+| Settings | Edit shared task/deadline types, TOML schedules, habits, profile, and optional model settings; switch schedule versions and modes; reload or stop reminders |
+
+## Reading your day
+
+The overview puts overdue deadlines, deadlines due today, available tasks with
+importance 8–10, and habit completion at the top. Postponed tasks do not count as
+available until their reminder date. Red identifies overdue or invalid deadlines,
+amber identifies deadlines due today or within three days, and blue highlights
+high-importance tasks. Each status also has a text label. The current and next
+schedule blocks appear beside the three nearest deadlines; open **Routines &
+deadlines** to see every deadline.
+
+Deadlines can use any type configured under **Settings → Task & deadline
+types**. Choose the type in the add/edit dialog; its name appears beside the
+deadline date in both views. Existing deadlines remain **Uncategorized** until
+you assign a type. Editing just the event or date preserves its category.
+
+Use the sun (**Light**), moon (**Dark**), or monitor (**System**) buttons in the
+header to change appearance on any page. System is the default and follows
+changes to your operating system's appearance. An explicit choice persists in
+this browser, and switching themes preserves any form you are editing.
 
 Tasks preserve their importance (1–10), type, postponed reminder date, and
 procrastination status. The board groups the same tasks returned by `rmd ls`

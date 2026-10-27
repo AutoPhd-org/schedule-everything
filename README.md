@@ -114,6 +114,12 @@ completion/cancellation, deadlines, habit checks, AI schedule conversations,
 sync proposal review, configuration editing, mode and schedule switching,
 reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
 postponement, and procrastination details preserved. All tasks are shown.
+Deadlines use the same types as tasks, with a category selector when adding or
+editing a deadline. The overview highlights overdue deadlines, deadlines due
+today, available high-importance tasks, and habit progress alongside your current
+schedule block and nearest deadlines. Use the sun, moon, or monitor controls in
+the header for light, dark, or system appearance; your choice is remembered in
+this browser.
 
 Launching again reuses an open workspace tab. The app asks the browser to bring
 it forward; browser focus permissions can prevent it from becoming the active
