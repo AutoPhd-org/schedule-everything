@@ -38,6 +38,7 @@ export type DeadlineItem = {
   status: string;
   type: string | null;
   typeName: string | null;
+  color?: string | null;
 };
 
 export type HabitItem = {
@@ -53,7 +54,59 @@ export type HistoryItem = {
   endedAt: string;
   status?: string;
   duration: string;
+  type?: string;
+  typeName?: string;
 };
+
+export type WeekStats = {
+  weekStart: string;
+  active: boolean;
+  completed: number;
+  cancelled: number;
+  dropped: number;
+  added: number;
+  habitRate: number | null;
+  avgPriority: number | null;
+  medianLeadHours: number | null;
+  byType: Record<string, number>;
+};
+
+export type WeekBaseline = Omit<WeekStats, "weekStart" | "active" | "completed" | "cancelled" | "dropped" | "added"> & {
+  weeks: number;
+  completed: number | null;
+  cancelled: number | null;
+  dropped: number | null;
+  added: number | null;
+};
+
+export type WeekDay = {
+  date: string;
+  completed: number;
+  byType: Record<string, number>;
+  habitsDone: number;
+  habitsTotal: number;
+  future: boolean;
+};
+
+export type WeeklyOverview = {
+  weekStart: string;
+  weekEnd: string;
+  today: string;
+  isCurrentWeek: boolean;
+  firstActivity: string | null;
+  taskTypes: Record<string, string>;
+  current: WeekStats;
+  previous: WeekStats;
+  baseline: WeekBaseline;
+  trend: WeekStats[];
+  days: WeekDay[];
+  previousDays: WeekDay[];
+  habits: {id: string; description: string; days: (boolean | null)[]; rate: number | null; previousRate: number | null}[];
+  streak: number;
+  highlights: {description: string; priority: number; type: string; endedAt: string}[];
+};
+
+export type Workspace = {configIds: number[]; activeId: number; rootDir: string; mode: string};
 
 export type Snapshot = {
   config: {

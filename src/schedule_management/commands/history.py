@@ -36,6 +36,19 @@ from schedule_management.data import load_task_log
 # =============================================================================
 
 
+def parse_log_timestamp(value: Any) -> datetime | None:
+    """Parse a task-log timestamp as a naive local datetime.
+
+    The task log stores UTC timestamps; converting them keeps day boundaries
+    aligned with the user's calendar. Naive legacy timestamps are kept as-is.
+    """
+    try:
+        ts = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+    return ts.astimezone().replace(tzinfo=None) if ts.tzinfo else ts
+
+
 def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Pair 'added' log entries with their closing action into activities.
@@ -47,8 +60,9 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
 
     Returns:
         List of activity dicts with keys: description, priority,
-        started_at (datetime), ended_at (datetime), and status
-        ('completed' | 'cancelled' | 'dropped').
+        started_at (datetime), ended_at (datetime), status
+        ('completed' | 'cancelled' | 'dropped'), and type (task type ID or
+        None for legacy entries). Times are naive local datetimes.
         Sorted by ended_at ascending.
     """
     open_adds: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -66,18 +80,15 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
         if not description:
             continue
 
-        ts_str = entry.get("timestamp", "")
-        try:
-            ts = datetime.fromisoformat(ts_str)
-            if ts.tzinfo:
-                ts = ts.replace(tzinfo=None)
-        except (ValueError, TypeError):
+        ts = parse_log_timestamp(entry.get("timestamp", ""))
+        if ts is None:
             continue
 
         if action == "added":
             open_adds[description].append({
                 "started_at": ts,
                 "priority": task.get("priority", 0),
+                "type": task.get("type"),
             })
 
         elif action == "updated":
@@ -86,6 +97,9 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
             old_description = old_task.get("description") if isinstance(old_task, dict) else None
             if old_description and old_description != description:
                 open_adds[description].extend(open_adds.pop(old_description, []))
+            if task.get("type") is not None:
+                for record in open_adds[description]:
+                    record["type"] = task["type"]
 
         elif action in ("deleted", "cancelled", "dropped"):
             if open_adds[description]:
@@ -96,6 +110,7 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
                     "started_at": add_record["started_at"],
                     "ended_at": ts,
                     "status": "completed" if action == "deleted" else action,
+                    "type": add_record.get("type"),
                 })
 
     activities.sort(key=lambda a: a["ended_at"])

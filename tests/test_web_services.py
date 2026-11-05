@@ -312,3 +312,53 @@ def test_task_add_wraps_save_failure(monkeypatch):
 
     assert exc_info.value.code == "storage_error"
     assert "failed to save tasks" in exc_info.value.message
+
+
+def test_deadline_colors_round_trip_and_validate(tmp_path, monkeypatch):
+    from schedule_management.web import services
+
+    deadlines_path = tmp_path / "ddl.json"
+    deadlines_path.write_text("[]", encoding="utf-8")
+    monkeypatch.setattr("schedule_management.data.loaders.DDL_PATH", str(deadlines_path))
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work"})
+
+    created = services.deadline_add({"event": "Launch", "date": "2026-11-20", "color": "Orange"})
+    assert created["color"] == "orange"
+    # Moving a deadline (as the calendar drag does) keeps its color.
+    services.deadline_update({"originalEvent": "Launch", "event": "Launch", "date": "2026-11-21"})
+    assert json.loads(deadlines_path.read_text())[0]["color"] == "orange"
+
+    before = deadlines_path.read_text()
+    with pytest.raises(services.WebError, match="unknown deadline color"):
+        services.deadline_update({"originalEvent": "Launch", "event": "Launch", "date": "2026-11-21", "color": "url(x)"})
+    assert deadlines_path.read_text() == before
+
+    services.deadline_update({"originalEvent": "Launch", "event": "Launch", "date": "2026-11-21", "color": ""})
+    assert "color" not in json.loads(deadlines_path.read_text())[0]
+
+    monkeypatch.setattr(services, "load_deadlines", lambda: [
+        {"event": "Marked", "deadline": "2026-11-21", "color": "violet"},
+        {"event": "Tampered", "deadline": "2026-11-22", "color": "<b>"},
+    ])
+    rows = {row["event"]: row for row in services._deadline_rows(date(2026, 11, 4))}
+    assert rows["Marked"]["color"] == "violet"
+    assert rows["Tampered"]["color"] is None
+
+
+def test_history_rows_include_task_types(monkeypatch):
+    from schedule_management.web import services
+
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work", "2": "Study"})
+    monkeypatch.setattr(services, "load_task_log", lambda: [
+        {"action": "added", "timestamp": "2026-10-05T09:00:00", "task": {"description": "Typed", "priority": 6, "type": "2"}},
+        {"action": "deleted", "timestamp": "2026-10-05T10:00:00", "task": {"description": "Typed", "priority": 6, "type": "2"}},
+        {"action": "added", "timestamp": "2026-10-05T09:00:00", "task": {"description": "Legacy", "priority": 3}},
+        {"action": "dropped", "timestamp": "2026-10-05T11:00:00", "task": {"description": "Legacy", "priority": 3}},
+    ])
+
+    rows = services.task_history({"all": True})["activities"]
+
+    assert [(row["description"], row["type"], row["typeName"], row["status"]) for row in rows] == [
+        ("Legacy", "1", "Work", "dropped"),
+        ("Typed", "2", "Study", "completed"),
+    ]

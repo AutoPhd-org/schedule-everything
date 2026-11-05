@@ -20,18 +20,78 @@ browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | See overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, and nearest deadlines; search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
+| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; generate, revise, discard, and accept sync proposals; build or modify a weekly schedule through a conversation; download the schedule PDF |
-| Routines & deadlines | Record today's habits; add, edit, and remove deadlines with shared task types and urgency labels |
-| Activity | Review recent or all task outcomes; download weekly or monthly productivity reports |
+| Routines & deadlines | Record today's habits; plan deadlines on an interactive year calendar (click a day to add, choose a marker color, drag to reschedule); add, edit, and remove deadlines with shared task types and urgency labels |
+| Activity | Browse a gallery of completed, cancelled, and dropped tasks with filters, search, and a daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
 | Settings | Edit shared task/deadline types, TOML schedules, habits, profile, and optional model settings; switch schedule versions and modes; reload or stop reminders |
+
+## J mode and P mode
+
+The **J / P** toggle in the header (or `rmd mode j|p`) switches modes for the
+reminder service and the browser together. J mode is the structured day: the
+overview shows status counts, the current and next schedule blocks, upcoming
+deadlines, the task board, and today's timeline. P mode is flexible and
+task-first: the overview keeps only the tasks-by-type board, laid out as a loose
+collage, and the workspace uses a warmer palette. Other pages are the same in
+both modes.
+
+## Year calendar
+
+**Routines & deadlines** opens with a calendar for the current year. Days with
+deadlines are tinted with the deadline's marker color; a day with several
+deadlines shows a dot for each. Use the arrows to change year and **Today** to
+return.
+
+- Click a day to open its card. Name a deadline, pick a color and type, and
+  choose **Add**. Past days are read-only.
+- In a day's card, click a color swatch beside a deadline to recolor it (click
+  the active color again to go back to the type color), or edit or remove it.
+- Drag a chip from **Upcoming**, or a day that holds a single deadline, onto
+  another day to move the deadline. Its color and type are kept.
+- Click a color in the legend to highlight deadlines with that color.
+
+Marker colors are stored as a `color` field (`blue`, `orange`, `aqua`, `yellow`,
+`magenta`, `green`, `violet`, or `red`) in `ddl.json`. Deadlines without a color
+use their type's color. The add/edit dialog also has a color picker; **Auto**
+clears the color.
+
+## Activity gallery and weekly overview
+
+The gallery shows every finished task as a card with generated artwork in its
+type's color. More important completed tasks get larger cards; cancelled and
+dropped tasks get compact cards. Filter by outcome or type, search by name, sort
+by date, importance, or time to finish, or click a square in the rhythm grid to
+see one day. Open a card for when it was added and finished, how long it took,
+and how that compares with your other completed tasks. Use the arrows or
+arrow keys to move between cards.
+
+The weekly overview replaces the weekly and monthly PDF reports in the browser.
+Open it from the **Weekly overview** card and use the arrows to move between
+weeks. It compares the week with the previous week and with the average of up
+to four earlier weeks that have recorded activity:
+
+- tasks completed, with an eight-week trend
+- habit consistency (this week and last week as nested rings) and a habit
+  check-in grid
+- a streak of consecutive days with a completed task
+- completed tasks per day by type, with last week shown as outlines
+- completed tasks per type against your usual amount
+- how tasks left your list (completed, cancelled, dropped) and tasks added vs.
+  closed
+- median time from adding a task to completing it, and the average importance
+  of completed tasks
+- the most important tasks you finished
+
+Days follow your computer's local time zone. The CLI still generates weekly and
+monthly PDF reports.
 
 ## Reading your day
 
-The overview puts overdue deadlines, deadlines due today, available tasks with
+In J mode, the overview puts overdue deadlines, deadlines due today, available tasks with
 importance 8–10, and habit completion at the top. Postponed tasks do not count as
 available until their reminder date. Red identifies overdue or invalid deadlines,
-amber identifies deadlines due today or within three days, and blue highlights
+amber identifies deadlines due today or within three days, and the accent color highlights
 high-importance tasks. Each status also has a text label. The current and next
 schedule blocks appear beside the three nearest deadlines; open **Routines &
 deadlines** to see every deadline.

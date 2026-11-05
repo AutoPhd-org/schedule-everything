@@ -135,8 +135,3 @@ describe('browser workspace',()=>{
     expect(message.value).toBe('An unsaved schedule request');
   });
 });
-
-it('loads all task history on request',async()=>{
-  send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:command==='task_history'?{activities:[{description:'Older task',priority:6,startedAt:'2026-09-01T09:00:00',endedAt:'2026-09-01T11:00:00',duration:'2 hours',status:'completed'}]}:{});
-  await renderApp(root,client);click('[data-page="activity"]');const select=root.querySelector<HTMLSelectElement>('[name="historyCount"]')!;select.value='0';select.dispatchEvent(new Event('change'));await flush();expect(send).toHaveBeenCalledWith('task_history',{all:true});expect(root.textContent).toContain('Older task');
-});
