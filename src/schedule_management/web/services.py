@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from schedule_management.commands import status as status_commands
-from schedule_management.commands.deadlines import prune_expired_deadlines
+from schedule_management.commands.deadlines import refresh_deadlines
 from schedule_management.commands.history import _format_duration, _pair_task_activities
 from schedule_management.commands.settings import DEFAULT_TASK_TYPES
 from schedule_management.commands.status import (
@@ -20,6 +20,7 @@ from schedule_management.commands.status import (
     get_today_schedule_for_status,
 )
 from schedule_management.config import ScheduleConfig
+from schedule_management.recurrence import REPEAT_RULES, anchor_day, repeat_rule
 from schedule_management.config_layout import (
     RuntimePaths,
     preview_active_config_dir,
@@ -282,8 +283,8 @@ def _deadline_status(deadline_date: date, current_date: date) -> str:
 
 
 def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
-    deadlines, removed = prune_expired_deadlines(load_deadlines(), today=current_date)
-    if removed:
+    deadlines, _removed, changed = refresh_deadlines(load_deadlines(), today=current_date)
+    if changed:
         _save_deadlines_or_error(deadlines)
 
     task_types = _load_task_types()
@@ -296,10 +297,13 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
         raw_type = item.get("type")
         type_id = (str(raw_type).strip() if raw_type is not None else "") or None
         raw_color = str(item.get("color") or "").strip().lower()
+        rule = repeat_rule(item)
         type_fields = {
             "type": type_id,
             "typeName": task_types.get(type_id, type_id) if type_id else None,
             "color": raw_color if raw_color in DEADLINE_COLORS else None,
+            "repeat": rule,
+            "repeatDay": None,
         }
         try:
             deadline_date = datetime.strptime(raw_deadline, "%Y-%m-%d").date()
@@ -314,6 +318,8 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
                 }
             )
             continue
+        if rule == "monthly":
+            type_fields["repeatDay"] = anchor_day(item, deadline_date)
         rows.append(
             {
                 "event": event,
@@ -582,6 +588,31 @@ def _apply_deadline_color(item: dict[str, Any], payload: dict[str, Any]) -> None
         item.pop("color", None)
 
 
+def _apply_deadline_repeat(item: dict[str, Any], payload: dict[str, Any], previous_deadline: Any) -> None:
+    """Set, clear, or keep a deadline's repeat rule; omitted rules stay unchanged.
+
+    A monthly deadline remembers the day of the month the user picked
+    (`repeat_day`) and updates it only when the user chooses a new date, so
+    rolling past a short month does not drift the day.
+    """
+    if "repeat" in payload:
+        raw_rule = payload.get("repeat")
+        rule = str(raw_rule).strip().lower() if raw_rule is not None else ""
+        if rule and rule not in REPEAT_RULES:
+            raise WebError("invalid_input", f"unknown repeat rule: {rule}")
+        if rule:
+            if item.get("repeat") != rule:
+                item.pop("repeat_day", None)
+            item["repeat"] = rule
+        else:
+            item.pop("repeat", None)
+    if item.get("repeat") == "monthly":
+        if item["deadline"] != previous_deadline or "repeat_day" not in item:
+            item["repeat_day"] = date.fromisoformat(item["deadline"]).day
+    else:
+        item.pop("repeat_day", None)
+
+
 def deadline_add(payload: dict[str, Any]) -> dict[str, Any]:
     event = _require_text(payload, "event")
     deadline = _parse_deadline_date(_require_text(payload, "date"))
@@ -599,6 +630,7 @@ def deadline_add(payload: dict[str, Any]) -> dict[str, Any]:
     }
     _apply_deadline_type(new_deadline, payload)
     _apply_deadline_color(new_deadline, payload)
+    _apply_deadline_repeat(new_deadline, payload, deadlines[existing_index].get("deadline") if existing_index is not None else None)
     if existing_index is None:
         deadlines.append(new_deadline)
     else:
@@ -627,6 +659,7 @@ def deadline_update(payload: dict[str, Any]) -> dict[str, Any]:
             }
             _apply_deadline_type(updated, payload)
             _apply_deadline_color(updated, payload)
+            _apply_deadline_repeat(updated, payload, item.get("deadline"))
             deadlines[index] = updated
             _save_deadlines_or_error(deadlines)
             return updated

@@ -40,7 +40,7 @@ from schedule_management import (
 )
 from schedule_management.config import ScheduleConfig, WeeklySchedule
 from schedule_management.i18n import _t
-from schedule_management.commands.deadlines import prune_expired_deadlines
+from schedule_management.commands.deadlines import refresh_deadlines
 from schedule_management.synced_schedule import apply_synced_schedule
 from schedule_management.time_utils import add_minutes_to_time, alarm, get_week_parity
 from schedule_management.platform import ask_yes_no
@@ -418,8 +418,8 @@ class ScheduleRunner:
             return []
 
         today = datetime.now().date()
-        deadlines, removed_deadlines = prune_expired_deadlines(deadlines, today=today)
-        if removed_deadlines:
+        deadlines, _removed, changed = refresh_deadlines(deadlines, today=today)
+        if changed:
             try:
                 with open(DDL_PATH, "w", encoding="utf-8") as f:
                     json.dump(deadlines, f, indent=2, ensure_ascii=False)

@@ -148,7 +148,7 @@ rmd web
   <img src="documentation/static/img/screens/calendar.webp" alt="可交互的年历：彩色的截止日期、打开的 11 月 21 日卡片，以及可拖动的即将到来的截止日期" width="82%">
 </p>
 
-**Routines & deadlines** 把所有截止日期放在年历上。点击某一天即可添加，为它选择八种标记颜色之一，在日期卡片中改色或编辑，把右侧的卡片拖到另一天即可改期。今日习惯也在这个页面。
+**Routines & deadlines** 把所有截止日期放在年历上。点击某一天即可添加，可设为每周、每两周或每月重复，为它选择八种标记颜色之一，在日期卡片中改色或编辑，把右侧的卡片拖到另一天即可改期。重复事件会显示每一次的日期，并自动顺延到下一次。今日习惯也在这个页面。
 
 ### 积少成多
 
@@ -215,7 +215,7 @@ rmd web
 | `rmd add "任务" 8 [类型] [天数]` | 添加重要度 1–10 的任务，可选类型和延后提醒天数 |
 | `rmd ls` · `rmd rm` · `rmd cancel` · `rmd drop` | 列出任务；完成任务（计为已完成），或作为误加、放弃移除 |
 | `rmd history [n]` | 最近完成、取消和放弃的任务 |
-| `rmd ddl` · `rmd ddl add <事件> <月.日>` · `rmd ddl rm` | 管理截止日期 |
+| `rmd ddl` · `rmd ddl add <事件> <月.日> [--repeat weekly\|biweekly\|monthly]` · `rmd ddl rm` | 管理截止日期，包括重复事件 |
 | `rmd track` | 记录今天的习惯 |
 | `rmd sync [--json \| --apply FILE \| --clear]` | 显示今天的专注块和计划；`plan-day` 使用 `--json` 和 `--apply` |
 | `rmd check [--dir DIR] [--json]` | 校验配置目录并给出路径 |

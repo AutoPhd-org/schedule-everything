@@ -1,7 +1,7 @@
 // Shared markup helpers, icons, and color assignments for the browser workspace.
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
-  ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck, Clock3, Copy, Feather, Flag, Flame,
+  ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck, Clock3, Copy, Feather, Repeat, Flag, Flame,
   GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon, Palette, Pencil, Plus, RefreshCw, Search,
   Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TrendingDown, TrendingUp, Trophy, X, Zap
 } from "lucide";
@@ -25,7 +25,7 @@ export const icons = {
   light: icon(Sun), dark: icon(Moon), system: icon(Monitor), flame: icon(Flame), up: icon(TrendingUp), down: icon(TrendingDown),
   ban: icon(Ban), dropped: icon(ArrowDownRight), trophy: icon(Trophy), search: icon(Search), gallery: icon(GalleryHorizontalEnd),
   grip: icon(GripVertical), hourglass: icon(Hourglass), palette: icon(Palette), edit: icon(Pencil), trash: icon(Trash2),
-  flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy)
+  flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy), repeat: icon(Repeat)
 };
 
 /** Categorical hues in a fixed, colorblind-validated order (see styles.css for light and dark steps). */

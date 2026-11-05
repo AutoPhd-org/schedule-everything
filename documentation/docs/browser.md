@@ -32,7 +32,7 @@ files can be repaired in the browser.
 | --- | --- |
 | Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
-| Routines & deadlines | Record today's habits; plan deadlines on an interactive year calendar (click a day to add, choose a marker color, drag to reschedule); add, edit, and remove deadlines with shared task types and urgency labels |
+| Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Browse a gallery of completed, cancelled, and dropped tasks with filters, search, and a daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
 | Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
@@ -65,18 +65,27 @@ return.
   caption="Click a day to open its card; drag an Upcoming chip onto another day to move it."
 />
 
-- Click a day to open its card. Name a deadline, pick a color and type, and
-  choose **Add**. Past days are read-only.
+- Click a day to open its card. Name a deadline, pick a color, a type, and how
+  it repeats, and choose **Add**. Past days are read-only.
+- **Repeat** can be **Weekly**, **Every 2 weeks**, or **Monthly**. The calendar
+  shows every occurrence through the end of the year you are viewing: the next
+  one in full color, later ones lighter with a dashed ring. **Upcoming**, the
+  overview, and reminders use the next occurrence, and once it has passed the
+  deadline moves on to the following one instead of being removed. Change or
+  stop the repetition in the edit dialog.
 - In a day's card, click a color swatch beside a deadline to recolor it (click
   the active color again to go back to the type color), or edit or remove it.
 - Drag a chip from **Upcoming**, or a day that holds a single deadline, onto
-  another day to move the deadline. Its color and type are kept.
+  another day to move the deadline. Its color, type, and repetition are kept; a
+  repeating event continues from the new day.
 - Click a color in the legend to highlight deadlines with that color.
 
 Marker colors are stored as a `color` field (`blue`, `orange`, `aqua`, `yellow`,
 `magenta`, `green`, `violet`, or `red`) in `ddl.json`. Deadlines without a color
 use their type's color. The add/edit dialog also has a color picker; **Auto**
-clears the color.
+clears the color. Repeating events store `repeat` (`weekly`, `biweekly`, or
+`monthly`); monthly ones also store `repeat_day`, so an event on the 31st returns
+to the 31st after a shorter month.
 
 ## Activity gallery and weekly overview
 

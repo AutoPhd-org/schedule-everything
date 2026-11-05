@@ -27,6 +27,7 @@ except ImportError:
     sys.exit(1)
 
 from schedule_management import EVEN_PATH, ODD_PATH, SETTINGS_PATH
+from schedule_management.commands.deadlines import refresh_deadlines
 from schedule_management.config import ScheduleConfig, WeeklySchedule
 from schedule_management.data import (
     get_procrastinate_age_days,
@@ -109,7 +110,7 @@ def _open_tasks(today: date, task_types: dict[str, str]) -> list[dict[str, Any]]
 
 def _upcoming_deadlines(today: date) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for item in load_deadlines():
+    for item in refresh_deadlines(load_deadlines(), today)[0]:
         try:
             due = date.fromisoformat(str(item.get("deadline", "")))
         except ValueError:

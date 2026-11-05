@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from schedule_management.config_layout import get_next_config_id, list_config_ids, resolve_runtime_paths
+from schedule_management.recurrence import REPEAT_RULES
 
 CONFIG_FILES = {
     "settings": "settings.toml",
@@ -51,6 +52,8 @@ def validate_content(key: str, content: str) -> None:
                 raise ValueError("deadlines must be a list of event/deadline objects")
             for item in values:
                 date.fromisoformat(item["deadline"])
+                if item.get("repeat") not in (None, "", *REPEAT_RULES):
+                    raise ValueError("deadline repeat must be weekly, biweekly, or monthly")
         elif key != "profile":
             data = tomllib.loads(content)
             if key in {"odd", "even"}:

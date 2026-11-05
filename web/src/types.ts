@@ -33,7 +33,11 @@ export type DeadlineItem = {
   type: string | null;
   typeName: string | null;
   color?: string | null;
+  repeat?: RepeatRule | null;
+  repeatDay?: number | null;
 };
+
+export type RepeatRule = "weekly" | "biweekly" | "monthly";
 
 export type HabitItem = {
   id: string;
