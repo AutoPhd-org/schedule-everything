@@ -2,6 +2,8 @@
 
 A server owns one config root. SSE connections identify open browser tabs and
 carry activation requests; API mutations are serialized within this process.
+The server reports a fingerprint of its code so the launcher can replace it
+after an update; open tabs reconnect to the replacement on the same port.
 """
 from __future__ import annotations
 
@@ -17,8 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from schedule_management.web.api import dispatch
-from schedule_management.web.workspace import EXPORTS
+from schedule_management.web import TOKEN_ENV
+from schedule_management.web.fingerprint import code_fingerprint
+
+# Fingerprint before importing the API so an update that lands mid-startup
+# makes this server look stale rather than current.
+BUILD = code_fingerprint()
+
+from schedule_management.web.api import dispatch  # noqa: E402
+from schedule_management.web.workspace import EXPORTS  # noqa: E402
 
 STATIC_DIR = Path(__file__).with_name("static")
 MAX_BODY = 8 * 1024 * 1024
@@ -27,12 +36,13 @@ MAX_BODY = 8 * 1024 * 1024
 class BrowserServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, port: int = 0, token: str | None = None):
+    def __init__(self, port: int = 0, token: str | None = None, build: str = BUILD):
         self.tabs_lock = threading.Lock()
         self.tabs: set[queue.Queue] = set()
         self.closing = threading.Event()
         super().__init__(("127.0.0.1", port), BrowserHandler)
         self.token = token or secrets.token_urlsafe(32)
+        self.build = build
         self.origin = f"http://127.0.0.1:{self.server_port}"
         self.cookie_name = f"rmd_{self.server_port}"
         self.operation_lock = threading.RLock()
@@ -108,7 +118,9 @@ class BrowserHandler(BaseHTTPRequestHandler):
             if not self._authorized():
                 self._json(403, {"error": "Unauthorized."})
                 return
-            self._json(200, {"app": "schedule-everything", "pid": os.getpid()})
+            with self.server.tabs_lock:
+                tabs = len(self.server.tabs)
+            self._json(200, {"app": "schedule-everything", "pid": os.getpid(), "build": self.server.build, "tabs": tabs})
         elif path == "/events":
             if not self._authorized():
                 self._json(403, {"error": "Unauthorized."})
@@ -123,7 +135,8 @@ class BrowserHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.close_connection = True
             try:
-                self.wfile.write(b"event: ready\ndata: {}\n\n")
+                # A short retry lets tabs find a replacement server quickly.
+                self.wfile.write(b"event: ready\nretry: 1000\ndata: {}\n\n")
                 self.wfile.flush()
                 while not self.server.closing.is_set():
                     try:
@@ -195,7 +208,9 @@ def main():
     root = Path(args.root).expanduser().resolve()
     os.environ["REMINDER_CONFIG_DIR"] = str(root)
     root.mkdir(parents=True, exist_ok=True)
-    server = BrowserServer(args.port)
+    # A replacement server keeps its predecessor's token so open tabs stay
+    # signed in. It arrives by environment to stay out of the process list.
+    server = BrowserServer(args.port, os.environ.pop(TOKEN_ENV, None) or None)
     registry = root / ".browser.json"
     temporary = registry.with_suffix(".tmp")
     temporary.write_text(json.dumps({"port": server.server_port, "token": server.token, "pid": os.getpid()}))

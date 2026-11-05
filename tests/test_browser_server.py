@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import queue
 import threading
 from pathlib import Path
@@ -79,6 +80,7 @@ def test_sse_registers_an_open_browser_tab(server):
     response = connection.getresponse()
     assert response.status == 200
     assert response.readline() == b"event: ready\n"
+    assert response.readline() == b"retry: 1000\n"
     response.readline(); response.readline()
     assert server.activate() is True
     assert response.readline() == b"event: activate\n"
@@ -98,13 +100,13 @@ def test_launcher_reuses_tab_and_opens_again_when_no_tab(monkeypatch, tmp_path):
     from schedule_management.commands import browser
     opened = []
     monkeypatch.setattr(browser, "resolve_config_root_dir", lambda: tmp_path)
-    monkeypatch.setattr(browser, "_live_state", lambda path: {"port": 12345, "token": "t", "pid": 1})
-    monkeypatch.setattr(browser, "_request", lambda state, route, post=False: {"hasTab": True})
+    monkeypatch.setattr(browser, "_live_state", lambda path: {"port": 12345, "token": "t", "pid": 1, "build": browser.code_fingerprint()})
+    monkeypatch.setattr(browser, "_request", lambda state, route, payload=None: {"hasTab": True})
     monkeypatch.setattr(browser.webbrowser, "open", lambda *args, **kwargs: opened.append(args))
-    url, reused = browser.launch_browser()
-    assert reused is True and not opened
+    url, reused, replaced = browser.launch_browser()
+    assert reused is True and replaced is False and not opened
     assert url == "http://127.0.0.1:12345/"
-    monkeypatch.setattr(browser, "_request", lambda state, route, post=False: {"hasTab": False})
+    monkeypatch.setattr(browser, "_request", lambda state, route, payload=None: {"hasTab": False})
     browser.launch_browser()
     assert opened == [("http://127.0.0.1:12345/#token=t",)]
     assert browser.launch_browser(open_browser=False)[0].endswith("#token=t")
@@ -124,6 +126,86 @@ def test_cli_web_options_route_to_browser():
     from schedule_management.commands.browser import browser_command
     args = create_parser().parse_args(["web", "--port", "8765", "--no-open"])
     assert args.func is browser_command and args.port == 8765 and args.no_open
+    assert not args.if_running
+    assert create_parser().parse_args(["web", "--if-running"]).if_running
+
+
+def test_health_reports_code_build_and_open_tabs(server):
+    status, _, body = request(server, "GET", "/health", headers={"Authorization": "Bearer test-token"})
+    health = json.loads(body)
+    assert status == 200 and health["build"] == server.build and health["tabs"] == 0
+    server.tabs.add(queue.Queue())
+    assert json.loads(request(server, "GET", "/health", headers={"Authorization": "Bearer test-token"})[2])["tabs"] == 1
+
+
+def test_code_fingerprint_tracks_sources_and_frontend_only(tmp_path):
+    from schedule_management.web.fingerprint import code_fingerprint
+    (tmp_path / "web" / "static").mkdir(parents=True)
+    (tmp_path / "__pycache__").mkdir()
+    module = tmp_path / "api.py"
+    module.write_text("COMMANDS = {}\n")
+    bundle = tmp_path / "web" / "static" / "index.html"
+    bundle.write_text("<main></main>")
+    original = code_fingerprint(tmp_path)
+    (tmp_path / "__pycache__" / "api.cpython-312.pyc").write_bytes(b"compiled")
+    (tmp_path / "notes.txt").write_text("not code")
+    assert code_fingerprint(tmp_path) == original
+    module.write_text("COMMANDS = {'weekly_overview': None}\n")
+    updated = code_fingerprint(tmp_path)
+    assert updated != original
+    bundle.write_text("<main id=app></main>")
+    assert code_fingerprint(tmp_path) != updated
+
+
+def test_refresh_does_not_start_a_server(monkeypatch, tmp_path):
+    from schedule_management.commands import browser
+    monkeypatch.setattr(browser, "resolve_config_root_dir", lambda: tmp_path)
+    monkeypatch.setattr(browser, "_start", lambda *args: pytest.fail("refresh must not start a server"))
+    assert browser.refresh_browser() == (None, False)
+
+
+def _process_exits(pid: int, timeout: float = 3.0) -> bool:
+    """The test launched the server, so it must reap it for the pid to vanish."""
+    from schedule_management.commands.browser import _wait
+
+    def exited() -> bool:
+        try:
+            if os.waitpid(pid, os.WNOHANG)[0]:
+                return True
+        except ChildProcessError:
+            pass
+        try:
+            os.kill(pid, 0)
+            return False
+        except ProcessLookupError:
+            return True
+
+    return _wait(exited, timeout)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="checks process exit with POSIX signals")
+def test_outdated_server_is_replaced_on_the_same_port_and_token(monkeypatch, tmp_path):
+    from schedule_management.commands import browser
+    monkeypatch.setattr(browser, "resolve_config_root_dir", lambda: tmp_path)
+    registry = tmp_path / ".browser.json"
+    url, _, replaced = browser.launch_browser(open_browser=False)
+    first = json.loads(registry.read_text())
+    try:
+        assert not replaced
+        assert browser.refresh_browser() == (f"http://127.0.0.1:{first['port']}/", False)
+        # Code on disk changes after the server started.
+        monkeypatch.setattr(browser, "code_fingerprint", lambda: "updated")
+        url, replaced = browser.refresh_browser()
+        second = json.loads(registry.read_text())
+        assert replaced and url == f"http://127.0.0.1:{first['port']}/"
+        assert second["pid"] != first["pid"]
+        assert (second["port"], second["token"]) == (first["port"], first["token"])
+        assert browser._live_state(registry)["pid"] == second["pid"]
+        assert _process_exits(first["pid"])
+    finally:
+        state = browser._live_state(registry)
+        if state:
+            browser._stop(state, registry)
 
 
 def test_configuration_save_validates_and_rejects_stale_edits(monkeypatch, tmp_path):
