@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
-import type { BridgeClient, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
+import type { BridgeClient, ConferencePayload, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
 import { addDays } from "./ui";
 
 const snapshot: Snapshot = {
@@ -43,6 +43,16 @@ const overview: WeeklyOverview = {
   highlights: [{description: "Ship release", priority: 9, type: "1", endedAt: "2026-10-05T10:00:00"}]
 };
 
+const conferencePayload: ConferencePayload = {
+  year: 2026, source: "https://github.com/huggingface/ai-deadlines", fetchedAt: "2026-10-01T10:00:00+00:00", error: null,
+  conferences: [{id: "neurips", name: "NeurIPS", group: "ml"}, {id: "cvpr", name: "CVPR", group: "vision"}, {id: "icra", name: "ICRA", group: "robotics"}],
+  events: [
+    {id: "neurips2026-submission-1", conference: "neurips", name: "NeurIPS", group: "ml", edition: 2026, fullName: "Conference on Neural Information Processing Systems", link: "https://neurips.cc/", place: "Sydney, Australia", kind: "submission", label: "Paper submission deadline", date: "2026-10-12", endDate: null, time: "03:59", sourceTime: "Oct 11, 23:59 AoE"},
+    {id: "cvpr2026-conference", conference: "cvpr", name: "CVPR", group: "vision", edition: 2026, link: "javascript:alert(1)", place: "Denver, USA", kind: "conference", label: "CVPR 2026", date: "2026-10-20", endDate: "2026-10-23", time: null, sourceTime: "October 20-23, 2026"},
+    {id: "icra2027-abstract-0", conference: "icra", name: "ICRA", group: "robotics", edition: 2027, link: null, place: "", kind: "abstract", label: "Abstract deadline", date: "2026-11-02", endDate: null, time: "23:59", sourceTime: "Nov 2, 23:59 PST"}
+  ]
+};
+
 let root: HTMLElement;
 let send: ReturnType<typeof vi.fn>;
 let client: BridgeClient;
@@ -62,6 +72,7 @@ beforeEach(() => {
     if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
     if (command === "task_history") return {activities: structuredClone(history)};
     if (command === "weekly_overview") return structuredClone(overview);
+    if (command === "conference_calendar") return structuredClone(conferencePayload);
     return {};
   });
   client = {send};
@@ -280,6 +291,80 @@ describe("recurring events", () => {
     dialog.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
     await flush();
     expect(send).toHaveBeenCalledWith("deadline_update", expect.objectContaining({originalEvent: "Team report", repeat: "monthly"}));
+  });
+});
+
+describe("AI conferences", () => {
+  const openRoutines = async () => { await renderApp(root, client); click('[data-page="routines"]'); await flush(); await flush(); };
+  beforeEach(() => window.localStorage.clear());
+
+  it("is off by default and shows submission days and conference days once turned on", async () => {
+    await openRoutines();
+    expect(send).not.toHaveBeenCalledWith("conference_calendar", expect.anything());
+    expect(root.querySelector(".conf-deadline, .conf-range")).toBeNull();
+    click("[data-conf-toggle]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("conference_calendar", {year: 2026});
+    expect(root.querySelector("[data-conf-toggle]")?.getAttribute("aria-pressed")).toBe("true");
+    const deadline = root.querySelector('[data-day="2026-10-12"]')!;
+    expect(deadline.className).toContain("conf-deadline");
+    expect(deadline.querySelector(".conf-flag")).not.toBeNull();
+    expect(deadline.getAttribute("aria-label")).toContain("NeurIPS 2026 paper submission deadline (03:59)");
+    expect(root.querySelector('[data-day="2026-10-20"]')?.className).toContain("conf-start");
+    expect(root.querySelector('[data-day="2026-10-21"]')?.className).toContain("conf-range");
+    expect(root.querySelector('[data-day="2026-10-23"]')?.className).toContain("conf-end");
+    expect(root.querySelector('[data-day="2026-10-24"]')?.className).not.toContain("conf-range");
+    expect([...root.querySelectorAll(".conf-item strong")].map(el => el.textContent)).toEqual(["NeurIPS 2026", "CVPR 2026", "ICRA 2027"]);
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-conferences")!)).toEqual({enabled: true, selected: null});
+    // Month counts stay about your own deadlines.
+    expect(root.querySelector(".month-count")?.textContent).toBe("2");
+  });
+
+  it("filters conferences, remembers the choice, and refreshes on request", async () => {
+    window.localStorage.setItem("schedule-everything-conferences", JSON.stringify({enabled: true, selected: null}));
+    await openRoutines();
+    expect(send).toHaveBeenCalledWith("conference_calendar", {year: 2026});
+    click("[data-conf-menu]");
+    expect(root.querySelectorAll("[data-conf-pick]")).toHaveLength(3);
+    const neurips = root.querySelector<HTMLInputElement>('[data-conf-pick="neurips"]')!;
+    neurips.checked = false; neurips.dispatchEvent(new Event("change"));
+    expect(document.activeElement?.getAttribute("data-conf-pick")).toBe("neurips");
+    expect(root.querySelector('[data-day="2026-10-12"]')?.className).not.toContain("conf-deadline");
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-conferences")!).selected).toEqual(["cvpr", "icra"]);
+    expect(root.querySelector("[data-conf-toggle] b")?.textContent).toBe("2");
+    click("[data-conf-all]");
+    expect(root.querySelector('[data-day="2026-10-12"]')?.className).toContain("conf-deadline");
+    click("[data-conf-refresh]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("conference_calendar", {year: 2026, refresh: true});
+    // Escape works even when focus has fallen back to <body>.
+    document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector(".conf-menu")).toBeNull();
+    click('[data-cal="next"]'); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("conference_calendar", {year: 2027});
+  });
+
+  it("lists conference dates in the day card and copies a deadline into yours", async () => {
+    window.localStorage.setItem("schedule-everything-conferences", JSON.stringify({enabled: true, selected: null}));
+    await openRoutines();
+    click('[data-day="2026-10-21"]');
+    const range = root.querySelector(".day-popover .pop-conf")!;
+    expect(range.textContent).toContain("CVPR 2026");
+    expect(range.textContent).toContain("Denver, USA");
+    expect(range.querySelector("a")).toBeNull();
+    expect(range.querySelector("[data-conf-add]")).toBeNull();
+    click('[data-day="2026-10-12"]');
+    const card = root.querySelector(".day-popover .pop-conf")!;
+    expect(card.textContent).toContain("03:59 your time · Oct 11, 23:59 AoE");
+    expect(card.querySelector("a")?.getAttribute("href")).toBe("https://neurips.cc/");
+    click("[data-conf-add]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("deadline_add", {event: "NeurIPS 2026 paper submission deadline", date: "2026-10-12", type: "", color: "violet", repeat: ""});
+  });
+
+  it("shows fetch errors without breaking the calendar", async () => {
+    window.localStorage.setItem("schedule-everything-conferences", JSON.stringify({enabled: true, selected: ["neurips"]}));
+    send.mockImplementation(async (command: string) => command === "status_snapshot" ? structuredClone(snapshot) : command === "workspace_info" ? {configIds: [0], mode: "j"} : command === "conference_calendar" ? {...structuredClone(conferencePayload), events: [], fetchedAt: null, error: "Could not fetch conference dates: offline"} : {});
+    await openRoutines();
+    expect(root.querySelector(".cal-side .conf-error")?.textContent).toContain("offline");
+    expect(root.querySelectorAll(".month")).toHaveLength(12);
   });
 });
 

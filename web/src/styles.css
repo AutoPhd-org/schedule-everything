@@ -480,6 +480,53 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .year-grid.filtering .day.match { transform: scale(1.18); box-shadow: inset 0 0 0 2px var(--c), 0 6px 14px -6px var(--c); }
 .is-dragging .day:not(.past):not(.pad) { box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .day.drop-hover { transform: scale(1.35) !important; background: var(--grad) !important; color: var(--on-grad) !important; z-index: 4; }
+/* AI conference layer: a diamond on submission days and a bar under conference days. */
+.conf-control { position: relative; display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.conf-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-solid); color: var(--text); font: 700 12.5px/1 var(--display); transition: transform .3s var(--spring), background .2s, box-shadow .3s; }
+.conf-toggle svg { width: 16px; height: 16px; color: var(--accent); }
+.conf-toggle:hover { transform: translateY(-2px); }
+.conf-toggle[aria-pressed="true"] { background: var(--grad); color: var(--on-grad); border-color: transparent; box-shadow: 0 10px 22px -12px var(--accent); }
+.conf-toggle[aria-pressed="true"] svg { color: var(--on-grad); }
+.conf-toggle b { font: 800 11px/1 var(--display); padding: 3px 7px; border-radius: 999px; background: rgba(255, 255, 255, .22); }
+.conf-toggle.is-loading svg { animation: beat 1s ease-in-out infinite; }
+.conf-menu { position: absolute; top: calc(100% + 10px); right: 0; z-index: 35; width: min(360px, 86vw); padding: 16px; border-radius: 24px; background: var(--surface-solid); border: 1px solid var(--line-strong); box-shadow: var(--shadow-lg); animation: pop-in .35s var(--spring); transform-origin: top right; }
+.conf-menu-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 13.5px; }
+.conf-group { border: 0; margin: 0; padding: 6px 0 4px; display: flex; flex-wrap: wrap; gap: 6px; }
+.conf-group legend { display: flex; align-items: center; gap: 6px; padding: 0 0 6px; font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.conf-group legend i { width: 9px; height: 9px; border-radius: 3px; transform: rotate(45deg); background: var(--c); }
+.conf-pick { position: relative; flex-direction: row; margin: 0; }
+.conf-pick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.conf-pick span { display: inline-flex; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line-strong); font-size: 12px; font-weight: 650; color: var(--muted); cursor: pointer; transition: all .2s; }
+.conf-pick input:checked + span { color: var(--text); border-color: var(--c); background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); }
+.conf-pick input:focus-visible + span { outline: 3px solid var(--accent); outline-offset: 2px; }
+.conf-menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 8px; padding-top: 10px; border-top: 1px dashed var(--line-strong); }
+.conf-menu-foot small { min-width: 0; }
+.conf-menu-foot .button { flex: none; }
+.conf-menu a, .conf-link { color: var(--accent-ink); font-weight: 600; }
+.conf-error { color: var(--critical-ink); font-size: 12px; }
+.day .conf-flag { position: absolute; top: 1px; right: 1px; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); background: var(--conf-c); box-shadow: 0 0 0 1.5px var(--surface-solid); }
+.day.conf-range::before { content: ""; position: absolute; left: -1px; right: -1px; bottom: 0; height: 3px; background: var(--conf-bar); opacity: .85; }
+.day.conf-range.conf-start::before { left: 18%; border-radius: 3px 0 0 3px; }
+.day.conf-range.conf-end::before { right: 18%; border-radius: 0 3px 3px 0; }
+.day.conf-range .marks { bottom: 5px; }
+.conf-side-title { display: flex; align-items: center; gap: 6px; margin: 18px 0 10px; padding-top: 14px; border-top: 1px dashed var(--line-strong); }
+.conf-side-title svg { width: 16px; height: 16px; color: var(--accent); }
+.conf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.conf-item { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 0; border-radius: 16px; background: color-mix(in oklab, var(--c) 9%, var(--surface-solid)); color: var(--text); text-align: left; transition: transform .3s var(--spring); }
+.conf-item:hover { transform: translateX(3px); }
+.conf-item span { display: flex; flex-direction: column; min-width: 0; }
+.conf-item strong { font-size: 12.5px; }
+.conf-item small { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conf-kind-abstract, .conf-kind-submission, .conf-kind-conference { flex-shrink: 0; width: 10px; height: 10px; background: var(--c); }
+.conf-kind-abstract, .conf-kind-submission { border-radius: 2px; transform: rotate(45deg); }
+.conf-kind-abstract { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.conf-kind-conference { width: 14px; height: 5px; border-radius: 3px; }
+.pop-conf { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.pop-conf li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 18px; background: color-mix(in oklab, var(--c) 10%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 28%, transparent); }
+.pop-conf li > i { margin-top: 5px; }
+.pop-conf .pop-copy { flex: 1; }
+.pop-conf .conf-link { display: inline-block; margin-top: 3px; font-size: 11px; }
+.pop-conf .button { flex-shrink: 0; }
 .cal-side { position: sticky; top: 96px; padding: 16px; border-radius: 28px 28px 28px 10px; background: var(--surface-solid); border: 1px solid var(--line); max-height: 640px; overflow: auto; }
 .cal-side h3 { display: flex; align-items: center; margin-bottom: 12px; }
 .ddl-chips { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -834,6 +881,10 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
   .day-popover { position: fixed; left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; max-height: 70vh; overflow: auto; z-index: 80; }
   .day-popover::before { display: none; }
   .cal-hint { margin-left: 0; }
+  .cal-head { flex-wrap: wrap; }
+  /* Full row on phones, so the picker can match the calendar's width instead of running off the edge. */
+  .conf-control { margin-left: 0; order: 3; flex-basis: 100%; }
+  .conf-menu { left: 0; right: 0; width: auto; transform-origin: top left; }
   .wk-habits, .wk-streak { grid-column: span 12; }
   .status-card:nth-child(even) { margin-top: 0; }
 }
