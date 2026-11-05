@@ -208,8 +208,20 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .empty { padding: 30px 15px; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.7; width: 100%; grid-column: 1 / -1; }
 .empty-blob { display: inline-grid; place-items: center; width: 54px; height: 54px; margin-bottom: 10px; color: var(--accent); background: var(--grad-soft); border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; animation: morph 10s ease-in-out infinite; }
 .empty-blob svg { width: 24px; height: 24px; }
-.notice { display: none; position: sticky; top: 90px; z-index: 15; font-size: 13px; font-weight: 550; padding: 13px 20px; background: var(--surface-solid); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 18px 18px 18px 6px; margin-bottom: 20px; white-space: pre-wrap; color: var(--text); box-shadow: var(--shadow-lg); }
-.notice.visible { display: block; animation: slide-in .5s var(--spring); }
+.notice { display: none; position: sticky; top: 90px; z-index: 15; align-items: flex-start; gap: 12px; font-size: 13px; font-weight: 550; padding: 10px 10px 10px 20px; background: var(--surface-solid); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 18px 18px 18px 6px; margin-bottom: 20px; color: var(--text); box-shadow: var(--shadow-lg); }
+.notice.visible { display: flex; animation: slide-in .5s var(--spring); }
+/* Leaving, the notice fades and then folds its space away, so the page below slides up instead of jumping. */
+.notice.leaving { overflow: hidden; animation: notice-out .44s var(--ease) forwards; pointer-events: none; }
+.notice-text { flex: 1; min-width: 0; padding: 3px 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice-close { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
+.notice-close svg { width: 15px; height: 15px; }
+.notice-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
+.notice.busy .notice-close { visibility: hidden; }
+@keyframes notice-out {
+  0% { max-height: var(--h, 160px); }
+  45% { opacity: 0; transform: translateY(-8px) scale(.97); }
+  100% { opacity: 0; transform: translateY(-8px) scale(.97); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; }
+}
 .split-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; align-items: start; }
 .split-grid .card { margin-bottom: 22px; }
 .button-row { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; margin-top: 15px; }
@@ -249,7 +261,10 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .delta.up { color: var(--good-ink); background: color-mix(in oklab, var(--good) 13%, var(--surface-solid)); }
 .delta.down { color: var(--warning-ink); background: color-mix(in oklab, var(--warning) 16%, var(--surface-solid)); }
 .delta b { font-size: 13px; }
-[data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); font: 600 11px/1.3 Inter, sans-serif; padding: 6px 10px; border-radius: 10px; white-space: nowrap; pointer-events: none; z-index: 60; box-shadow: var(--shadow); animation: tip .18s var(--ease); }
+/* Tooltips for [data-tip] float on <body> (see tooltip.ts), so no card or scrolling area can cut them off. */
+.float-tip { position: fixed; z-index: 120; max-width: min(320px, calc(100vw - 16px)); padding: 6px 10px; border-radius: 10px; background: var(--text); color: var(--bg); font: 600 11px/1.35 Inter, ui-sans-serif, sans-serif; box-shadow: var(--shadow); pointer-events: none; opacity: 0; transform: translateY(4px); transition: opacity .15s var(--ease), transform .2s var(--ease); }
+.float-tip.below { transform: translateY(-4px); }
+.float-tip.visible { opacity: 1; transform: none; }
 .heat-cell, .tb, .seg, .hd, .day-habits, .flames i, .segbar i, .day, .mix-track b { position: relative; }
 
 /* Swatch picker (deadline colors). */
@@ -339,7 +354,13 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 
 /* Task board. */
 .board-heading { margin-top: 6px; }
-.task-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; align-items: start; margin-bottom: 34px; }
+/* Rows are short and each group spans as many as it needs (masonry() in board.ts): groups read left to right
+   in order, and none leaves a hole under a shorter neighbor. */
+.task-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); grid-auto-rows: 4px; column-gap: 20px; row-gap: 0; align-items: start; margin-bottom: 14px; }
+.task-board > * { margin-bottom: 20px; }
+.task-board.is-uniform { grid-auto-rows: auto; align-items: stretch; }
+.task-group.is-folded { display: flex; flex-direction: column; }
+.task-group.is-folded .compose-slot { margin-top: auto; }
 .task-group { position: relative; min-width: 0; padding: 14px 12px 12px; background: color-mix(in oklab, var(--c) 9%, var(--surface)); border: 1px solid color-mix(in oklab, var(--c) 26%, transparent); border-radius: 34px 34px 34px 12px; transition: transform .5s var(--spring), box-shadow .4s; }
 .task-group:nth-child(3n+2) { border-radius: 12px 34px 34px 34px; }
 .task-group:nth-child(3n) { border-radius: 34px 12px 34px 34px; }
@@ -375,11 +396,118 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-more summary { cursor: pointer; width: fit-content; }
 .task-more button { display: block; border: 0; background: transparent; text-align: left; padding: 9px 0 0; color: var(--critical-ink); font-size: 11px; }
 
+/* Board tools: expand every group or fold them all into summaries. */
+.board-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.fold-switch { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line); flex-shrink: 0; }
+.fold-switch button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: transparent; color: var(--muted); font: 720 12px/1 var(--display); padding: 9px 13px 9px 11px; border-radius: 999px; transition: color .3s; }
+.fold-switch button svg { width: 15px; height: 15px; transition: transform .5s var(--spring); }
+.fold-switch button:hover { color: var(--text); }
+.fold-switch button:hover svg { transform: scaleY(1.2); }
+.fold-switch button[aria-pressed="true"] { color: var(--on-grad); }
+.fold-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--grad); box-shadow: 0 6px 14px -6px var(--accent); transition: transform .6s var(--spring); }
+.fold-switch.is-folded .fold-thumb { transform: translateX(100%); }
+
+/* Group header toggle, groups without tasks, and the inline new-task form. */
+.group-toggle { display: grid; place-items: center; width: 28px; height: 28px; margin: -3px -4px -3px -2px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); flex-shrink: 0; transition: background .2s, color .2s; }
+.group-toggle svg { width: 17px; height: 17px; transition: transform .5s var(--spring); }
+.group-toggle:hover { background: color-mix(in oklab, var(--c) 18%, transparent); color: var(--text); }
+.task-group.is-folded .group-toggle svg { transform: rotate(-90deg); }
+.task-group.is-empty { background: color-mix(in oklab, var(--c) 4%, var(--surface)); border-style: dashed; }
+.task-group.is-empty .group-icon { background: color-mix(in oklab, var(--c) 50%, var(--surface-solid)); box-shadow: none; }
+.task-group.is-empty .group-count { background: var(--surface-alt); color: var(--muted); }
+.group-empty { margin: -4px 8px 0; font-size: 12px; color: var(--muted); }
+.add-inline { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 9px; padding: 9px 14px; border: 1.5px dashed color-mix(in oklab, var(--c) 38%, var(--line-strong)); border-radius: 18px; background: transparent; color: var(--muted); font-size: 12.5px; font-weight: 620; text-align: left; transition: color .2s, background .25s, border-color .25s, transform .35s var(--spring); }
+.add-inline svg { width: 16px; height: 16px; color: var(--c); transition: transform .5s var(--spring); }
+.add-inline:hover { color: var(--text); background: color-mix(in oklab, var(--c) 10%, var(--surface-solid)); border-color: var(--c); border-style: solid; transform: translateY(-1px); }
+.add-inline:hover svg { transform: rotate(90deg) scale(1.12); }
+.compose-slot { display: grid; grid-template-rows: 1fr; }
+.compose-slot > * { min-height: 0; }
+.compose-slot.opening { animation: slot-open .45s var(--ease); }
+.compose-slot.closing { animation: slot-close .26s var(--ease) forwards; }
+.compose-slot.opening .composer { animation: composer-in .55s var(--spring); }
+.composer { margin-top: 9px; padding: 7px 7px 7px 9px; border-radius: 22px; background: var(--surface-solid); border: 1.5px solid color-mix(in oklab, var(--c) 55%, var(--line)); box-shadow: 0 0 0 4px color-mix(in oklab, var(--c) 12%, transparent), 0 16px 30px -20px var(--c); overflow: hidden; }
+.composer.shake { animation: shake .42s var(--ease); }
+.composer input[name="composerText"] { padding: 6px 6px 8px; border: 0; border-radius: 12px; background: transparent; font-size: 13.5px; font-weight: 560; }
+.composer input[name="composerText"]:focus { box-shadow: none; }
+.composer-row { display: flex; align-items: center; gap: 6px; padding-top: 7px; border-top: 1px dashed var(--line-strong); }
+.composer-importance { flex: 1; min-width: 0; flex-direction: row; align-items: center; gap: 8px; margin: 0 4px 0 2px; font-size: 11px; font-weight: 650; color: var(--muted); cursor: pointer; }
+.composer-importance b { min-width: 2ch; font: 780 14px/1 var(--display); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.importance-range { -webkit-appearance: none; appearance: none; flex: 1; width: auto; min-width: 48px; height: 6px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 50%, var(--surface-solid)), var(--c)) 0 0 / calc(var(--p, .5) * 100%) 100% no-repeat, var(--surface-sunk); cursor: pointer; }
+.importance-range:focus { box-shadow: none; }
+.importance-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 6px; }
+.importance-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-solid); border: 3px solid var(--c); box-shadow: 0 3px 8px -2px var(--c); transition: transform .3s var(--spring); }
+.importance-range::-moz-range-thumb { box-sizing: border-box; width: 18px; height: 18px; border-radius: 50%; background: var(--surface-solid); border: 3px solid var(--c); box-shadow: 0 3px 8px -2px var(--c); }
+.importance-range:active::-webkit-slider-thumb, .importance-range:hover::-webkit-slider-thumb { transform: scale(1.18); }
+.composer-add { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 12px 0 10px; border: 0; border-radius: 999px; background: var(--grad); color: var(--on-grad); font-size: 12px; font-weight: 700; box-shadow: 0 8px 16px -10px var(--accent); transition: transform .3s var(--spring), box-shadow .3s; }
+.composer-add svg { width: 15px; height: 15px; }
+.composer-add:hover { transform: translateY(-1px); box-shadow: 0 12px 20px -10px var(--accent); }
+.composer-close { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
+.composer-close svg { width: 15px; height: 15px; }
+.composer-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
+.task-card.just-added { outline: 2px solid transparent; outline-offset: 2px; animation: just-added 1.6s var(--ease); }
+.task-group.just-added .group-count { animation: count-pulse .9s var(--spring); }
+@keyframes slot-open { from { grid-template-rows: 0fr; opacity: 0; } }
+@keyframes slot-close { to { grid-template-rows: 0fr; opacity: 0; } }
+@keyframes composer-in { from { transform: scale(.94) translateY(-6px); } }
+@keyframes shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+@keyframes just-added { 0% { opacity: 0; transform: translateY(-10px) scale(.96); } 30% { opacity: 1; transform: none; outline-color: color-mix(in oklab, var(--c) 70%, transparent); } 100% { outline-color: transparent; } }
+@keyframes count-pulse { 35% { transform: scale(1.3); box-shadow: 0 0 0 6px color-mix(in oklab, var(--c) 22%, transparent); } }
+
+/* A folded group: average importance as a ring, each task as a dot on a 1–10 strip, and a few counts. */
+.tg-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px 14px; padding: 0 6px; }
+.tg-summary .ring figcaption { font-size: 17px; letter-spacing: -.02em; }
+.tg-summary .ring-value { animation: none; }
+.content.enter .tg-summary .ring-value, .task-group.reveal .tg-summary .ring-value { animation: ring-draw 1.2s var(--ease) .12s both; }
+.tg-stats { display: grid; gap: 3px; min-width: 0; }
+.tg-label { font-size: 9.5px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tg-strip { position: relative; height: 40px; margin: 0 6px; }
+.tg-strip::before { content: ""; position: absolute; left: -6px; right: -6px; bottom: 5px; height: 4px; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 12%, var(--surface-sunk)), color-mix(in oklab, var(--c) 50%, var(--surface-sunk))); }
+.tg-strip i { position: absolute; left: calc(var(--x) * 100%); bottom: calc(13px + var(--stack) * 7px); width: 9px; height: 9px; margin-left: -4.5px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface-solid); }
+.tg-strip i.deferred { background: var(--surface-solid); box-shadow: inset 0 0 0 2.5px var(--warning), 0 0 0 2px var(--surface-solid); }
+.tg-avg { position: absolute; left: calc(var(--x) * 100%); bottom: 1px; width: 3px; height: 13px; margin-left: -1.5px; border-radius: 2px; background: var(--text); box-shadow: 0 0 0 2px var(--surface-solid); }
+.tg-scale { display: flex; justify-content: space-between; font-size: 9.5px; font-weight: 700; color: var(--muted); }
+.tg-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.tg-share { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.tg-share-bar { position: relative; width: 50px; height: 6px; border-radius: 99px; background: var(--surface-sunk); overflow: hidden; }
+.tg-share-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--w) * 100%); min-width: 3px; border-radius: inherit; background: var(--c); transform-origin: left; }
+.tg-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px 4px 7px; border-radius: 999px; background: var(--surface-solid); border: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.tg-chip svg { width: 12px; height: 12px; color: var(--c); }
+.tg-chip.high { color: var(--text); background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); border-color: color-mix(in oklab, var(--c) 40%, transparent); }
+.tg-chip.deferred svg { color: var(--warning-ink); }
+.tg-summary.is-empty { display: block; padding: 0 8px; }
+.tg-summary.is-empty p { font-size: 12px; color: var(--muted); }
+.task-group.reveal .tg-strip i { animation: dot-drop .6s var(--spring) both; animation-delay: calc(.14s + var(--d, 0) * 35ms); }
+.task-group.reveal .tg-avg { animation: grow-y .5s var(--spring) .35s both; transform-origin: bottom; }
+.task-group.reveal .tg-share-bar::after { animation: grow-x .8s var(--spring) .2s both; }
+.task-group.reveal .task-card { animation: rise .5s var(--ease) both; animation-delay: min(calc(.06s + var(--i, 0) * 30ms), .45s); }
+@keyframes dot-drop { from { opacity: 0; transform: translateY(-14px) scale(.4); } }
+
+/* Folding and expanding morph each group between its two shapes (morph() in render.ts). The header, the
+   sidebar, and the switch stay put above the moving groups; the page around them does not cross-fade. */
+:root[data-vt="board"] .task-group { view-transition-name: var(--vt); view-transition-class: tg; }
+:root[data-vt="board"] .fold-switch { view-transition-name: fold-switch; }
+:root[data-vt="board"] .topbar { view-transition-name: topbar; }
+:root[data-vt="board"] .sidebar { view-transition-name: sidebar; }
+:root[data-vt="board"] .notice.visible { view-transition-name: notice; }
+:root[data-vt="board"] .timeline-card { view-transition-name: after-board; }
+:root[data-vt="board"]::view-transition-old(root), :root[data-vt="board"]::view-transition-old(fold-switch), :root[data-vt="board"]::view-transition-old(topbar), :root[data-vt="board"]::view-transition-old(sidebar), :root[data-vt="board"]::view-transition-old(notice) { display: none; }
+:root[data-vt="board"]::view-transition-new(root), :root[data-vt="board"]::view-transition-new(fold-switch), :root[data-vt="board"]::view-transition-new(topbar), :root[data-vt="board"]::view-transition-new(sidebar), :root[data-vt="board"]::view-transition-new(notice) { animation: none; }
+:root[data-vt="board"]::view-transition-group(after-board) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+/* Class selectors stay in rules of their own: a browser without view-transition-class drops only these. */
+::view-transition-group(.tg) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+::view-transition-image-pair(.tg) { overflow: clip; border-radius: 14px; }
+/* Old and new fade on the same curve, so where they overlap the card stays solid instead of dimming. */
+::view-transition-old(.tg) { height: 100%; object-fit: none; object-position: left top; animation: vt-fade-out .42s cubic-bezier(.4, 0, .2, 1) both; }
+::view-transition-new(.tg) { height: 100%; object-fit: none; object-position: left top; animation: vt-fade-in .42s cubic-bezier(.4, 0, .2, 1) both; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+
 /* P mode: a loose, flowing collage of task groups. */
 .p-heading { align-items: flex-end; }
 .heading-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
-.flow-board { display: block; columns: 3 290px; column-gap: 24px; }
-.flow-board .task-group { break-inside: avoid; margin-bottom: 26px; transform: rotate(var(--tilt, 0deg)); border-radius: calc(26px + var(--shape, 0) * 9px) calc(48px - var(--shape, 0) * 6px) calc(36px + var(--shape, 0) * 5px) calc(14px + var(--shape, 0) * 10px); }
+.flow-board { grid-template-columns: repeat(auto-fill, minmax(max(290px, (100% - 48px) / 3), 1fr)); column-gap: 24px; }
+.flow-board > * { margin-bottom: 26px; }
+.flow-board .task-group { transform: rotate(var(--tilt, 0deg)); border-radius: calc(26px + var(--shape, 0) * 9px) calc(48px - var(--shape, 0) * 6px) calc(36px + var(--shape, 0) * 5px) calc(14px + var(--shape, 0) * 10px); }
 .flow-board .task-group:hover { transform: rotate(0deg) translateY(-4px); }
 .flow-board .task-group::before { content: ""; position: absolute; z-index: -1; width: 90px; height: 90px; top: -18px; right: -14px; border-radius: 50%; background: radial-gradient(circle, color-mix(in oklab, var(--c) 40%, transparent), transparent 70%); animation: float 7s ease-in-out infinite; }
 .flow-board .task-card { border-radius: 26px 26px 26px 10px; }
@@ -588,7 +716,8 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .loading-shimmer { position: relative; overflow: hidden; }
 .loading-shimmer::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, .25) 50%, transparent 80%); animation: shimmer 1.4s infinite; }
 .rhythm-card { border-radius: 16px 44px 44px 44px !important; }
-.rhythm { display: grid; grid-template-columns: 1fr; gap: 6px; overflow-x: auto; padding: 26px 2px 4px; margin-top: -18px; }
+/* Room around the grid for the outlines and hover growth of the edge squares, which the scroller would clip. */
+.rhythm { display: grid; grid-template-columns: 1fr; gap: 6px; overflow-x: auto; padding: 26px 7px 7px; margin: -18px -5px 0; }
 .rhythm-months, .rhythm-grid { display: grid; grid-template-columns: repeat(var(--weeks), minmax(13px, 1fr)); gap: 4px; }
 .rhythm-months span { font-size: 10px; font-weight: 650; color: var(--muted); white-space: nowrap; }
 .rhythm-grid { grid-auto-flow: column; grid-template-rows: repeat(7, auto); }
@@ -677,8 +806,11 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .tree-stage { position: relative; isolation: isolate; container-type: inline-size; overflow: hidden; border-radius: 40px 40px 40px 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .tree-viewport { position: relative; z-index: 1; height: var(--tree-h); overflow-y: auto; scrollbar-width: none; --fade: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .12) 50px, #000 104px, #000 calc(100% - 72px), transparent); -webkit-mask-image: var(--fade); mask-image: var(--fade); }
 .tree-viewport::-webkit-scrollbar { display: none; }
-.tree-lens, .tree-lanes, .tree-canvas { --trunk: 50%; --step: clamp(48px, 8%, 104px); }
-.tree.single :is(.tree-lens, .tree-lanes, .tree-canvas) { --trunk: 34%; }
+/* Lanes step out from the trunk, but never so far that the outermost lane leaves less than --room for its
+   event labels: with many types the steps shrink to share the space (--depths is the deepest lane). */
+.tree-lanes, .tree-window { --trunk: 50%; --room: min(250px, 25%); --step: clamp(14px, min(8%, (50% - var(--room)) / var(--depths, 1)), 104px); }
+.tree.single :is(.tree-lanes, .tree-window) { --trunk: 34%; }
+.tree-window { position: relative; }
 .tree-node, .tree-lane-guide, .tree-lane-head { --x: calc(var(--trunk) + var(--side) * var(--depth) * var(--step)); }
 .tree-canvas { position: relative; height: calc(var(--h) + 2 * var(--pad, 320px)); }
 .tree-canvas > * { position: absolute; }
@@ -687,9 +819,12 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .tree-lens { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .tree-lens::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 88px; transform: translateY(-50%); background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--view-c) 11%, transparent) 18%, color-mix(in oklab, var(--view-c) 11%, transparent) 82%, transparent); border-block: 1px dashed color-mix(in oklab, var(--view-c) 32%, transparent); }
 .tree-glow { position: absolute; left: var(--trunk); top: 50%; width: 30px; height: 200px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--view-c) 75%, transparent), transparent); filter: blur(3px); }
-.tree-lanes { position: absolute; inset: 0 0 auto; z-index: 3; pointer-events: none; }
-/* Neighboring lanes on one side alternate rows, so each label can be nearly two steps wide. */
-.tree-lane-head { position: absolute; top: calc(12px + var(--row) * 26px); left: var(--x); max-width: calc(2 * var(--step) - 12px); transform: translateX(-50%); padding: 3px 9px; border-radius: 999px; background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 40%, transparent); color: var(--text); font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Lane labels sit in a band above the events, stacked in as many rows as they need (arrangeLanes in tree.ts)
+   and nudged inward at the edges; a dotted line drops from each label to its lane. */
+.tree-lanes { --rh: 26px; --lh: 21px; position: relative; z-index: 3; height: calc(var(--rows, 2) * var(--rh) + 14px); pointer-events: none; }
+.tree-lane-head { position: absolute; z-index: var(--row, 0); top: calc(8px + var(--row, 0) * var(--rh)); left: var(--x); transform: translateX(calc(-50% + var(--shift, 0px))); transition: top .35s var(--ease), transform .35s var(--ease); }
+.tree-lane-head b { display: block; max-width: 168px; padding: 3px 9px; border-radius: 999px; background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 40%, transparent); color: var(--text); font-size: 10.5px; font-weight: 700; line-height: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree-lane-head::after { content: ""; position: absolute; top: 100%; left: calc(50% - var(--shift, 0px)); height: calc((var(--rows, 2) - var(--row, 0)) * var(--rh) + 6px - var(--lh)); border-left: 2px dotted color-mix(in oklab, var(--c) 45%, transparent); transform: translateX(-1px); }
 
 .tree-lane-guide { top: calc(var(--pad, 320px) + var(--from)); left: var(--x); height: var(--len); border-left: 2px dotted color-mix(in oklab, var(--c) 26%, transparent); transform: translateX(-1px); }
 .tree-trunk { top: calc(var(--pad, 320px) + var(--from)); left: var(--trunk); width: 10px; height: var(--len); transform: translateX(-50%); border-radius: 6px; clip-path: polygon(32% 0, 68% 0, 100% 100%, 0 100%); }
@@ -737,7 +872,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 @keyframes tn-flash { 0%, 55% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--c) 45%, transparent); } }
 
 /* The minimap: every event as a tick in its lane, the trunk's colors, and a window over the current view. */
-.tree-map { position: relative; height: var(--tree-h); border-radius: 26px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.tree-map { position: relative; min-height: var(--tree-h); border-radius: 26px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .tree-map.dragging { cursor: grabbing; }
 .tm-inner { position: absolute; inset: 20px 8px; }
 .tm-trunk { position: absolute; top: 0; bottom: 0; left: 30px; width: 4px; border-radius: 4px; }
@@ -748,15 +883,19 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 
 /* Narrow trees: the trunk moves near the left edge and every lane branches to the right. */
 @container (max-width: 640px) {
-  .tree-lens, .tree-lanes, .tree-canvas { --trunk: 34px; }
-  .tree.single :is(.tree-lens, .tree-lanes, .tree-canvas) { --trunk: 34px; }
-  .tree-node, .tree-lane-guide, .tree-lane-head { --x: calc(var(--trunk) + 34px + var(--lane) * 18px); }
+  /* Lanes pack closer when there are many, down to sharing one line on a phone, so labels keep their room. */
+  .tree-lanes, .tree-window { --trunk: 30px; --lstep: clamp(0px, (100% - 58px - min(230px, 58%)) / var(--lane-gaps, 1), 18px); }
+  .tree.single :is(.tree-lanes, .tree-window) { --trunk: 30px; }
+  .tree-node, .tree-lane-guide, .tree-lane-head { --x: calc(var(--trunk) + 28px + var(--lane) * var(--lstep)); }
   .side-l .tn-branch { left: var(--trunk); width: calc(var(--x) - var(--trunk)); transform: none; }
   .side-l .tn-card { left: calc(var(--x) - 12px); right: auto; flex-direction: row; max-width: min(380px, calc(100% - var(--x) + 4px)); text-align: left; }
   .side-l .tn-body { transform-origin: left center; }
   .side-l .tn-body small { justify-content: flex-start; }
   .tree-mark { left: 10px; transform: translateY(-50%); }
-  .tree-lane-head { top: 16px; width: 10px; height: 10px; padding: 0; border: 0; background: var(--c); font-size: 0; }
+  /* Each lane's label becomes a dot; hover it for the type's name. */
+  .tree-lanes { --rh: 13px; --lh: 9px; }
+  .tree-lane-head { pointer-events: auto; }
+  .tree-lane-head b { width: 9px; height: 9px; padding: 0; border: 0; background: var(--c); font-size: 0; }
   /* The card's label already says the outcome; keep just its icon here. */
   .tn-status { font-size: 0; }
 }
@@ -800,6 +939,47 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .spread b { position: absolute; top: 50%; left: calc(6px + var(--x) * (100% - 12px)); width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 4px var(--surface-solid), 0 6px 14px -4px var(--c); animation: pop .7s var(--spring) .2s both; }
 .lb-nav { justify-content: space-between; margin-top: 18px; }
 
+/* Hover card for history events (peek.ts): it floats beside the event, points at it with a small arrow,
+   and glides between neighbors as the pointer moves. */
+.peek { position: fixed; left: 0; top: 0; z-index: 90; width: 330px; max-width: calc(100vw - 24px); pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .16s var(--ease), visibility 0s linear .16s; }
+.peek.visible { opacity: 1; visibility: visible; transition: opacity .16s var(--ease); }
+.peek.glide { transition: opacity .16s var(--ease), transform .3s var(--ease); }
+.peek[data-side="right"] { --origin: left center; } .peek[data-side="left"] { --origin: right center; }
+.peek[data-side="below"] { --origin: center top; } .peek[data-side="above"] { --origin: center bottom; }
+.peek-card { --edge: color-mix(in oklab, var(--c) 35%, var(--line)); position: relative; padding: 14px; border-radius: 26px; background: var(--surface-solid); border: 1px solid var(--edge); box-shadow: var(--shadow-lg), 0 22px 44px -28px var(--c); transform-origin: var(--origin); }
+.peek.visible .peek-card { animation: peek-in .36s var(--spring); }
+.peek.swap .peek-card { animation: peek-swap .28s var(--ease); }
+.peek-card::before { content: ""; position: absolute; width: 12px; height: 12px; background: var(--surface-solid); border: 1px solid var(--edge); transform: rotate(45deg); }
+.peek[data-side="right"] .peek-card::before { left: -7px; top: calc(var(--arrow) - 7px); border-top: 0; border-right: 0; }
+.peek[data-side="left"] .peek-card::before { right: -7px; top: calc(var(--arrow) - 7px); border-bottom: 0; border-left: 0; }
+.peek[data-side="below"] .peek-card::before { top: -7px; left: calc(var(--arrow) - 7px); border-right: 0; border-bottom: 0; }
+.peek[data-side="above"] .peek-card::before { bottom: -7px; left: calc(var(--arrow) - 7px); border-top: 0; border-left: 0; }
+.peek-head { display: flex; align-items: center; gap: 12px; }
+.peek-art { flex: none; width: 60px; height: 60px; overflow: hidden; border-radius: 46% 54% 42% 58% / 52% 44% 56% 48%; box-shadow: 0 12px 22px -14px var(--c); }
+.peek-title { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.peek-title strong { font: 720 15px/1.3 var(--display); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.peek-status { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px 3px 6px; border-radius: 999px; background: color-mix(in oklab, var(--c) 18%, var(--surface-solid)); color: var(--text); font-size: 10.5px; font-weight: 700; }
+.peek-status svg { width: 12px; height: 12px; color: var(--c); }
+.peek-type { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; font-weight: 650; }
+.peek-type i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.peek-journey { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; margin: 12px 0 10px; padding: 10px 12px; border-radius: 18px; background: var(--surface-alt); }
+.peek-journey li span { display: block; color: var(--muted); font-size: 9.5px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+.peek-journey li strong { display: block; margin-top: 2px; font-size: 12px; font-weight: 680; line-height: 1.35; white-space: nowrap; }
+.peek-journey li small { display: block; color: var(--muted); font-size: 11px; font-weight: 600; }
+.peek-journey li:last-child { text-align: right; }
+.peek-span { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.peek-span i { width: 38px; height: 3px; border-radius: 99px; background: var(--grad); }
+.peek-span em { display: inline-flex; align-items: center; gap: 3px; color: var(--accent-ink); font-size: 10.5px; font-style: normal; font-weight: 750; white-space: nowrap; }
+.peek-span svg { width: 11px; height: 11px; }
+.peek-foot { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; }
+.peek-foot .dots { flex: 1; }
+.peek-foot .dots i { width: 7px; height: 7px; }
+.peek-foot b { color: var(--text); font-size: 12px; }
+.peek-note { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 11.5px; }
+.peek-note svg { width: 13px; height: 13px; color: var(--c); }
+@keyframes peek-in { from { opacity: 0; transform: scale(.9); } }
+@keyframes peek-swap { from { opacity: .35; } }
+
 /* ----- Activity: weekly overview ------------------------------------------- */
 .week-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
 .week-nav { display: flex; align-items: center; gap: 12px; }
@@ -837,7 +1017,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .wk-streak.lit .streak-flame svg { color: var(--c-orange); fill: color-mix(in oklab, var(--c-yellow) 60%, transparent); animation: flicker 1.6s ease-in-out infinite; transform-origin: bottom; filter: drop-shadow(0 6px 12px color-mix(in oklab, var(--c-orange) 50%, transparent)); }
 .streak-flame strong { font: 840 60px/1 var(--display); letter-spacing: -.05em; }
 .flames { display: flex; gap: 4px; margin-top: auto; padding-top: 12px; }
-.flames i { display: grid; place-items: center; width: 26px; height: 30px; border-radius: 10px; background: var(--surface-alt); color: var(--line-strong); }
+.flames i { display: grid; place-items: center; flex: 1 1 0; min-width: 0; max-width: 26px; height: 30px; border-radius: 10px; background: var(--surface-alt); color: var(--line-strong); }
 .flames i svg { width: 15px; height: 15px; }
 .flames i.lit { background: color-mix(in oklab, var(--c-orange) 18%, var(--surface-solid)); color: var(--c-orange); }
 .flames i.future { opacity: .4; }
@@ -854,8 +1034,10 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .day-habits { width: 16px; height: 16px; border-radius: 50%; background: conic-gradient(var(--good-strong) calc(var(--p, 0) * 360deg), var(--surface-sunk) 0); -webkit-mask: radial-gradient(circle, transparent 42%, #000 45%); mask: radial-gradient(circle, transparent 42%, #000 45%); }
 .day-habits.empty-habits { background: none; }
 .mix { display: grid; gap: 14px; }
-.mix-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(0, 1fr) 28px; align-items: center; gap: 12px; font-size: 12.5px; }
-.mix-name { display: inline-flex; align-items: center; gap: 7px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-row { display: grid; grid-template-columns: minmax(90px, 170px) minmax(0, 1fr) 28px; align-items: center; gap: 12px; font-size: 12.5px; }
+.mix-name { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 620; }
+/* Long type and habit names wrap onto a second line instead of being cut off. */
+.mix-name span, .hg-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; line-height: 1.3; }
 .mix-track { position: relative; height: 16px; border-radius: 999px; background: var(--surface-sunk); }
 .mix-track b { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--w) * 100%); min-width: 4px; border-radius: 999px; background: var(--c); transform-origin: left; animation: grow-x .9s var(--spring) both; }
 .mix-track em { position: absolute; left: calc(var(--x) * 100%); top: -5px; bottom: -5px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--text); }
@@ -874,7 +1056,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .hg-row { display: grid; grid-template-columns: minmax(90px, 1fr) repeat(7, 30px) 62px; align-items: center; gap: 6px; }
 .hg-head span { font-size: 10.5px; font-weight: 700; color: var(--muted); text-align: center; }
 .hg-head span:first-child { text-align: left; }
-.hg-name { font-size: 12.5px; font-weight: 620; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hg-name { font-size: 12.5px; font-weight: 620; }
 .hd { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; justify-self: center; }
 .hd svg { width: 14px; height: 14px; stroke-width: 3; }
 .hd.done { background: var(--good-strong); color: #fff; animation: pop .6s var(--spring) both; animation-delay: calc(var(--i, 0) * 50ms); }
@@ -949,7 +1131,6 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 @keyframes flash { 0% { transform: scale(1); } 30% { transform: scale(1.7) rotate(-10deg); } 60% { transform: scale(.9); } 100% { transform: scale(1); } }
 @keyframes flicker { 0%, 100% { transform: scale(1) rotate(-2deg); } 40% { transform: scale(1.06, .96) rotate(2deg); } 70% { transform: scale(.97, 1.04) rotate(-1deg); } }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
-@keyframes tip { from { opacity: 0; transform: translate(-50%, 4px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes complete { 0% { transform: scale(1); } 30% { transform: scale(1.03); box-shadow: 0 0 0 4px color-mix(in oklab, var(--good-strong) 40%, transparent); } 100% { transform: scale(.9) translateX(30px); opacity: 0; } }
 @keyframes burst { 0% { transform: translate(-50%, -50%) scale(.3) rotate(0); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 46px)) scale(1) rotate(var(--rot)); opacity: 0; } }
 
@@ -1039,8 +1220,11 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
   .lb-span { align-items: flex-start; }
   .week-range { font-size: 16px; min-width: 0; }
   .daily { gap: 4px; }
-  .flow-board { columns: 1; }
+  .flow-board { grid-template-columns: 1fr; }
   .flow-board .task-group { transform: none; }
+  /* Icons only, so the switch and the new-task button share a row; the words stay for screen readers. */
+  .fold-switch button { padding: 9px 14px; }
+  .fold-switch button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }

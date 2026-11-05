@@ -131,6 +131,31 @@ export function galleryGroups(items: HistoryItem[], filter: GalleryFilter, limit
     ${visible.length > shown.length ? `<div class="gallery-more"><button type="button" class="button" data-gallery-more>${icons.plus}<span>Show ${Math.min(60, visible.length - shown.length)} more</span></button></div>` : ""}`;
 }
 
+const moment = (iso: string) => `<strong>${e(formatDate(iso, {weekday: "short", month: "short", day: "numeric"}))}</strong><small>${e(formatDate(iso, {hour: "numeric", minute: "2-digit"}))}</small>`;
+
+/** The hover card for one history item: what it was, when it was added and closed, how long that took,
+ *  and how its pace compares with the other completed tasks. */
+export function peekCard(item: HistoryItem, items: HistoryItem[], taskTypes: Record<string, string>): string {
+  const status = statusOf(item);
+  const tone = typeSwatch(taskTypes, item.type ?? null);
+  const hours = leadHours(item);
+  // How its time to finish compares with the other completed tasks, said in whichever direction is true.
+  const others = status === "completed" ? items.filter(entry => entry !== item && statusOf(entry) === "completed").map(leadHours) : [];
+  const slower = others.filter(value => value > hours).length / (others.length || 1);
+  const faster = others.filter(value => value < hours).length / (others.length || 1);
+  const pace = !others.length ? "" : slower >= faster
+    ? (slower ? `Quicker than ${Math.round(slower * 100)}% of your other completed tasks.` : "About as quick as your other completed tasks.")
+    : `Took longer than ${Math.round(faster * 100)}% of your other completed tasks.`;
+  const type = (item.type && taskTypes[item.type]) || item.typeName || "Task";
+  return `<div class="peek-card ${sw(tone)}">
+    <div class="peek-head"><div class="peek-art" aria-hidden="true">${artwork(item.description + item.startedAt, tone, status !== "completed")}</div>
+      <div class="peek-title"><span class="peek-status ${OUTCOME_TONE[status]}">${STATUS_ICON[status]}${STATUS_LABEL[status]}</span><strong>${e(item.description)}</strong><span class="peek-type"><i></i>${e(type)}</span></div></div>
+    <ol class="peek-journey"><li><span>Added</span>${moment(item.startedAt)}</li><li class="peek-span"><i></i><em>${icons.hourglass}${formatHours(hours)}</em></li><li><span>${STATUS_LABEL[status]}</span>${moment(item.endedAt)}</li></ol>
+    <div class="peek-foot"><span>Importance</span>${priorityDots(item.priority)}<b>${item.priority}/10</b></div>
+    ${pace ? `<p class="peek-note">${icons.zap}${pace}</p>` : ""}
+  </div>`;
+}
+
 /** Detail view for one history item, with its lead time placed among all completed tasks. */
 export function lightbox(item: HistoryItem, items: HistoryItem[], position: {index: number; total: number}, taskTypes: Record<string, string>): string {
   const status = statusOf(item);
@@ -186,7 +211,7 @@ function typeMix(overview: WeeklyOverview): string {
     const count = overview.current.byType[id] ?? 0;
     const usual = overview.baseline.byType[id];
     const label = overview.taskTypes[id] ?? id;
-    return `<div class="mix-row ${sw(typeSwatch(overview.taskTypes, id))}"><span class="mix-name"><i></i>${e(label)}</span><div class="mix-track"><b style="--w:${count / max}" data-tip="${e(`${label}: ${count} this week`)}"></b>${usual !== undefined ? `<em style="--x:${usual / max}" data-tip="${e(`Usual: ${usual} per week`)}"></em>` : ""}</div><span class="mix-val">${count}</span></div>`;
+    return `<div class="mix-row ${sw(typeSwatch(overview.taskTypes, id))}"><span class="mix-name" title="${e(label)}"><i></i><span>${e(label)}</span></span><div class="mix-track"><b style="--w:${count / max}" data-tip="${e(`${label}: ${count} this week`)}"></b>${usual !== undefined ? `<em style="--x:${usual / max}" data-tip="${e(`Usual: ${usual} per week`)}"></em>` : ""}</div><span class="mix-val">${count}</span></div>`;
   }).join("")}</div><div class="legend"><span class="legend-bar"><i></i>This week</span>${overview.baseline.weeks ? `<span class="legend-tick"><i></i>Usual (${overview.baseline.weeks}-week average)</span>` : ""}</div>`;
 }
 
@@ -206,7 +231,7 @@ function habitGrid(overview: WeeklyOverview): string {
   if (!overview.habits.length) return empty("Add habits in Settings to see your weekly rhythm.");
   const days = overview.days.map(day => weekday(day.date).slice(0, 2));
   return `<div class="habit-grid" role="table" aria-label="Habits this week"><div class="hg-row hg-head" role="row"><span role="columnheader">Habit</span>${days.map(day => `<span role="columnheader">${e(day)}</span>`).join("")}<span role="columnheader">Rate</span></div>
-    ${overview.habits.map(habit => `<div class="hg-row" role="row"><span class="hg-name" role="rowheader">${e(habit.description)}</span>${habit.days.map((done, i) => `<span role="cell" class="hd ${done === null ? "future" : done ? "done" : "miss"}" style="--i:${i}" data-tip="${e(`${weekday(overview.days[i].date, "long")}: ${done === null ? "upcoming" : done ? "done" : "missed"}`)}">${done ? icons.check : ""}<span class="sr-only">${done === null ? "upcoming" : done ? "done" : "missed"}</span></span>`).join("")}
+    ${overview.habits.map(habit => `<div class="hg-row" role="row"><span class="hg-name" role="rowheader" title="${e(habit.description)}">${e(habit.description)}</span>${habit.days.map((done, i) => `<span role="cell" class="hd ${done === null ? "future" : done ? "done" : "miss"}" style="--i:${i}" data-tip="${e(`${weekday(overview.days[i].date, "long")}: ${done === null ? "upcoming" : done ? "done" : "missed"}`)}">${done ? icons.check : ""}<span class="sr-only">${done === null ? "upcoming" : done ? "done" : "missed"}</span></span>`).join("")}
       <span role="cell" class="hg-rate"><b>${pctText(habit.rate)}</b>${habit.rate !== null && habit.previousRate !== null && Math.round((habit.rate - habit.previousRate) * 100) !== 0 ? `<small class="${habit.rate > habit.previousRate ? "up" : "down"}">${habit.rate > habit.previousRate ? icons.up : icons.down}<span class="sr-only">${habit.rate > habit.previousRate ? "up" : "down"} from ${pctText(habit.previousRate)} last week</span></small>` : ""}</span></div>`).join("")}</div>`;
 }
 
@@ -225,7 +250,7 @@ export function weeklyView(overview: WeeklyOverview): string {
   const range = `${formatDate(overview.weekStart, {month: "short", day: "numeric"})} – ${formatDate(overview.weekEnd, {month: "short", day: "numeric", year: "numeric"})}`;
   const atStart = !!overview.firstActivity && overview.weekStart <= overview.firstActivity;
   const flames = overview.days.map(day => `<i class="${day.completed ? "lit" : ""} ${day.future ? "future" : ""}" data-tip="${e(`${weekday(day.date, "long")}: ${day.completed} completed`)}">${icons.flame}</i>`).join("");
-  return `<div class="week-bar"><button type="button" class="button ghost" data-action="close-week">${icons.left}<span>Gallery</span></button><div class="week-nav" role="group" aria-label="Choose week"><button type="button" class="icon-button" data-week="prev" aria-label="Previous week" ${atStart ? "disabled" : ""}>${icons.back}</button><h2 class="week-range">${e(range)}</h2><button type="button" class="icon-button" data-week="next" aria-label="Next week" ${overview.isCurrentWeek ? "disabled" : ""}>${icons.arrow}</button></div>${overview.isCurrentWeek ? `<span class="pill">This week</span>` : `<button type="button" class="button small" data-week="today">This week</button>`}</div>
+  return `<div class="week-bar"><button type="button" class="button ghost" data-action="close-week">${icons.left}<span>History</span></button><div class="week-nav" role="group" aria-label="Choose week"><button type="button" class="icon-button" data-week="prev" aria-label="Previous week" ${atStart ? "disabled" : ""}>${icons.back}</button><h2 class="week-range">${e(range)}</h2><button type="button" class="icon-button" data-week="next" aria-label="Next week" ${overview.isCurrentWeek ? "disabled" : ""}>${icons.arrow}</button></div>${overview.isCurrentWeek ? `<span class="pill">This week</span>` : `<button type="button" class="button small" data-week="today">This week</button>`}</div>
     <section class="bento week-bento">
       <article class="card hero-card wk-hero"><p class="eyebrow">TASKS COMPLETED</p><div class="hero-number"><strong>${current.completed}</strong><div class="hero-deltas">${delta(current.completed, previous.completed, {label: "last week"})}${delta(current.completed, baseline.completed, {label: usualLabel, digits: 1})}</div></div>${trendBars(overview)}</article>
       <article class="card wk-habits"><p class="eyebrow">HABIT CONSISTENCY</p>${ring({value: current.habitRate, compare: previous.habitRate, size: 132, label: `Habits: ${pctText(current.habitRate)} this week, ${pctText(previous.habitRate)} last week`})}<div class="legend vertical"><span class="sw-green"><i></i>This week <b>${pctText(current.habitRate)}</b></span><span class="legend-ghost"><i></i>Last week <b>${pctText(previous.habitRate)}</b></span></div>${current.habitRate !== null && previous.habitRate !== null ? delta(Math.round(current.habitRate * 100), Math.round(previous.habitRate * 100), {label: "last week", unit: " pts"}) : ""}</article>

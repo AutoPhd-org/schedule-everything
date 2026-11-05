@@ -1,9 +1,10 @@
 // Shared markup helpers, icons, and color assignments for the browser workspace.
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
-  ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronLeft, ChevronRight, CircleCheck, Clock3, Copy, Feather, Repeat, Flag, Flame,
-  GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon, Palette, Pencil, Plus, RefreshCw, Search,
-  Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp, Trophy, X, Zap
+  ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, Clock3,
+  Copy, CornerDownLeft, Feather, Repeat, Flag, Flame, GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon,
+  Palette, Pencil, Plus, RefreshCw, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
+  Trophy, X, Zap
 } from "lucide";
 
 type SvgNode = readonly [tag: string, attrs: Record<string, string | number>, children?: readonly SvgNode[]];
@@ -26,7 +27,7 @@ export const icons = {
   ban: icon(Ban), dropped: icon(ArrowDownRight), trophy: icon(Trophy), search: icon(Search), gallery: icon(GalleryHorizontalEnd),
   grip: icon(GripVertical), hourglass: icon(Hourglass), palette: icon(Palette), edit: icon(Pencil), trash: icon(Trash2),
   flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy), repeat: icon(Repeat),
-  tree: icon(TreeDeciduous)
+  tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft)
 };
 
 /** Categorical hues in a fixed, colorblind-validated order (see styles.css for light and dark steps). */

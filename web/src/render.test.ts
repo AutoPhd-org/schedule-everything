@@ -30,7 +30,8 @@ beforeEach(()=>{
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('browser workspace',()=>{
   it('groups all tasks by type without truncating or changing importance order',async()=>{
-    const groups=groupTasks(snapshot);expect(groups.map(g=>g.name)).toEqual(['Coding','Writing','Reading']);expect(groups[0].tasks).toHaveLength(12);expect(groups[0].tasks[0].priority).toBe(9);
+    // Writing averages 10, Coding 7.3 over twelve tasks, Reading 5.
+    const groups=groupTasks(snapshot);expect(groups.map(g=>g.name)).toEqual(['Writing','Coding','Reading']);expect(groups[1].tasks).toHaveLength(12);expect(groups[1].tasks[0].priority).toBe(9);expect(groups[1].average).toBe(7.3);
     await renderApp(root,client);expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.textContent).toContain('Importance 10/10');expect(root.textContent).toContain('Reminders in 2 days');expect(root.textContent).toContain('2026-10-07');
   });
   it('escapes user text',async()=>{
@@ -143,6 +144,31 @@ describe('browser workspace',()=>{
     expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
+  it('lets the notice be dismissed with its close button or Escape',async()=>{
+    vi.stubGlobal('matchMedia',vi.fn((query:string)=>({matches:query.includes('reduced-motion'),addEventListener:vi.fn()})));
+    await renderApp(root,client);
+    const notice=()=>root.querySelector<HTMLElement>('#notice')!;
+    click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+    expect(notice().classList.contains('visible')).toBe(true);
+    expect(notice().textContent).toContain('Task completed');
+    click('[data-notice-close]');
+    expect(notice().classList.contains('visible')).toBe(false);
+    expect(notice().textContent).toBe('');
+    click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+    expect(notice().classList.contains('visible')).toBe(true);
+    document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    expect(notice().classList.contains('visible')).toBe(false);
+  });
+  it('slides the notice away before hiding it',async()=>{
+    await renderApp(root,client);
+    click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+    click('[data-notice-close]');
+    const notice=root.querySelector<HTMLElement>('#notice')!;
+    expect(notice.classList.contains('leaving')).toBe(true);
+    notice.dispatchEvent(new Event('animationend'));
+    expect(notice.classList.contains('visible')).toBe(false);
+    expect(notice.classList.contains('leaving')).toBe(false);
+  });
   it('switches themes without discarding unsaved form contents',async()=>{
     await renderApp(root,client);click('[data-page="settings"]');
     const name=root.querySelector<HTMLInputElement>('[name="typeName"]')!;name.value='An unsaved type name';

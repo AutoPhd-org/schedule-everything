@@ -1,22 +1,28 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
-import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
+import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
+import { foldSwitch, groupTasks, masonry, taskBoard, type BoardView, type Composer } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
-import { bindTilt, burst } from "./effects";
+import { bindTilt, burst, reducedMotion } from "./effects";
+import { bindPeek, hidePeek } from "./peek";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
+import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
-import { addDays, button, e, empty, escapeHtml, field, formatDate, hash, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
+import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
 
-export { escapeHtml };
+export { escapeHtml, groupTasks };
 
 type Page = "today" | "schedule" | "routines" | "activity" | "settings";
 type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
 type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; treeLimit: number; loading: boolean};
+/** The task board: expanded or folded, groups toggled away from that view, the inline new-task form, the task
+ *  to greet after it was added, and whether to put the cursor back in the form after the next draw. */
+type BoardState = {view: BoardView; flipped: Set<string>; composer: Composer | null; added: string | null; focus: boolean};
 type AgentTab = "claude" | "codex" | "antigravity";
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView};
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -38,6 +44,14 @@ function loadHistoryLayout(): HistoryLayout {
 function saveHistoryLayout(layout: HistoryLayout): void {
   try { window.localStorage.setItem(HISTORY_LAYOUT, layout); } catch { /* Keep working without storage. */ }
 }
+const BOARD_VIEW = "schedule-everything-task-board";
+/** Whether the task board is expanded or folded is a per-browser preference too; expanded is the default. */
+function loadBoardView(): BoardView {
+  try { return window.localStorage.getItem(BOARD_VIEW) === "folded" ? "folded" : "expanded"; } catch { return "expanded"; }
+}
+function saveBoardView(view: BoardView): void {
+  try { window.localStorage.setItem(BOARD_VIEW, view); } catch { /* Keep working without storage. */ }
+}
 
 const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
 const GALLERY_PAGE = 60;
@@ -52,13 +66,25 @@ const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for tod
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
 
-export function groupTasks(snapshot: Snapshot): {id: string; name: string; tasks: TaskItem[]}[] {
-  const groups = new Map<string, {id: string; name: string; tasks: TaskItem[]}>();
-  for (const task of snapshot.tasks) {
-    if (!groups.has(task.type)) groups.set(task.type, {id: task.type, name: snapshot.taskTypes[task.type] ?? task.typeName ?? "Other", tasks: []});
-    groups.get(task.type)!.tasks.push(task);
+/** Run a DOM update as a view transition, so boxes that change size or place morph instead of jumping.
+ *  Browsers without view transitions, and people who prefer reduced motion, get the update at once. */
+function morph(update: () => void): void {
+  if (typeof document.startViewTransition !== "function" || reducedMotion()) { update(); return; }
+  const html = document.documentElement;
+  html.dataset.vt = "board";
+  try {
+    const transition = document.startViewTransition(update);
+    // A page that is not being painted (a background tab) never reaches the update; apply it anyway.
+    const fallback = window.setTimeout(() => transition.skipTransition(), 400);
+    const updated = () => window.clearTimeout(fallback);
+    const done = () => { delete html.dataset.vt; };
+    transition.updateCallbackDone.then(updated, updated);
+    transition.ready.catch(() => {});
+    transition.finished.then(done, done);
+  } catch {
+    delete html.dataset.vt;
+    update();
   }
-  return [...groups.values()].sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
 }
 
 type RootWithAbort = HTMLElement & {scheduleAbort?: AbortController};
@@ -74,8 +100,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", config: null,
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
-    conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false}
+    conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
+    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false}
   };
+  bindTooltips(signal);
   let drawn: {page: Page; mode: Mode} | null = null;
   root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>Opening your workspace…</p></div>`;
   const request = async <T>(command: string, payload: Record<string, unknown> = {}): Promise<T> => client.send<T>(command, payload);
@@ -121,10 +149,28 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function status() {
     const region = root.querySelector<HTMLElement>("#notice");
-    if (region) { region.textContent = state.busy ? "Working on it…" : state.notice; region.classList.toggle("visible", state.busy || !!state.notice); }
+    if (!region) return;
+    const text = state.busy ? "Working on it…" : state.notice;
+    region.querySelector(".notice-text")!.textContent = text;
+    region.classList.remove("leaving");
+    region.classList.toggle("visible", !!text);
+    region.classList.toggle("busy", state.busy);
+  }
+  /** Let the notice slide away; a newer notice that arrives meanwhile replaces it. */
+  function dismissNotice() {
+    const region = root.querySelector<HTMLElement>("#notice");
+    if (state.busy || !state.notice || !region) return;
+    state.notice = "";
+    if (reducedMotion()) { status(); return; }
+    region.style.setProperty("--h", `${region.offsetHeight}px`);
+    region.classList.add("leaving");
+    const finish = () => { if (region.classList.contains("leaving") && !state.notice && !state.busy) status(); };
+    region.addEventListener("animationend", event => { if (event.target === region) finish(); });
+    window.setTimeout(finish, 520);
   }
   function navigate(page: Page) {
     state.page = page;
+    state.board.composer = null;
     state.calendar.day = null;
     if (page === "activity") state.activity.view = "gallery";
     draw();
@@ -135,6 +181,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function draw(animate = false) {
     const s = state.snapshot!;
     const mode = modeOf();
+    hidePeek();
     document.documentElement.dataset.mode = mode;
     animate ||= !drawn || drawn.page !== state.page || drawn.mode !== mode;
     drawn = {page: state.page, mode};
@@ -144,9 +191,14 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       <nav aria-label="Main navigation">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(label)}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? "P mode" : "J mode"}</strong><span>${mode === "p" ? "Flexible, task-first" : "Structured day"}</span></div></div><span class="local-dot"></span> Saved on your computer<p>One day, one thing at a time.</p></div></aside>
       <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
-      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" role="status" aria-live="polite" class="notice"></div>${s.config.error ? `<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
+      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-close" data-notice-close aria-label="Dismiss notification" title="Dismiss (Esc)">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
     status();
+    state.board.added = null;
+    if (state.board.focus) {
+      state.board.focus = false;
+      root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus();
+    }
   }
 
   function bindShell(s: Snapshot) {
@@ -170,7 +222,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelectorAll<HTMLButtonElement>("[data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
     root.querySelector<HTMLAnchorElement>(".brand")!.onclick = event => { event.preventDefault(); navigate("today"); };
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(btn => btn.onclick = () => void action(() => runAction(btn.dataset.action!)));
-    bindTasks(root, s);
+    root.querySelector<HTMLButtonElement>("[data-notice-close]")!.onclick = dismissNotice;
+    const board = root.querySelector<HTMLElement>("#task-board");
+    if (board) bindBoard(board, s);
+    root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
     root.querySelectorAll<HTMLButtonElement>("[data-deadline]").forEach(btn => btn.onclick = () => {
       const deadline = s.deadlines[Number(btn.dataset.deadline)];
       if (btn.dataset.operation === "edit") deadlineDialog(deadline);
@@ -182,9 +237,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
     root.querySelector<HTMLInputElement>('[name="search"]')?.addEventListener("input", event => {
       state.search = (event.target as HTMLInputElement).value;
-      const board = root.querySelector<HTMLElement>("#task-board")!;
-      board.innerHTML = taskBoard(s);
-      bindTasks(board, s);
+      redrawBoard(s);
     });
     root.querySelector<HTMLSelectElement>('[name="configFile"]')?.addEventListener("change", event => void action(async () => {
       if (state.config && root.querySelector<HTMLTextAreaElement>('[name="configContent"]')?.value !== state.config.content && !window.confirm("Discard unsaved edits?")) { (event.target as HTMLSelectElement).value = state.config.file; return; }
@@ -247,6 +300,121 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       });
     });
   }
+  // ----- Task board: folding and inline add -----------------------------------
+
+  const boardHtml = (s: Snapshot, opening: string | null = null) => taskBoard({snapshot: s, query: state.search, isFolded: id => (state.board.view === "folded") !== state.board.flipped.has(id), composer: state.board.composer, added: state.board.added, opening});
+  /** Every group folded: the summaries line up in plain rows instead of the masonry. */
+  const uniformBoard = () => state.board.view === "folded" && !state.board.flipped.size && !state.search;
+  /** Redraw only the board, leaving the page around it as it is. `reveal` animates the contents of every
+   *  group, or of one group by ID, as they appear after folding or expanding. */
+  function redrawBoard(s: Snapshot, options: {opening?: string; reveal?: true | string; fresh?: boolean} = {}) {
+    const board = root.querySelector<HTMLElement>("#task-board");
+    if (!board) return;
+    root.querySelector(".content")?.classList.remove("enter");
+    board.classList.toggle("is-uniform", uniformBoard());
+    board.innerHTML = boardHtml(s, options.opening ?? null);
+    if (options.reveal) board.querySelectorAll<HTMLElement>(".task-group").forEach(group => group.classList.toggle("reveal", options.reveal === true || group.dataset.group === options.reveal));
+    bindBoard(board, s, options.fresh);
+  }
+  function bindBoard(scope: HTMLElement, s: Snapshot, fresh = false) {
+    masonry(scope, fresh);
+    bindTasks(scope, s);
+    scope.querySelectorAll<HTMLButtonElement>("[data-group-toggle]").forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.groupToggle!;
+      if (!state.board.flipped.delete(id)) state.board.flipped.add(id);
+      morph(() => {
+        redrawBoard(s, {reveal: id});
+        [...root.querySelectorAll<HTMLElement>("[data-group-toggle]")].find(el => el.dataset.groupToggle === id)?.focus({preventScroll: true});
+      });
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-compose]").forEach(btn => btn.onclick = () => {
+      const type = btn.dataset.compose!;
+      const previous = state.board.composer;
+      state.board.composer = {type, priority: previous?.type === type ? previous.priority : 5, draft: previous?.type === type ? previous.draft : ""};
+      redrawBoard(s, {opening: type});
+      scope.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus();
+    });
+    scope.querySelectorAll<HTMLFormElement>("form.composer").forEach(form => bindComposer(form, s));
+  }
+  function setBoardView(view: BoardView, s: Snapshot) {
+    if (view === state.board.view && !state.board.flipped.size) return;
+    state.board.view = view;
+    state.board.flipped.clear();
+    saveBoardView(view);
+    morph(() => {
+      const toggle = root.querySelector<HTMLElement>(".fold-switch");
+      toggle?.classList.toggle("is-folded", view === "folded");
+      toggle?.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.setAttribute("aria-pressed", String(btn.dataset.boardView === view)));
+      redrawBoard(s, {reveal: true, fresh: true});
+    });
+  }
+  function closeComposer(s: Snapshot) {
+    const type = state.board.composer?.type;
+    const slot = root.querySelector<HTMLElement>("form.composer")?.closest<HTMLElement>(".compose-slot");
+    let closed = false;
+    const finish = () => {
+      if (closed) return;
+      closed = true;
+      state.board.composer = null;
+      redrawBoard(s);
+      [...root.querySelectorAll<HTMLElement>("[data-compose]")].find(el => el.dataset.compose === type)?.focus({preventScroll: true});
+    };
+    if (!slot || reducedMotion()) { finish(); return; }
+    slot.classList.remove("opening");
+    slot.classList.add("closing");
+    slot.addEventListener("animationend", event => { if (event.target === slot) finish(); });
+    window.setTimeout(finish, 320);
+  }
+  function bindComposer(form: HTMLFormElement, s: Snapshot) {
+    const type = form.dataset.composer!;
+    const input = form.querySelector<HTMLInputElement>('[name="composerText"]')!;
+    const range = form.querySelector<HTMLInputElement>('[name="composerPriority"]')!;
+    const shown = form.querySelector<HTMLElement>(".composer-importance b")!;
+    const mine = () => state.board.composer?.type === type ? state.board.composer : null;
+    input.addEventListener("input", () => { const composer = mine(); if (composer) composer.draft = input.value; });
+    range.addEventListener("input", () => {
+      const priority = Number(range.value);
+      shown.textContent = String(priority);
+      range.style.setProperty("--p", ((priority - 1) / 9).toFixed(3));
+      const composer = mine();
+      if (composer) composer.priority = priority;
+    });
+    form.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); closeComposer(s); } });
+    form.querySelector<HTMLButtonElement>("[data-compose-close]")!.onclick = () => closeComposer(s);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      if (state.busy) return;
+      const description = input.value.trim();
+      if (!description) {
+        form.classList.remove("shake");
+        void form.offsetWidth;
+        form.classList.add("shake");
+        input.focus();
+        return;
+      }
+      const priority = Number(range.value) || 5;
+      const name = s.taskTypes[type] ?? groupTasks(s).find(group => group.id === type)?.name ?? "this group";
+      const existing = s.tasks.find(task => task.description === description);
+      const where = existing && existing.type !== type ? ` under ${s.taskTypes[existing.type] ?? existing.typeName}` : "";
+      if (existing && !window.confirm(`“${description}” is already on your list${where}. Replace it with this one?`)) { input.focus(); return; }
+      // Clear the field right away so the next task can be typed while this one saves.
+      input.value = "";
+      state.board.composer = {type, priority, draft: ""};
+      void action(async () => {
+        try { await request("task_add", {description, priority, type, postpone: 0}); }
+        catch (error) {
+          const composer = mine();
+          if (composer && !composer.draft) { composer.draft = description; if (input.isConnected && !input.value) input.value = description; }
+          throw error;
+        }
+        state.board.added = description;
+        state.board.focus = true;
+        await reload();
+        state.notice = `Added “${description}” to ${name}.`;
+      });
+    });
+  }
+
   async function removeDeadline(deadline: DeadlineItem) {
     await action(async () => { if (!window.confirm(`Remove “${deadline.event}”?`)) return; await request("deadline_delete", {event: deadline.event}); await reload(); });
   }
@@ -279,24 +447,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       ${taskSection(s)}
       <article class="card timeline-card"><div class="section-heading compact"><h3>${icons.schedule} Today’s timeline</h3><button class="text-button" type="button" data-page="schedule">Full schedule ${icons.arrow}</button></div>${timeline(s)}</article>`;
   }
+  const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
-    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions"><label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>${button("add-task", "New task", icons.plus, "button primary")}</div></div>
-      <section id="task-board" class="task-board flow-board">${taskBoard(s)}</section>`;
+    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
+      <section id="task-board" class="task-board flow-board ${uniformBoard() ? "is-uniform" : ""}">${boardHtml(s)}</section>`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Highest importance first within each task status.</p></div><label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label></div><section id="task-board" class="task-board">${taskBoard(s)}</section>`;
-  }
-  function taskBoard(s: Snapshot) {
-    const query = state.search.toLowerCase();
-    const groups = groupTasks(s).map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(query))})).filter(group => group.tasks.length);
-    if (!groups.length) return empty(state.search ? "No tasks match your search." : "A clear slate. Add a task to find your next focus.");
-    return groups.map(group => `<article class="task-group ${sw(typeSwatch(s.taskTypes, group.id))}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}"><header class="group-heading"><span class="group-icon">${icons.tasks}</span><h3>${e(group.name)}</h3><span class="group-count">${group.tasks.length}</span></header><div class="task-cards">${group.tasks.map((task, position) => {
-      const idx = s.tasks.indexOf(task);
-      const days = task.alarmFrom ? Math.round((Date.parse(task.alarmFrom) - Date.parse(s.today.date)) / 86400000) : 0;
-      const detail = days > 0 ? `Reminders ${days === 1 ? "tomorrow" : `in ${days} days`} · ${task.alarmFrom}` : task.procrastinated ? `Deferred${task.procrastinateDays === null ? "" : ` · ${task.procrastinateDays} days`}` : "";
-      const level = task.priority >= 8 ? "high" : task.priority >= 5 ? "medium" : "low";
-      return `<div class="task-card ${task.procrastinated ? "deferred" : ""} ${days > 0 ? "postponed" : task.priority >= 8 ? "high-priority" : ""}" style="--i:${position}"><div class="task-main"><button type="button" class="complete-button" data-task="${idx}" data-operation="deleted" aria-label="Complete ${e(task.description)}" title="Complete task">${icons.check}</button><h4>${e(task.description)}</h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${idx}" data-operation="edit" aria-label="Edit ${e(task.description)}">Edit</button></div>${detail ? `<p class="task-detail">${icons.clock}${e(detail)}</p>` : ""}<details class="task-more"><summary>More options</summary><button type="button" data-task="${idx}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${idx}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
-    }).join("")}</div></article>`).join("");
+    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div><section id="task-board" class="task-board ${uniformBoard() ? "is-uniform" : ""}">${boardHtml(s)}</section>`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -336,7 +493,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function activity(s: Snapshot) {
     const a = state.activity;
     if (a.view === "week" && a.week) return `<div class="page-heading"><div><p class="eyebrow">${icons.spark} WEEKLY OVERVIEW</p><h1>Your week in color<span class="accent-dot">.</span></h1><p class="muted">Compared with last week and the weeks before it.</p></div></div>${weeklyView(a.week)}`;
-    const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Open any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Open any piece to see its story.";
+    const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.";
     return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
   }
   function settings(s: Snapshot) {
@@ -364,6 +521,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const region = root.querySelector<HTMLElement>("#history");
     if (!region) return;
     const top = root.querySelector<HTMLElement>("[data-tree-viewport]")?.scrollTop ?? 0;
+    hidePeek();
     region.innerHTML = historyRegion(s);
     bindRegion(s);
     const viewport = root.querySelector<HTMLElement>("[data-tree-viewport]");
@@ -416,6 +574,12 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelectorAll<HTMLElement>("[data-history]").forEach(card => {
       card.onclick = () => openLightbox(Number(card.dataset.history), s);
       if (card.tagName !== "BUTTON") card.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openLightbox(Number(card.dataset.history), s); } };
+    });
+    // Hovering (or focusing) an event shows its details beside it; clicking still opens the full story.
+    const items = a.items ?? [];
+    bindPeek(root.querySelector<HTMLElement>("#history"), el => {
+      const item = items[Number(el.dataset.history)];
+      return item ? peekCard(item, items, s.taskTypes) : null;
     });
     const more = root.querySelector<HTMLButtonElement>("[data-gallery-more]");
     if (more) more.onclick = () => { a.limit += GALLERY_PAGE; redrawRegion(s); };
@@ -673,11 +837,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       root.querySelector<HTMLElement>("[data-conf-menu]")?.focus();
       return;
     }
-    if (event.key !== "Escape" || !state.calendar.day || root.querySelector("dialog[open]")) return;
-    const day = state.calendar.day;
-    state.calendar.day = null;
-    drawCalendar();
-    root.querySelector<HTMLElement>(`.day[data-day="${day}"]`)?.focus();
+    if (event.key !== "Escape" || root.querySelector("dialog[open]")) return;
+    if (state.calendar.day) {
+      const day = state.calendar.day;
+      state.calendar.day = null;
+      drawCalendar();
+      root.querySelector<HTMLElement>(`.day[data-day="${day}"]`)?.focus();
+      return;
+    }
+    // Nothing else is open, so Escape puts the notice away.
+    dismissNotice();
   }, {signal});
   window.addEventListener("resize", () => positionPopover(), {signal});
   try { await reload(); } catch (error) { root.innerHTML = `<div class="loading"><h1>Could not open your workspace</h1><p>${e(error instanceof Error ? error.message : String(error))}</p><button class="button" id="retry">Try again</button></div>`; root.querySelector("#retry")?.addEventListener("click", () => void renderApp(root, client)); }

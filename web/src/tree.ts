@@ -123,6 +123,41 @@ function nodeHtml(node: TreeNode, index: number, order: number): string {
 
 const markHtml = (mark: TreeMark) => `<div class="tree-mark mark-${mark.kind}" style="--y:${mark.y}px"><span>${e(mark.label)}</span></div>`;
 
+/** Rows for labels centered on `x` within `span` pixels: each label takes the first row where it clears its
+ *  left neighbor by `gap`, and labels near the edges shift inward to stay `edge` pixels inside. */
+export function packLabels(labels: {x: number; width: number}[], span: number, gap = 8, edge = 10): {placements: {row: number; shift: number}[]; rows: number} {
+  const ends: number[] = [];
+  const placements = labels.map(() => ({row: 0, shift: 0}));
+  const order = labels.map((_, i) => i).sort((a, b) => labels[a].x - labels[b].x);
+  for (const i of order) {
+    const {x, width} = labels[i];
+    const left = Math.max(edge, Math.min(span - edge - width, x - width / 2));
+    let row = ends.findIndex(end => left >= end + gap);
+    if (row < 0) { row = ends.length; ends.push(0); }
+    ends[row] = left + width;
+    placements[i] = {row, shift: Math.round(left - (x - width / 2))};
+  }
+  return {placements, rows: Math.max(1, ends.length)};
+}
+
+/** Stack the lane labels in as many rows as they need, each centered over its lane and kept inside the tree. */
+function arrangeLanes(band: HTMLElement): void {
+  const heads = [...band.querySelectorAll<HTMLElement>(".tree-lane-head")];
+  const span = band.clientWidth;
+  if (!span || !heads.length) return;
+  const labels = heads.map(head => ({x: parseFloat(getComputedStyle(head).left), width: head.offsetWidth}));
+  if (labels.some(label => !Number.isFinite(label.x) || !label.width)) return;
+  // Narrow trees show each lane as a dot (see the container query in styles.css). Labels keep clear of the
+  // stage's rounded top corners.
+  const dots = labels.every(label => label.width <= 12);
+  const {placements, rows} = packLabels(labels, span, dots ? 3 : 8, dots ? 8 : 22);
+  placements.forEach(({row, shift}, i) => {
+    heads[i].style.setProperty("--row", String(row));
+    heads[i].style.setProperty("--shift", `${shift}px`);
+  });
+  band.style.setProperty("--rows", String(rows));
+}
+
 /** The tree for events sorted newest first. `total` counts every matching event, so a partial tree offers to grow. */
 export function treeView(options: {items: HistoryItem[]; total: number; indexOf: (item: HistoryItem) => number; taskTypes: Record<string, string>; today: string; step: number}): string {
   const {items, total, taskTypes, today} = options;
@@ -141,21 +176,25 @@ export function treeView(options: {items: HistoryItem[]; total: number; indexOf:
   });
   const remaining = total - items.length;
   const lead = nodes[0] ? `${e(dayLabel(nodes[0].day, today))}` : "";
-  return `<section class="tree ${lanes.length === 1 ? "single" : ""}" data-tree aria-label="Task history tree, newest first">
-    <header class="tree-head"><p class="tree-readout"><i class="tr-dot" aria-hidden="true"></i><strong data-tree-range>${lead}</strong><span data-tree-summary>${total} ${total === 1 ? "event" : "events"}</span></p><p class="tree-hint">Scroll to travel back in time · ↑ ↓ step through events · drag the map to jump</p></header>
+  // Lanes share the room beside the trunk, however many types there are; see --step in styles.css.
+  const depths = Math.max(1, ...lanes.map(lane => lane.depth));
+  return `<section class="tree ${lanes.length === 1 ? "single" : ""}" data-tree aria-label="Task history tree, newest first" style="--depths:${depths}; --lane-gaps:${Math.max(1, lanes.length - 1)}">
+    <header class="tree-head"><p class="tree-readout"><i class="tr-dot" aria-hidden="true"></i><strong data-tree-range>${lead}</strong><span data-tree-summary>${total} ${total === 1 ? "event" : "events"}</span></p><p class="tree-hint">Hover over an event for details · scroll to travel back in time · ↑ ↓ step through events · drag the map to jump</p></header>
     <div class="tree-body">
       <div class="tree-stage">
-        <div class="tree-lens" aria-hidden="true"><i class="tree-glow"></i></div>
-        <div class="tree-lanes" aria-hidden="true">${lanes.map(lane => `<span class="tree-lane-head ${sw(lane.tone)}" style="${lanePlace(lane)}; --row:${(lane.depth - 1) % 2}">${e(lane.name)}</span>`).join("")}</div>
-        <div class="tree-viewport" data-tree-viewport>
-          <div class="tree-canvas" data-total="${height}" style="--h:${height}px">
-            ${lanes.map(lane => `<i class="tree-lane-guide ${sw(lane.tone)}" aria-hidden="true" style="${lanePlace(lane)}; --from:${top + 30}px; --len:${bottom - top - 60}px"></i>`).join("")}
-            <div class="tree-trunk" aria-hidden="true" style="--from:${top}px; --len:${bottom - top}px; background:${axisGradient(nodes, top, bottom)}"></div>
-            <div class="tree-crown ${sw(nodes[0]?.axis.tone ?? null)}" aria-hidden="true" style="--y:${top}px"><span>${icons.sprout}</span></div>
-            ${nodes.map((node, i) => node.marks.map(markHtml).join("") + nodeHtml(node, options.indexOf(node.item), i)).join("")}
-            <div class="tree-root ${sw(last?.axis.tone ?? null)}" style="--y:${bottom}px"><svg class="tr-roots" viewBox="0 0 120 34" aria-hidden="true"><path d="M60 0 C 60 16 38 20 14 30 M60 0 C 60 14 60 24 60 32 M60 0 C 60 16 82 20 106 30"/></svg>${remaining > 0
-              ? `<button type="button" class="button small" data-tree-more>${icons.plus}<span>Grow ${Math.min(options.step, remaining)} older ${Math.min(options.step, remaining) === 1 ? "event" : "events"}</span></button>`
-              : last ? `<span class="tr-label">Earliest · ${e(formatDate(last.day, {month: "short", day: "numeric", year: "numeric"}))}</span>` : ""}</div>
+        <div class="tree-lanes" data-tree-lanes aria-hidden="true" style="--rows:${Math.min(2, lanes.length)}">${lanes.map(lane => `<span class="tree-lane-head ${sw(lane.tone)}" data-tip="${e(lane.name)}" style="${lanePlace(lane)}; --row:${(lane.depth - 1) % 2}"><b>${e(lane.name)}</b></span>`).join("")}</div>
+        <div class="tree-window">
+          <div class="tree-lens" aria-hidden="true"><i class="tree-glow"></i></div>
+          <div class="tree-viewport" data-tree-viewport>
+            <div class="tree-canvas" data-total="${height}" style="--h:${height}px">
+              ${lanes.map(lane => `<i class="tree-lane-guide ${sw(lane.tone)}" aria-hidden="true" style="${lanePlace(lane)}; --from:${top + 30}px; --len:${bottom - top - 60}px"></i>`).join("")}
+              <div class="tree-trunk" aria-hidden="true" style="--from:${top}px; --len:${bottom - top}px; background:${axisGradient(nodes, top, bottom)}"></div>
+              <div class="tree-crown ${sw(nodes[0]?.axis.tone ?? null)}" aria-hidden="true" style="--y:${top}px"><span>${icons.sprout}</span></div>
+              ${nodes.map((node, i) => node.marks.map(markHtml).join("") + nodeHtml(node, options.indexOf(node.item), i)).join("")}
+              <div class="tree-root ${sw(last?.axis.tone ?? null)}" style="--y:${bottom}px"><svg class="tr-roots" viewBox="0 0 120 34" aria-hidden="true"><path d="M60 0 C 60 16 38 20 14 30 M60 0 C 60 14 60 24 60 32 M60 0 C 60 16 82 20 106 30"/></svg>${remaining > 0
+                ? `<button type="button" class="button small" data-tree-more>${icons.plus}<span>Grow ${Math.min(options.step, remaining)} older ${Math.min(options.step, remaining) === 1 ? "event" : "events"}</span></button>`
+                : last ? `<span class="tr-label">Earliest · ${e(formatDate(last.day, {month: "short", day: "numeric", year: "numeric"}))}</span>` : ""}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -277,9 +316,11 @@ export function bindTree(scope: ParentNode, onView?: (range: TreeViewRange) => v
   }
   const schedule = () => { if (!pending) pending = requestAnimationFrame(update); };
   // Half a viewport of room above the newest and below the oldest event lets every event reach the center.
+  const band = tree.querySelector<HTMLElement>("[data-tree-lanes]");
   const fit = () => {
     if (!viewport.isConnected) { observer?.disconnect(); return; }
     canvas.style.setProperty("--pad", `${Math.round(viewport.clientHeight / 2)}px`);
+    if (band) arrangeLanes(band);
     update();
   };
   const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
