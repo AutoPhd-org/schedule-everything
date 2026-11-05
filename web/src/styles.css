@@ -656,6 +656,118 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .gc-shine { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, .45), transparent 45%); transition: opacity .3s; mix-blend-mode: soft-light; }
 .gallery-card:hover .gc-shine { opacity: 1; }
 .gallery-more { display: flex; justify-content: center; margin: 10px 0 30px; }
+.layout-switch { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line); }
+.layout-switch button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px 6px 10px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 650; transition: color .2s, background .2s; }
+.layout-switch button svg { width: 15px; height: 15px; }
+.layout-switch button:hover { color: var(--text); }
+.layout-switch button[aria-pressed="true"] { background: var(--surface-solid); color: var(--accent-ink); box-shadow: var(--shadow); }
+.heat-cell.in-view { box-shadow: 0 0 0 1.5px var(--surface-solid), 0 0 0 3px var(--accent-2); }
+
+/* ----- Activity: history tree ----------------------------------------------
+   Content y equals the viewport's scrollTop at its center line. The trunk runs down the middle (or near the
+   left edge in narrow containers), and each type's lane sits --depth steps out on its --side. */
+@property --view-c { syntax: "<color>"; inherits: true; initial-value: #6250d6; }
+.tree { --view-c: var(--accent); --tree-h: clamp(420px, calc(100vh - 210px), 880px); margin-bottom: 30px; transition: --view-c .7s var(--ease); }
+.tree-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; margin: 0 8px 12px; }
+.tree-readout { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 0; color: var(--muted); font-size: 12.5px; }
+.tree-readout strong { font: 760 18px/1.2 var(--display); color: var(--text); letter-spacing: -.01em; }
+.tr-dot { align-self: center; width: 12px; height: 12px; border-radius: 50%; background: var(--view-c); box-shadow: 0 0 0 4px color-mix(in oklab, var(--view-c) 22%, transparent); }
+.tree-hint { margin: 0; color: var(--muted); font-size: 11.5px; }
+.tree-body { display: grid; grid-template-columns: minmax(0, 1fr) 74px; gap: 12px; }
+.tree-stage { position: relative; isolation: isolate; container-type: inline-size; overflow: hidden; border-radius: 40px 40px 40px 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.tree-viewport { position: relative; z-index: 1; height: var(--tree-h); overflow-y: auto; scrollbar-width: none; --fade: linear-gradient(to bottom, transparent, rgba(0, 0, 0, .12) 50px, #000 104px, #000 calc(100% - 72px), transparent); -webkit-mask-image: var(--fade); mask-image: var(--fade); }
+.tree-viewport::-webkit-scrollbar { display: none; }
+.tree-lens, .tree-lanes, .tree-canvas { --trunk: 50%; --step: clamp(48px, 8%, 104px); }
+.tree.single :is(.tree-lens, .tree-lanes, .tree-canvas) { --trunk: 34%; }
+.tree-node, .tree-lane-guide, .tree-lane-head { --x: calc(var(--trunk) + var(--side) * var(--depth) * var(--step)); }
+.tree-canvas { position: relative; height: calc(var(--h) + 2 * var(--pad, 320px)); }
+.tree-canvas > * { position: absolute; }
+
+/* The focus band sits behind the content at the viewport's center; the trunk glows where it crosses. */
+.tree-lens { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.tree-lens::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 88px; transform: translateY(-50%); background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--view-c) 11%, transparent) 18%, color-mix(in oklab, var(--view-c) 11%, transparent) 82%, transparent); border-block: 1px dashed color-mix(in oklab, var(--view-c) 32%, transparent); }
+.tree-glow { position: absolute; left: var(--trunk); top: 50%; width: 30px; height: 200px; transform: translate(-50%, -50%); border-radius: 50%; background: radial-gradient(closest-side, color-mix(in oklab, var(--view-c) 75%, transparent), transparent); filter: blur(3px); }
+.tree-lanes { position: absolute; inset: 0 0 auto; z-index: 3; pointer-events: none; }
+/* Neighboring lanes on one side alternate rows, so each label can be nearly two steps wide. */
+.tree-lane-head { position: absolute; top: calc(12px + var(--row) * 26px); left: var(--x); max-width: calc(2 * var(--step) - 12px); transform: translateX(-50%); padding: 3px 9px; border-radius: 999px; background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 40%, transparent); color: var(--text); font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.tree-lane-guide { top: calc(var(--pad, 320px) + var(--from)); left: var(--x); height: var(--len); border-left: 2px dotted color-mix(in oklab, var(--c) 26%, transparent); transform: translateX(-1px); }
+.tree-trunk { top: calc(var(--pad, 320px) + var(--from)); left: var(--trunk); width: 10px; height: var(--len); transform: translateX(-50%); border-radius: 6px; clip-path: polygon(32% 0, 68% 0, 100% 100%, 0 100%); }
+.tree-crown, .tree-root { left: var(--trunk); top: calc(var(--pad, 320px) + var(--y)); transform: translate(-50%, -50%); z-index: 2; }
+.tree-crown span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 46% 54% 42% 58% / 52% 44% 56% 48%; background: color-mix(in oklab, var(--c) 22%, var(--surface-solid)); color: var(--c); border: 2px solid color-mix(in oklab, var(--c) 55%, transparent); animation: morph 9s ease-in-out infinite; }
+.tree-root { display: flex; flex-direction: column; align-items: center; gap: 10px; transform: translate(-50%, 0); }
+.tr-roots { width: 120px; height: 34px; margin-top: -2px; overflow: visible; }
+.tr-roots path { fill: none; stroke: color-mix(in oklab, var(--c) 70%, var(--surface-sunk)); stroke-width: 3; stroke-linecap: round; }
+.tr-label { padding: 5px 12px; border-radius: 999px; background: var(--surface-solid); border: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 650; white-space: nowrap; }
+
+.tree-mark { left: var(--trunk); top: calc(var(--pad, 320px) + var(--y)); z-index: 2; transform: translate(-50%, -50%); white-space: nowrap; pointer-events: none; }
+.mark-day span { display: inline-block; padding: 4px 11px; border-radius: 999px; background: var(--surface-solid); border: 1px solid var(--line-strong); color: var(--text); font-size: 11px; font-weight: 700; box-shadow: var(--shadow); }
+.mark-month span { display: inline-block; padding: 7px 15px; border-radius: 999px; background: var(--grad); color: var(--on-grad); font: 780 13px/1 var(--display); letter-spacing: .01em; box-shadow: var(--shadow); }
+.mark-quiet span { display: inline-block; padding: 2px 9px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 10.5px; font-style: italic; }
+
+/* An event: a branch from the trunk, a dot on its lane (bigger for more important tasks), and a label facing out.
+   --f (0–1) is how close it is to the focus band. */
+.tree-node { --f: 1; left: 0; right: 0; top: calc(var(--pad, 320px) + var(--y)); height: 0; z-index: 1; }
+.tn-branch { position: absolute; top: 0; left: var(--trunk); width: calc(var(--x) - var(--trunk)); height: 24px; overflow: visible; opacity: calc(.28 + .62 * var(--f)); }
+.side-l .tn-branch { left: var(--x); width: calc(var(--trunk) - var(--x)); transform: scaleX(-1); }
+.tn-branch path { fill: none; stroke: var(--c); stroke-width: 2.5; stroke-linecap: round; }
+.tn-card { position: absolute; top: 0; left: calc(var(--x) - 12px); display: flex; align-items: center; gap: 8px; max-width: min(380px, calc(100% - var(--x) + 4px)); padding: 0; border: 0; border-radius: 18px; background: none; color: inherit; text-align: left; transform: translateY(-50%); }
+.side-l .tn-card { left: auto; right: calc(100% - var(--x) - 12px); flex-direction: row-reverse; max-width: min(380px, calc(var(--x) + 4px)); text-align: right; }
+.tn-dot { position: relative; flex: none; display: grid; place-items: center; width: 24px; height: 24px; transform: scale(calc(.75 + .3 * var(--f))); }
+.tn-dot::before { content: ""; box-sizing: border-box; width: var(--s); height: var(--s); border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px var(--surface-solid); transition: box-shadow .35s var(--ease); }
+.status-cancelled .tn-dot::before { background: var(--surface-solid); border: 2.5px solid var(--c); }
+.status-dropped .tn-dot::before { background: var(--surface-solid); border: 2.5px dashed var(--c); }
+.major .tn-dot::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 1.5px solid color-mix(in oklab, var(--c) 55%, transparent); }
+.tn-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 7px 13px; border-radius: 16px; background: var(--surface-solid); border: 1px solid var(--line); box-shadow: 0 8px 18px -12px rgba(40, 30, 90, .4); opacity: calc(.38 + .62 * var(--f)); transform: scale(calc(.9 + .1 * var(--f))); transform-origin: left center; transition: background .35s, border-color .35s, box-shadow .35s; }
+.side-l .tn-body { transform-origin: right center; }
+.tn-body strong { overflow: hidden; font-size: 13px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.tn-body small { display: flex; align-items: center; gap: 9px; overflow: hidden; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.side-l .tn-body small { justify-content: flex-end; }
+.tn-body small span { display: inline-flex; align-items: center; gap: 3px; }
+.tn-body svg { width: 12px; height: 12px; }
+.tn-status { color: var(--c); font-weight: 650; }
+.status-cancelled .tn-body strong, .status-dropped .tn-body strong { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+.tn-card:hover .tn-body { border-color: color-mix(in oklab, var(--c) 55%, var(--line)); }
+.tree-node.is-focus { z-index: 2; }
+.tree-node.is-focus .tn-body { background: color-mix(in oklab, var(--c) 13%, var(--surface-solid)); border-color: color-mix(in oklab, var(--c) 60%, transparent); box-shadow: 0 16px 30px -16px var(--c); }
+.tree-node.is-focus .tn-dot::before { box-shadow: 0 0 0 3px var(--surface-solid), 0 0 0 7px color-mix(in oklab, var(--c) 30%, transparent), 0 0 22px var(--c); }
+.tree-node.flash .tn-body { animation: tn-flash 1.6s var(--ease); }
+.content.enter .tree-node, .gallery-region.reflow .tree-node { animation: tn-grow .7s var(--spring) both; animation-delay: calc(.15s + var(--i) * 45ms); }
+@keyframes tn-grow { from { opacity: 0; translate: calc(var(--side) * -22px) 0; } }
+@keyframes tn-flash { 0%, 55% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--c) 45%, transparent); } }
+
+/* The minimap: every event as a tick in its lane, the trunk's colors, and a window over the current view. */
+.tree-map { position: relative; height: var(--tree-h); border-radius: 26px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.tree-map.dragging { cursor: grabbing; }
+.tm-inner { position: absolute; inset: 20px 8px; }
+.tm-trunk { position: absolute; top: 0; bottom: 0; left: 30px; width: 4px; border-radius: 4px; }
+.tm-month { position: absolute; left: 0; top: var(--t); transform: translateY(-50%); color: var(--muted); font-size: 9.5px; font-weight: 700; }
+.tm-ticks { position: absolute; top: 0; left: 38px; width: calc(100% - 38px); height: 100%; overflow: visible; }
+.tm-ticks line { stroke: var(--c); stroke-width: 2.5; stroke-linecap: round; }
+.tm-window { position: absolute; left: -5px; right: -5px; top: 0; height: 100%; min-height: 14px; border-radius: 10px; background: color-mix(in oklab, var(--view-c) 16%, transparent); border: 1.5px solid color-mix(in oklab, var(--view-c) 75%, transparent); box-shadow: 0 0 18px -4px var(--view-c); pointer-events: none; }
+
+/* Narrow trees: the trunk moves near the left edge and every lane branches to the right. */
+@container (max-width: 640px) {
+  .tree-lens, .tree-lanes, .tree-canvas { --trunk: 34px; }
+  .tree.single :is(.tree-lens, .tree-lanes, .tree-canvas) { --trunk: 34px; }
+  .tree-node, .tree-lane-guide, .tree-lane-head { --x: calc(var(--trunk) + 34px + var(--lane) * 18px); }
+  .side-l .tn-branch { left: var(--trunk); width: calc(var(--x) - var(--trunk)); transform: none; }
+  .side-l .tn-card { left: calc(var(--x) - 12px); right: auto; flex-direction: row; max-width: min(380px, calc(100% - var(--x) + 4px)); text-align: left; }
+  .side-l .tn-body { transform-origin: left center; }
+  .side-l .tn-body small { justify-content: flex-start; }
+  .tree-mark { left: 10px; transform: translateY(-50%); }
+  .tree-lane-head { top: 16px; width: 10px; height: 10px; padding: 0; border: 0; background: var(--c); font-size: 0; }
+  /* The card's label already says the outcome; keep just its icon here. */
+  .tn-status { font-size: 0; }
+}
+@media (max-width: 600px) {
+  .tree { --tree-h: clamp(380px, calc(100svh - 150px), 760px); }
+  .tree-body { grid-template-columns: minmax(0, 1fr) 40px; gap: 8px; }
+  .tree-hint, .tm-month { display: none; }
+  .tm-inner { inset: 16px 6px; }
+  .tm-trunk { left: 2px; }
+  .tm-ticks { left: 10px; width: calc(100% - 10px); }
+}
 
 /* Lightbox. */
 .lightbox { width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 40px); padding: 0; border: 1px solid var(--line); border-radius: 44px 44px 44px 16px; background: var(--surface-solid); color: var(--text); box-shadow: var(--shadow-lg); overflow: auto; }

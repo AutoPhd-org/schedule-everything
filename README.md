@@ -178,10 +178,13 @@ other major venues, in your time zone. Today's habits live on the same page.
   <img src="documentation/static/img/screens/activity-gallery.webp" alt="The Activity page with the weekly overview card, a rhythm grid of completed tasks per day, filters, and a gallery of finished tasks with generated artwork" width="100%">
 </p>
 
-**Activity** is a gallery of everything you finished, cancelled, or let go,
-each card with artwork in its type's color. Filter by outcome or type, search,
-sort, or click a day in the rhythm grid. Open a card to see when it started,
-how long it took, and how that compares with your other tasks.
+**Activity** grows everything you finished, cancelled, or let go along a
+scrollable timeline tree: each task type has its own lane and color, the trunk
+takes the color of the work around it, and a band in the middle highlights what
+you are looking at. Prefer cards? Switch to the gallery, where each task has
+artwork in its type's color. Filter by outcome or type, search, or click a day
+in the rhythm grid. Open any task to see when it started, how long it took,
+and how that compares with your other tasks.
 
 <table>
   <tr>
