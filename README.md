@@ -112,8 +112,19 @@ Your tasks, schedules, settings, and habit records remain in the same local
 files used by the CLI. The browser includes task creation and editing,
 completion/cancellation, deadlines, habit checks, AI schedule conversations,
 sync proposal review, configuration editing, mode and schedule switching,
-reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
+reminder controls, and a schedule PDF download. Tasks are grouped by type, with importance,
 postponement, and procrastination details preserved. All tasks are shown.
+Deadlines use the same types as tasks, with a category selector when adding or
+editing a deadline. In J mode the overview highlights overdue deadlines, deadlines due
+today, available high-importance tasks, and habit progress alongside your current
+schedule block, nearest deadlines, and today's timeline. P mode keeps only the
+tasks-by-type board. Switch with the **J / P** toggle in the header or `rmd mode`.
+**Routines & deadlines** adds an interactive year calendar: click a day to add a
+deadline, pick a marker color, and drag deadlines to reschedule them. **Activity**
+is a gallery of finished, cancelled, and dropped tasks with a weekly overview that
+compares the week with previous weeks. Use the sun, moon, or monitor controls in
+the header for light, dark, or system appearance; your choice is remembered in
+this browser.
 
 Launching again reuses an open workspace tab. The app asks the browser to bring
 it forward; browser focus permissions can prevent it from becoming the active
@@ -140,7 +151,7 @@ See [Browser workspace](documentation/docs/browser.md) for details.
 | `rmd ddl` | Manage deadlines; entries two or more days overdue are auto-pruned |
 | `rmd view` | Generate a PDF schedule visualization |
 | `rmd switch <id>` | Activate a different `user_config_n` snapshot and reload the service |
-| `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms) |
+| `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms and shows a tasks-only browser overview) |
 | `rmd settings` | Interactive TUI for editing `settings.toml` and the optional pi model override (↑/↓ to move, Enter to open/apply, Esc to back/cancel, Space to toggle, `s` to save, `q` to quit) |
 
 `rmd setup` previews proposed file changes before applying a schedule modification. Press `Ctrl+C` to cancel. The settings editor shows actions for the current panel; quitting with unsaved changes offers `s` to save and quit, `d` to discard and quit, or Esc to keep editing. In time lists, Space edits an item, Enter applies the list, and Esc cancels it.

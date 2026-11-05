@@ -26,6 +26,7 @@ from schedule_management.web.services import (
     task_history,
     task_update,
 )
+from schedule_management.web.insights import weekly_overview
 from schedule_management.web.workspace import (
     config_read, config_save, export_pdf, service_action, setup_accept,
     setup_turn, workspace_info,
@@ -46,6 +47,7 @@ COMMANDS: dict[str, BridgeHandler] = {
     "task_update": task_update,
     "task_delete": task_delete,
     "task_history": task_history,
+    "weekly_overview": weekly_overview,
     "deadline_add": deadline_add,
     "deadline_update": deadline_update,
     "deadline_delete": deadline_delete,

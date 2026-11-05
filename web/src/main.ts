@@ -1,7 +1,9 @@
 import "./styles.css";
 import { browserClient, connect } from "./api";
 import { renderApp } from "./render";
+import { watchSystemTheme } from "./theme";
 
+watchSystemTheme();
 const root = document.querySelector<HTMLElement>("#app")!;
 window.addEventListener("hashchange", () => {
   if (new URLSearchParams(location.hash.slice(1)).has("token")) location.reload();

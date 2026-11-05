@@ -69,8 +69,17 @@ class WebError(Exception):
         }
 
 
+# Named marker colors for deadlines; the browser maps each name to a themed hue.
+DEADLINE_COLORS = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")
+
+
 def _today() -> date:
     return date.today()
+
+
+def _default_task_type(task_types: dict[str, str]) -> str:
+    sorted_type_ids = sorted(task_types, key=lambda x: int(x) if x.isdigit() else 999)
+    return sorted_type_ids[0] if sorted_type_ids else "1"
 
 
 def _snapshot_runtime_paths() -> RuntimePaths:
@@ -193,8 +202,7 @@ def _load_task_types() -> dict[str, str]:
 def _sorted_tasks() -> list[dict[str, Any]]:
     today = _today()
     task_types = _load_task_types()
-    sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
-    default_type = sorted_type_ids[0] if sorted_type_ids else "1"
+    default_type = _default_task_type(task_types)
 
     procrastinate_records = load_procrastinate_records()
     procrastinate_list = set(procrastinate_records)
@@ -278,12 +286,21 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
     if removed:
         _save_deadlines_or_error(deadlines)
 
+    task_types = _load_task_types()
     rows: list[dict[str, Any]] = []
     for item in sorted(deadlines, key=lambda value: str(value.get("deadline", ""))):
         event = str(item.get("event", "")).strip()
         raw_deadline = str(item.get("deadline", "")).strip()
         if not event or not raw_deadline:
             continue
+        raw_type = item.get("type")
+        type_id = (str(raw_type).strip() if raw_type is not None else "") or None
+        raw_color = str(item.get("color") or "").strip().lower()
+        type_fields = {
+            "type": type_id,
+            "typeName": task_types.get(type_id, type_id) if type_id else None,
+            "color": raw_color if raw_color in DEADLINE_COLORS else None,
+        }
         try:
             deadline_date = datetime.strptime(raw_deadline, "%Y-%m-%d").date()
         except ValueError:
@@ -293,6 +310,7 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
                     "deadline": raw_deadline,
                     "daysLeft": None,
                     "status": "invalid",
+                    **type_fields,
                 }
             )
             continue
@@ -302,6 +320,7 @@ def _deadline_rows(current_date: date) -> list[dict[str, Any]]:
                 "deadline": deadline_date.isoformat(),
                 "daysLeft": (deadline_date - current_date).days,
                 "status": _deadline_status(deadline_date, current_date),
+                **type_fields,
             }
         )
     return rows
@@ -535,21 +554,51 @@ def task_delete(payload: dict[str, Any]) -> dict[str, Any]:
     return {"description": description, "deleted": len(deleted)}
 
 
+def _apply_deadline_type(item: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Keep legacy deadlines untyped and preserve types omitted by older clients."""
+    if "type" not in payload:
+        return
+    raw_type = payload.get("type")
+    type_id = str(raw_type).strip() if raw_type is not None else ""
+    if type_id and type_id not in _load_task_types() and type_id != str(item.get("type")):
+        raise WebError("invalid_input", f"unknown deadline type: {type_id}")
+    if type_id:
+        item["type"] = type_id
+    else:
+        item.pop("type", None)
+
+
+def _apply_deadline_color(item: dict[str, Any], payload: dict[str, Any]) -> None:
+    """Set or clear a deadline marker color; omitted colors stay unchanged."""
+    if "color" not in payload:
+        return
+    raw_color = payload.get("color")
+    color = str(raw_color).strip().lower() if raw_color is not None else ""
+    if color and color not in DEADLINE_COLORS:
+        raise WebError("invalid_input", f"unknown deadline color: {color}")
+    if color:
+        item["color"] = color
+    else:
+        item.pop("color", None)
+
+
 def deadline_add(payload: dict[str, Any]) -> dict[str, Any]:
     event = _require_text(payload, "event")
     deadline = _parse_deadline_date(_require_text(payload, "date"))
     deadlines = load_deadlines()
-    new_deadline = {
-        "event": event,
-        "deadline": deadline,
-        "added": datetime.now(timezone.utc).isoformat(),
-    }
-
     existing_index = None
     for index, item in enumerate(deadlines):
         if item.get("event") == event:
             existing_index = index
             break
+    new_deadline = {
+        **(deadlines[existing_index] if existing_index is not None else {}),
+        "event": event,
+        "deadline": deadline,
+        "added": datetime.now(timezone.utc).isoformat(),
+    }
+    _apply_deadline_type(new_deadline, payload)
+    _apply_deadline_color(new_deadline, payload)
     if existing_index is None:
         deadlines.append(new_deadline)
     else:
@@ -571,10 +620,13 @@ def deadline_update(payload: dict[str, Any]) -> dict[str, Any]:
     for index, item in enumerate(deadlines):
         if item.get("event") == original_event:
             updated = {
+                **item,
                 "event": event,
                 "deadline": deadline,
                 "added": str(item.get("added") or datetime.now(timezone.utc).isoformat()),
             }
+            _apply_deadline_type(updated, payload)
+            _apply_deadline_color(updated, payload)
             deadlines[index] = updated
             _save_deadlines_or_error(deadlines)
             return updated
@@ -647,17 +699,24 @@ def _history_rows(count: int | None = 5) -> list[dict[str, Any]]:
         return []
     recent = activities[-count:] if count is not None else activities[:]
     recent.reverse()
-    return [
-        {
-            "description": a["description"],
-            "priority": a["priority"],
-            "startedAt": a["started_at"].isoformat(),
-            "endedAt": a["ended_at"].isoformat(),
-            "duration": _format_duration(a["started_at"], a["ended_at"]),
-            "status": a["status"],
-        }
-        for a in recent
-    ]
+    task_types = _load_task_types()
+    default_type = _default_task_type(task_types)
+    rows: list[dict[str, Any]] = []
+    for a in recent:
+        type_id = str(a.get("type") or default_type)
+        rows.append(
+            {
+                "description": a["description"],
+                "priority": a["priority"],
+                "startedAt": a["started_at"].isoformat(),
+                "endedAt": a["ended_at"].isoformat(),
+                "duration": _format_duration(a["started_at"], a["ended_at"]),
+                "status": a["status"],
+                "type": type_id,
+                "typeName": task_types.get(type_id, type_id),
+            }
+        )
+    return rows
 
 
 def task_history(payload: dict[str, Any]) -> dict[str, Any]:
