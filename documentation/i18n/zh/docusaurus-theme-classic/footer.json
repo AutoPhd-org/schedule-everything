@@ -1,0 +1,58 @@
+{
+  "link.title.Start": {
+    "message": "开始",
+    "description": "The title of the footer links column with title=Start in the footer"
+  },
+  "link.title.Use it": {
+    "message": "使用",
+    "description": "The title of the footer links column with title=Use it in the footer"
+  },
+  "link.title.Community": {
+    "message": "社区",
+    "description": "The title of the footer links column with title=Community in the footer"
+  },
+  "link.item.label.Introduction": {
+    "message": "介绍",
+    "description": "The label of footer link with label=Introduction linking to /docs/intro"
+  },
+  "link.item.label.Installation": {
+    "message": "安装",
+    "description": "The label of footer link with label=Installation linking to /docs/installation"
+  },
+  "link.item.label.Quick start": {
+    "message": "快速开始",
+    "description": "The label of footer link with label=Quick start linking to /docs/quick-start"
+  },
+  "link.item.label.AI agent plugins": {
+    "message": "AI 智能体插件",
+    "description": "The label of footer link with label=AI agent plugins linking to /docs/ai-agents"
+  },
+  "link.item.label.Browser workspace": {
+    "message": "浏览器工作区",
+    "description": "The label of footer link with label=Browser workspace linking to /docs/browser"
+  },
+  "link.item.label.Weekly schedules": {
+    "message": "每周日程",
+    "description": "The label of footer link with label=Weekly schedules linking to /docs/configuration/weekly-schedules"
+  },
+  "link.item.label.CLI commands": {
+    "message": "命令行命令",
+    "description": "The label of footer link with label=CLI commands linking to /docs/cli/overview"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub",
+    "description": "The label of footer link with label=GitHub linking to https://github.com/AutoPhd-org/schedule-everything"
+  },
+  "link.item.label.Issues": {
+    "message": "问题反馈",
+    "description": "The label of footer link with label=Issues linking to https://github.com/AutoPhd-org/schedule-everything/issues"
+  },
+  "link.item.label.PyPI package": {
+    "message": "PyPI 包",
+    "description": "The label of footer link with label=PyPI package linking to https://pypi.org/project/schedule-management/"
+  },
+  "logo.alt": {
+    "message": "Schedule Everything 标志",
+    "description": "The alt text of footer logo"
+  }
+}

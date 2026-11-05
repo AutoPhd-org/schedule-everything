@@ -1,0 +1,275 @@
+{
+  "homepage.hero.eyebrow": {
+    "message": "本地优先 · 纯文本 TOML · 开源"
+  },
+  "homepage.hero.title.line1": {
+    "message": "让 AI 智能体规划你的一周，"
+  },
+  "homepage.hero.title.line2": {
+    "message": "持续提醒帮你坚持到底。"
+  },
+  "homepage.hero.lead": {
+    "message": "Schedule Everything 把每周作息变成每个时段的闹钟提醒，并在 {rmd} 命令行和本地浏览器工作区中管理任务、截止日期和习惯。用 Claude Code、Codex 或 Antigravity 来搭建它。"
+  },
+  "homepage.hero.cta.start": {
+    "message": "开始使用"
+  },
+  "homepage.hero.cta.github": {
+    "message": "在 GitHub 上查看"
+  },
+  "homepage.hero.image.alt": {
+    "message": "Schedule Everything 浏览器工作区：浅色模式下的 J 模式概览、深色模式下的每周概览，以及手机尺寸下的 P 模式"
+  },
+  "homepage.strip.label": {
+    "message": "支持的 AI 编程智能体"
+  },
+  "homepage.strip.worksWith": {
+    "message": "支持"
+  },
+  "homepage.strip.meta": {
+    "message": "rmd 命令行 · 浏览器工作区 · macOS 与 Linux"
+  },
+  "homepage.how.step1.title": {
+    "message": "用自然语言提出需求"
+  },
+  "homepage.how.step1.body": {
+    "message": "告诉智能体你的工作、精力和习惯。{build} 技能会先访谈你，并在写入任何文件之前请你确认摘要。"
+  },
+  "homepage.how.step2.title": {
+    "message": "插件运行 rmd"
+  },
+  "homepage.how.step2.body": {
+    "message": "确定性的命令负责记账：{check} 校验文件，{sync} 读取并保存今天的计划，{update} 重新加载提醒。"
+  },
+  "homepage.how.step3.title": {
+    "message": "本地文件负责守时"
+  },
+  "homepage.how.step3.body": {
+    "message": "你电脑上的 TOML 和 JSON 纯文本驱动后台提醒和浏览器工作区。Schedule Everything 本身不调用任何 AI。"
+  },
+  "homepage.how.eyebrow": {
+    "message": "工作方式"
+  },
+  "homepage.how.title": {
+    "message": "聊几句，得到一份会响的作息。"
+  },
+  "homepage.how.lead": {
+    "message": "{plugin} 插件为 Claude Code、Codex 和 Antigravity 提供两个技能：{build} 编写你的每周作息，{plan} 用真实任务填满今天的专注时段。"
+  },
+  "homepage.how.diagram.alt": {
+    "message": "你向 AI 编程智能体提出需求；schedule-everything 插件运行 rmd 命令；rmd 校验并写入本地文件，这些文件驱动提醒服务和浏览器工作区"
+  },
+  "homepage.tour.eyebrow": {
+    "message": "工作区"
+  },
+  "homepage.tour.title": {
+    "message": "一个鲜活的本地浏览器工作区。"
+  },
+  "homepage.tour.lead": {
+    "message": "运行 {web} 即可打开。它读取与命令行相同的文件，只监听 127.0.0.1，没有智能体也能正常使用。"
+  },
+  "homepage.modes.eyebrow": {
+    "message": "J 模式 · P 模式"
+  },
+  "homepage.modes.title": {
+    "message": "两种度过一天的方式"
+  },
+  "homepage.modes.body": {
+    "message": "J 模式是有条理的一天：逾期、今日到期、高重要度任务和习惯的状态球，当前正在进行的时段，最近的截止日期，按类型分组的任务，以及今天的时间线。P 模式适合灵活的日子：概览只保留按类型分组的任务看板，配色更温暖，部分事件的提醒会暂停。"
+  },
+  "homepage.modes.switch": {
+    "message": "或在页头切换 J / P 开关"
+  },
+  "homepage.modes.image.alt": {
+    "message": "J 模式显示状态、当前时段、截止日期、任务和时间线；P 模式只显示按类型分组的任务看板，配色更深、更温暖"
+  },
+  "homepage.plan.eyebrow": {
+    "message": "日程"
+  },
+  "homepage.plan.title": {
+    "message": "今天的计划，直接显示在时间线上"
+  },
+  "homepage.plan.point1": {
+    "message": "已规划的时段显示对应任务，提醒时也会播报"
+  },
+  "homepage.plan.point2": {
+    "message": "一键清除今天的计划；每周作息保持不变"
+  },
+  "homepage.plan.point3": {
+    "message": "每个智能体的安装命令，都带复制按钮"
+  },
+  "homepage.plan.link": {
+    "message": "AI 智能体插件"
+  },
+  "homepage.plan.image.alt": {
+    "message": "日程页面：今天的时间线、今日计划卡片，以及 Claude Code、Codex 和 Antigravity 的插件安装命令标签页"
+  },
+  "homepage.plan.body": {
+    "message": "对智能体说“Plan my focus blocks for today”（规划今天的专注时段），{plan} 技能会把最重要的任务匹配到今天的 {pomodoro} 和 {potato} 时段，与你确认后保存计划。"
+  },
+  "homepage.calendar.eyebrow": {
+    "message": "作息与截止日期"
+  },
+  "homepage.calendar.title": {
+    "message": "一眼看完全年"
+  },
+  "homepage.calendar.point1": {
+    "message": "点击某一天即可添加截止日期"
+  },
+  "homepage.calendar.point2": {
+    "message": "从八种标记颜色中挑选，或沿用类型颜色"
+  },
+  "homepage.calendar.point3": {
+    "message": "把标签拖到另一天即可改期"
+  },
+  "homepage.calendar.link": {
+    "message": "了解全年日历"
+  },
+  "homepage.calendar.image.alt": {
+    "message": "交互式全年日历：带颜色的截止日期、打开的 11 月 21 日卡片，以及可拖动的即将到来截止日期标签"
+  },
+  "homepage.calendar.body": {
+    "message": "所有截止日期都显示在全年日历上，并以标记颜色着色，旁边是即将到来的事项列表。今天的习惯打卡也在同一页面。"
+  },
+  "homepage.activity.eyebrow": {
+    "message": "活动"
+  },
+  "homepage.activity.title": {
+    "message": "点滴成就，积少成多"
+  },
+  "homepage.activity.point1": {
+    "message": "按结果或类型筛选、搜索和排序"
+  },
+  "homepage.activity.point2": {
+    "message": "在节奏格子中选一天，查看当天完成了什么"
+  },
+  "homepage.activity.point3": {
+    "message": "打开卡片查看它的故事：何时添加、何时完成、用时多久"
+  },
+  "homepage.activity.link": {
+    "message": "了解画廊"
+  },
+  "homepage.activity.image.alt": {
+    "message": "活动页面：每周概览卡片、每日完成任务的节奏格子、筛选器，以及带生成插画的已完成任务画廊"
+  },
+  "homepage.activity.lightbox.alt": {
+    "message": "深色模式下的任务详情卡片，显示添加和完成时间，以及用时与其他任务的比较"
+  },
+  "homepage.activity.body": {
+    "message": "活动页面是一个画廊，收录你完成、取消或放弃的所有任务，每张卡片都配有该类型颜色的生成插画。越重要的任务，卡片越大。"
+  },
+  "homepage.weekly.eyebrow": {
+    "message": "每周概览"
+  },
+  "homepage.weekly.title": {
+    "message": "多彩的一周"
+  },
+  "homepage.weekly.point1": {
+    "message": "完成的任务数，以及八周趋势"
+  },
+  "homepage.weekly.point2": {
+    "message": "习惯坚持度、打卡记录和连续天数"
+  },
+  "homepage.weekly.point3": {
+    "message": "每日节奏、各类型投入、节奏快慢和亮点"
+  },
+  "homepage.weekly.image.alt": {
+    "message": "深色模式下的每周概览：完成任务数与八周趋势、习惯圆环、连续天数、每日节奏、各类型投入、任务去向、习惯打卡、节奏和亮点"
+  },
+  "homepage.weekly.body": {
+    "message": "从活动页面打开你的一周。每张卡片都会与上周以及之前最多四周的平均值比较，大多以图表呈现。"
+  },
+  "homepage.phone.eyebrow": {
+    "message": "任意屏幕"
+  },
+  "homepage.phone.title": {
+    "message": "小到手机尺寸也好看"
+  },
+  "homepage.phone.point1": {
+    "message": "浅色、深色或跟随系统主题，按浏览器记住"
+  },
+  "homepage.phone.point2": {
+    "message": "动画遵循系统的“减少动态效果”设置"
+  },
+  "homepage.phone.overview.alt": {
+    "message": "手机尺寸下的 J 模式概览"
+  },
+  "homepage.phone.p.alt": {
+    "message": "手机尺寸下深色主题的 P 模式"
+  },
+  "homepage.phone.activity.alt": {
+    "message": "手机尺寸下的活动页面"
+  },
+  "homepage.phone.body": {
+    "message": "布局会适应任意窗口，从宽屏显示器到手机大小的视口：侧边栏变成图标栏，卡片纵向堆叠。"
+  },
+  "homepage.loop.eyebrow": {
+    "message": "每一天"
+  },
+  "homepage.loop.title": {
+    "message": "坚持到底的提醒。"
+  },
+  "homepage.loop.lead": {
+    "message": "每个时段开始和结束时，闹钟都会响起，弹窗会一直保留，直到你回应。截止日期、习惯和紧急任务也有各自的提醒。"
+  },
+  "homepage.loop.diagram.alt": {
+    "message": "五个步骤组成的循环：一次性建立作息，添加任务，规划今天，在提醒中专注，回顾成果"
+  },
+  "homepage.install.prompt1": {
+    "message": "Build my weekly schedule"
+  },
+  "homepage.install.prompt2": {
+    "message": "Plan my focus blocks for today"
+  },
+  "homepage.install.prompt3": {
+    "message": "Move my workouts to the evenings"
+  },
+  "homepage.install.eyebrow": {
+    "message": "开始使用"
+  },
+  "homepage.install.title": {
+    "message": "三步上手"
+  },
+  "homepage.install.step1": {
+    "message": "安装 Schedule Everything"
+  },
+  "homepage.install.step1.body": {
+    "message": "安装脚本会配置 Python 环境、你的配置文件和提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd）。"
+  },
+  "homepage.install.step2": {
+    "message": "为智能体添加插件"
+  },
+  "homepage.install.step3": {
+    "message": "向智能体提问"
+  },
+  "homepage.install.step3.body": {
+    "message": "然后运行 {web} 打开工作区。智能体会把读取的内容发送给它自己的模型提供方；你的文件始终保存在本机。"
+  },
+  "homepage.cta.title": {
+    "message": "一天，一次只做一件事。"
+  },
+  "homepage.cta.lead": {
+    "message": "免费、开源、本地优先。你的作息是属于你的纯文本。"
+  },
+  "homepage.cta.start": {
+    "message": "阅读快速开始"
+  },
+  "homepage.cta.github": {
+    "message": "在 GitHub 上加星"
+  },
+  "homepage.meta.title": {
+    "message": "让 AI 智能体规划你的一周"
+  },
+  "homepage.meta.description": {
+    "message": "本地优先的每周作息、任务清单与专注时段提醒工具，配有浏览器工作区和 rmd 命令行。用 Claude Code、Codex 或 Antigravity 搭建你的日程。"
+  },
+  "agentInstall.claude.note": {
+    "message": "在 Claude Code 会话中，改用斜杠命令："
+  },
+  "agentInstall.codex.note": {
+    "message": "Codex 从仓库的插件市场目录 {catalog} 读取插件。"
+  },
+  "agentInstall.antigravity.note": {
+    "message": "Antigravity 从仓库的本地克隆安装插件。"
+  }
+}

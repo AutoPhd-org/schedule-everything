@@ -7,9 +7,8 @@ __pycache__/
 *.pyo
 *.egg-info/
 build/
-.superpowers/
 .worktrees/
-docs/
+/docs/
 dist/
 node_modules/
 
@@ -26,11 +25,3 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 
 .qoder
-
-# Keep browser documentation reviewable alongside the tracked documentation.
-!documentation/docs/
-documentation/docs/*
-!documentation/docs/browser.md
-!documentation/docs/platform/
-documentation/docs/platform/*
-!documentation/docs/platform/linux.md

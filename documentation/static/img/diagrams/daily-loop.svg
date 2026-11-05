@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-label="The Schedule Everything rhythm: build your routine once, then add tasks, plan today, focus with reminders, and look back, every day" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+<defs>
+  <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5a46d6"/><stop offset=".55" stop-color="#9b3fa6"/><stop offset="1" stop-color="#c8456f"/></linearGradient>
+  <linearGradient id="soft" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1edff"/><stop offset="1" stop-color="#fff1f5"/></linearGradient>
+  <radialGradient id="glowA" cx=".15" cy=".1" r=".6"><stop offset="0" stop-color="#b9adff" stop-opacity=".55"/><stop offset="1" stop-color="#b9adff" stop-opacity="0"/></radialGradient>
+  <radialGradient id="glowB" cx=".9" cy=".95" r=".6"><stop offset="0" stop-color="#ffb3c9" stop-opacity=".5"/><stop offset="1" stop-color="#ffb3c9" stop-opacity="0"/></radialGradient>
+  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#6250d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></marker>
+  <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#3c2a8c" flood-opacity=".14"/></filter>
+</defs>
+<rect x="1" y="1" width="1198" height="618" rx="30" fill="#fbfaff" stroke="#e4def6" stroke-width="2"/>
+<rect x="1" y="1" width="1198" height="618" rx="30" fill="url(#glowA)"/>
+<rect x="1" y="1" width="1198" height="618" rx="30" fill="url(#glowB)"/>
+<text x="48" y="58" font-size="12" font-weight="800" fill="#6250d6" text-anchor="start" letter-spacing="2.4">THE RHYTHM</text><text x="48" y="94" font-size="27" font-weight="800" fill="#1c1830" text-anchor="start" letter-spacing="-0.6">Build once. Plan daily. Look back weekly.</text>
+<circle cx="600" cy="352" r="196" fill="none" stroke="url(#grad)" stroke-width="10" stroke-opacity=".22"/>
+<circle cx="600" cy="352" r="196" fill="none" stroke="url(#grad)" stroke-width="3" stroke-dasharray="2 12" stroke-linecap="round"/>
+<circle cx="600" cy="352" r="118" fill="url(#soft)"/>
+<text x="600" y="342" font-size="22" font-weight="800" fill="#1c1830" text-anchor="middle" >One day,</text>
+<text x="600" y="372" font-size="22" font-weight="800" fill="#1c1830" text-anchor="middle" >one thing at a time.</text>
+<text x="600" y="402" font-size="12.5" font-weight="500" fill="#5d5873" text-anchor="middle" >Your files stay on your computer.</text>
+<path d="M-7 -5 L0 2 L7 -5" transform="translate(715.2 193.4) rotate(-54.0)" fill="none" stroke="#6250d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-7 -5 L0 2 L7 -5" transform="translate(786.4 412.6) rotate(18.0)" fill="none" stroke="#6250d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-7 -5 L0 2 L7 -5" transform="translate(600.0 548.0) rotate(90.0)" fill="none" stroke="#6250d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-7 -5 L0 2 L7 -5" transform="translate(413.6 412.6) rotate(162.0)" fill="none" stroke="#6250d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M-7 -5 L0 2 L7 -5" transform="translate(484.8 193.4) rotate(234.0)" fill="none" stroke="#6250d6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+<g filter="url(#shadow)"><circle cx="600.0" cy="156.0" r="34" fill="#ffffff" stroke="#6250d6" stroke-width="3"/></g>
+<text x="600.0" y="165.0" font-size="24" font-weight="800" fill="#6250d6" text-anchor="middle" >1</text>
+<text x="658.0" y="148.0" font-size="17" font-weight="800" fill="#1c1830" text-anchor="start" >Build your routine</text>
+<text x="658.0" y="170.0" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >Ask your agent once; it writes</text>
+<text x="658.0" y="188.0" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >your week and habits</text>
+<g filter="url(#shadow)"><circle cx="786.4" cy="291.4" r="34" fill="#ffffff" stroke="#eda100" stroke-width="3"/></g>
+<text x="786.4" y="300.4" font-size="24" font-weight="800" fill="#eda100" text-anchor="middle" >2</text>
+<text x="844.4" y="285.4" font-size="17" font-weight="800" fill="#1c1830" text-anchor="start" >Add tasks</text>
+<text x="844.4" y="307.4" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >rmd add, the browser,</text>
+<text x="844.4" y="325.4" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >or just tell your agent</text>
+<g filter="url(#shadow)"><circle cx="715.2" cy="510.6" r="34" fill="#ffffff" stroke="#c8456f" stroke-width="3"/></g>
+<text x="715.2" y="519.6" font-size="24" font-weight="800" fill="#c8456f" text-anchor="middle" >3</text>
+<text x="773.2" y="504.6" font-size="17" font-weight="800" fill="#1c1830" text-anchor="start" >Plan today</text>
+<text x="773.2" y="526.6" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >plan-day fills your</text>
+<text x="773.2" y="544.6" font-size="13" font-weight="500" fill="#5d5873" text-anchor="start" >focus blocks</text>
+<g filter="url(#shadow)"><circle cx="484.8" cy="510.6" r="34" fill="#ffffff" stroke="#1baf7a" stroke-width="3"/></g>
+<text x="484.8" y="519.6" font-size="24" font-weight="800" fill="#1baf7a" text-anchor="middle" >4</text>
+<text x="426.8" y="504.6" font-size="17" font-weight="800" fill="#1c1830" text-anchor="end" >Focus</text>
+<text x="426.8" y="526.6" font-size="13" font-weight="500" fill="#5d5873" text-anchor="end" >Alarms start and end</text>
+<text x="426.8" y="544.6" font-size="13" font-weight="500" fill="#5d5873" text-anchor="end" >every block</text>
+<g filter="url(#shadow)"><circle cx="413.6" cy="291.4" r="34" fill="#ffffff" stroke="#eb6834" stroke-width="3"/></g>
+<text x="413.6" y="300.4" font-size="24" font-weight="800" fill="#eb6834" text-anchor="middle" >5</text>
+<text x="355.6" y="285.4" font-size="17" font-weight="800" fill="#1c1830" text-anchor="end" >Look back</text>
+<text x="355.6" y="307.4" font-size="13" font-weight="500" fill="#5d5873" text-anchor="end" >Gallery, rhythm grid,</text>
+<text x="355.6" y="325.4" font-size="13" font-weight="500" fill="#5d5873" text-anchor="end" >weekly overview</text>
+<path d="M630.0 178.0" stroke="none"/>
+</svg>

@@ -11,15 +11,22 @@ Schedule Everything provides a comprehensive command-line interface (CLI) for ma
 After installation, the `rmd` command should be available in your terminal. `reminder` still works as a compatibility alias. If `rmd` is not on your PATH, ensure you've added the following to your shell profile:
 
 ```bash
-export PATH="$HOME/schedule_management:$PATH"
-export REMINDER_CONFIG_DIR="$HOME/schedule_management/config"
-alias rmd="$HOME/schedule_management/rmd"
+export PATH="$HOME/SCHEDULE_MANAGEMENT:$PATH"
+export REMINDER_CONFIG_DIR="$HOME/.schedule_management/config"
+alias rmd="$HOME/SCHEDULE_MANAGEMENT/rmd"
 ```
 
 Then reload your shell:
 ```bash
 source ~/.zshrc  # or source ~/.bash_profile
 ```
+
+## In the terminal
+
+<FigureRow columns={2}>
+  <Figure src="img/rmd_add.gif" variant="plain" alt="Terminal recording: rmd add adds a task with priority 8, then rmd ls shows the task table" caption="rmd add, then rmd ls" />
+  <Figure src="img/rmd_view.gif" variant="plain" alt="Terminal recording: rmd status and rmd status -v, then rmd view opens the schedule PDF with odd and even week statistics" caption="rmd status, then rmd view" />
+</FigureRow>
 
 ## Command Categories
 
@@ -29,28 +36,33 @@ The CLI commands are organized into these main categories:
 Commands for managing your schedule and service:
 - [`rmd update`](schedule-management.md#update) - Reload config and restart service
 - [`rmd switch`](schedule-management.md#switch) - Change the active `user_config_n` snapshot and reload the service
-- [`rmd setup`](schedule-management.md#setup) - Interactive AI-assisted setup powered by pi with profile-first intake, evidence-informed schedule planning, and optional file-aware reasoning
-- [`rmd sync`](schedule-management.md#sync) - Generate and confirm today's pomodoro/potato task assignments
+- [`rmd check`](schedule-management.md#check) - Validate a config directory (the active one by default)
+- [`rmd sync`](schedule-management.md#sync) - Show today's pomodoro/potato plan; print today's context as JSON for AI agents, save a plan, or clear it
 - [`rmd view`](schedule-management.md#view) - Generate schedule visualization
-- [`rmd status`](schedule-management.md#status) - Show upcoming events, including synced task titles when present
+- [`rmd status`](schedule-management.md#status) - Show upcoming events, including planned task titles when present
 - [`rmd stop`](schedule-management.md#stop) - Stop the alarm service
+- `rmd mode [j|p]` - Show or switch between J mode and P mode
+- `rmd web` - Open the [browser workspace](../browser.md)
+
+Building a schedule and planning a day with AI happen in your own coding agent.
+See [AI agent plugins](../ai-agents.md).
 
 ### Task Management
 Commands for managing your task list:
 - [`rmd add`](task-management.md#add) - Add or update tasks
-- [`rmd rm`](task-management.md#remove) - Remove tasks
-- [`rmd ls`](task-management.md#list) - List all tasks
+- [`rmd rm`](task-management.md#rm) - Remove tasks
+- [`rmd ls`](task-management.md#ls) - List all tasks
 - [`rmd history`](task-management.md#history) - Show recent completed task activities
 
 ### Deadline Management
 Commands for managing event deadlines:
-- [`rmd ddl add`](deadline-management.md#add) - Add or update deadlines
-- [`rmd ddl rm`](deadline-management.md#remove) - Remove deadlines
-- [`rmd ddl`](deadline-management.md#list) - List all deadlines with urgency status
+- [`rmd ddl add`](deadline-management.md#ddl-add) - Add or update deadlines
+- [`rmd ddl rm`](deadline-management.md#ddl-rm) - Remove deadlines
+- [`rmd ddl`](deadline-management.md#ddl) - List all deadlines with urgency status
 
 ### Habits
 Commands for tracking daily habits:
-- [`rmd track [ids...]`](task-management.md#habits) - Log completed habits for today (opens a prompt if no IDs given)
+- [`rmd track [ids...]`](task-management.md#track) - Log completed habits for today (opens a prompt if no IDs given)
 
 ### Reports
 Commands for generating productivity reports:
@@ -64,7 +76,7 @@ Commands for generating productivity reports:
 ## Configuration Directory
 
 By default, the CLI looks for its config root in:
-- `~/schedule_management/config/` (macOS/Linux)
+- `~/.schedule_management/config/` (macOS/Linux)
 
 Inside that root, schedule files live under versioned `user_config_n`
 directories and shared task data stays under `tasks/`.
@@ -77,7 +89,7 @@ The CLI provides clear error messages for common issues:
 
 ```bash
 # Configuration file not found
-Error: settings.toml not found in /Users/username/schedule_management/config/
+Error: settings.toml not found in /Users/username/.schedule_management/config/
 
 # Invalid TOML syntax
 Error: Invalid TOML syntax in odd_weeks.toml: Expected '=' at line 5
@@ -104,8 +116,11 @@ rmd status
 # Add a high-priority task
 rmd add "Complete project proposal" 9
 
-# Generate today's synced focus-block plan
+# Show today's focus blocks and their planned tasks
 rmd sync
+
+# Validate the active configuration
+rmd check
 
 # View your schedule
 rmd view
@@ -144,7 +159,7 @@ fi
 rmd ls | grep "urgent" | wc -l
 
 # Use with cron for automated tasks
-0 9 * * * /Users/username/schedule_management/rmd status >> ~/schedule.log
+0 9 * * * /Users/username/SCHEDULE_MANAGEMENT/rmd status >> ~/schedule.log
 ```
 
 ## Troubleshooting CLI Issues
@@ -158,20 +173,19 @@ If you get `command not found: rmd`:
 ### Permission Denied
 If you get `Permission denied` errors:
 ```bash
-chmod +x ~/schedule_management/rmd
+chmod +x ~/SCHEDULE_MANAGEMENT/rmd
 ```
 
 ### Configuration Errors
 If commands fail with configuration errors:
-1. Check that all required files exist in the config directory
-2. Validate TOML syntax using an online validator
-3. Ensure file permissions are correct
+1. Run `rmd check` to see missing files, TOML syntax errors, unknown blocks, and likely label typos
+2. Ensure file permissions are correct
 
 ## Next Steps
 
 - Learn about [Schedule Management Commands](schedule-management.md)
-- Explore [Task Management Commands](task-management.md)
-- See Configuration and Settings for detailed syntax
+- Explore [Task Management Commands](task-management.md) and [Deadline Management Commands](deadline-management.md)
+- See [Configuration](../configuration/overview.md) and [Settings](../configuration/settings.md) for detailed syntax
 
 
 ## Browser workspace

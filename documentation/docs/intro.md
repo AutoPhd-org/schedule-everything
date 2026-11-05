@@ -1,47 +1,100 @@
 ---
 sidebar_position: 1
+title: Introduction
+description: Schedule Everything is a local-first weekly routine, task list, and focus-block reminder app with a browser workspace and the rmd CLI.
 ---
 
 # Introduction
 
-**Schedule Everything** (晨钟暮鼓) is a robust, developer-centric scheduling tool designed to foster healthy habits, deep work sessions, and consistent routines through persistent local reminders.
+**Schedule Everything** (晨钟暮鼓) is a local-first scheduling tool for healthy
+habits, deep work, and consistent routines. Your weekly routine lives in plain
+TOML files; a background service sounds an alarm and keeps a dialog up at the
+start and end of every block until you respond. Tasks, deadlines, and habits
+sit alongside it in the `rmd` CLI and a local browser workspace.
 
-The AI setup flow is profile-first: it reads or builds `profile.md` alongside
-your schedule files, asks follow-up questions until that profile is usable for
-planning, and then generates a schedule that defaults toward healthier timing
-patterns when the user has not specified something explicitly.
+<Figure
+  src="img/hero.webp"
+  eager
+  alt="The Schedule Everything browser workspace: the J-mode overview in light mode, the weekly overview in dark mode, and P mode at phone size"
+/>
 
-## Demo
+You build the routine with your own AI coding agent (Claude Code, OpenAI
+Codex, or Google Antigravity) through the [`schedule-everything`
+plugin](ai-agents.md). Its `build-schedule` skill interviews you, confirms a
+plain-language summary, and writes the files; `plan-day` fills today's focus
+blocks with real tasks. Schedule Everything itself makes no AI calls.
 
-<div style={{display: 'flex', gap: '1rem', flexWrap: 'wrap'}}>
-  <img src="img/rmd_add.gif" alt="Add Schedule" style={{flex: '1', minWidth: '300px', maxWidth: '48%'}} />
-  <img src="img/rmd_view.gif" alt="View Schedule" style={{flex: '1', minWidth: '300px', maxWidth: '48%'}} />
-</div>
+## How it works
+
+<Figure
+  src="img/diagrams/how-it-works.svg"
+  alt="You ask your AI coding agent; the schedule-everything plugin runs rmd commands; rmd validates and writes local files that drive reminders and the browser workspace"
+/>
+
+1. **You ask** your agent in plain words, for example "Build my weekly
+   schedule".
+2. **The plugin runs `rmd`**: `rmd check` validates your files and reports
+   their paths, `rmd sync --json` describes today's focus blocks and open
+   tasks, and `rmd sync --apply` saves today's plan.
+3. **Your files drive everything**: the reminder service checks the schedule
+   every minute and alerts with a sound and a dialog; `rmd web` shows the same
+   data in the browser.
+
+## The daily rhythm
+
+<Figure
+  src="img/diagrams/daily-loop.svg"
+  alt="A loop of five steps: build your routine once, add tasks, plan today, focus with reminders, and look back"
+/>
+
+Build your routine once, add tasks as they come (`rmd add "Draft intro" 8`),
+plan today's focus blocks with your agent, let the reminders keep you on
+track, and look back in the **Activity** gallery and the weekly overview.
 
 ## Philosophy
 
-In an era of complex, cloud-based productivity suites, Schedule Everything takes a different approach: **simplicity, privacy, and control**.
+In an era of complex, cloud-based productivity suites, Schedule Everything
+takes a different approach: **simplicity, privacy, and control**. Your
+schedule should be:
 
-We believe that your schedule should be:
-*   **Owned by you**: Stored locally, not on a remote server.
-*   **Versioned**: Treated like code, with history and diffs.
-*   **Distraction-free**: Running silently in the background, alerting you only when necessary.
-*   **Programmable**: Configured via simple text files, amenable to automation and scripting.
+*   **Owned by you**: stored locally, not on a remote server.
+*   **Versioned**: treated like code, with history and diffs.
+*   **Distraction-free**: running quietly in the background, alerting you only when necessary.
+*   **Programmable**: configured with simple text files that agents and scripts can edit.
 
-## Evidence-Informed Defaults
+## Core capabilities
 
-When `rmd setup` has to fill gaps, it uses general, population-level
-defaults informed by sleep, movement, sedentary-behavior, and light-exposure
-research:
+*   **Declarative configuration**: define your week in TOML. Reusable
+    `[time_blocks]` (with start and end alarms) and `[time_points]` (single
+    reminders) live in `settings.toml`; `[common]` entries apply to every day.
+*   **Persistent alerts**: an audible cue plus a dialog that repeats until you
+    respond.
+*   **Odd/even weeks**: alternates between `odd_weeks.toml` and
+    `even_weeks.toml` by ISO week number, for alternating timetables.
+*   **Tasks, deadlines, habits**: importance 1–10, task types, postponement,
+    deadline urgency, and daily habit check-ins.
+*   **J mode and P mode**: a structured day or a flexible, task-first day.
+*   **Browser workspace**: `rmd web` opens a local overview, timeline, year
+    calendar, activity gallery, and weekly overview. See
+    [Browser workspace](browser.md).
+*   **System integration**: runs as a background service (`launchd` on macOS,
+    a `systemd` user service on Linux) that survives reboots.
 
-*   protect enough sleep opportunity and avoid systematically compressing sleep
-*   prefer regular sleep timing over large weekday/weekend swings
-*   distribute weekly physical activity instead of clustering it into rare bursts
+## Evidence-informed defaults
+
+When the `build-schedule` skill has to fill gaps, it applies general,
+population-level defaults informed by sleep, movement, sedentary-behavior, and
+light-exposure research:
+
+*   protect at least 7 hours of sleep opportunity with consistent sleep and wake times
+*   avoid trading sleep for work when other options exist
+*   spread about 150–300 minutes of moderate activity across the week, with strength work on 2 or more days when feasible
 *   insert movement or recovery breaks during long desk-based work stretches
-*   when the user has flexibility, place harder cognitive work and daylight exposure earlier in the day
+*   place demanding cognitive work in the user's best-focus windows
+*   prefer daylight earlier in the day and avoid stimulating late-night work
 
 These are heuristics rather than medical advice. Real user constraints, medical
-instructions, disability needs, or shift-work realities should take priority.
+instructions, disability needs, or shift-work realities take priority.
 
 Selected sources:
 
@@ -51,49 +104,29 @@ Selected sources:
 *   Albulescu et al., *"Give me a break!"* ([PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0272460))
 *   Figueiro et al., *The impact of daytime light exposures on sleep and mood in office workers* ([DOI](https://doi.org/10.1016/j.sleh.2017.03.005))
 
-## Core Capabilities
-
-*   **Declarative Configuration**: Define your entire life's rhythm using intuitive TOML files.
-*   **Dual-Mode Alerts**: Combines audible cues with persistent modal dialogs to ensure you never miss a beat.
-*   **Smart Rotation**: Automatically switches between **odd** and **even** week schedules based on ISO week numbering, perfect for bi-weekly sprints or alternating routines.
-*   **Flexible Event Architecture**:
-    *   **Time Blocks**: Duration-based events (e.g., Pomodoro, meetings) with start and end triggers.
-    *   **Time Points**: Instant, one-off reminders (e.g., "Hydrate", "Bedtime").
-    *   **Common Routines**: Define daily habits once, apply them everywhere.
-*   **CLI Power**: A comprehensive command-line interface for managing tasks, visualizing schedules, and controlling the daemon.
-*   **System Integration**: Runs as a native background service (via `launchd` on macOS or a `systemd` user service on Linux), ensuring reliability across reboots.
-
 ## Why TOML?
 
-We chose TOML (Tom's Obvious, Minimal Language) over JSON, YAML, or proprietary GUI databases for specific reasons:
+### Human-centric syntax
+TOML is designed to be read and written by people. It avoids the bracket noise
+of JSON and the indentation ambiguity of YAML.
 
-### 1. Human-Centric Syntax
-TOML is designed to be read and written by humans. It avoids the bracket noise of JSON and the indentation ambiguity of YAML.
+### Infrastructure as code
+Your schedule is configuration. Stored in text files, it can be put under
+version control, synced across machines with standard tools (rsync, git,
+Dropbox), and diffed to see exactly what changed.
 
-### 2. Infrastructure as Code
-Your schedule is configuration. By storing it in text files, you can:
-*   **Version Control**: Use Git to track how your routine evolves.
-*   **Sync**: Share configs across machines using standard tools (rsync, git, Dropbox).
-*   **Diff**: See exactly what changed between your old routine and your new one.
+### Composable logic
+Define a `pomodoro` block once in `settings.toml` and reference it everywhere.
+Changing your focus length from 25 to 50 minutes is a one-line edit.
 
-### 3. Composable Logic
-Define a `pomodoro` block once in `settings.toml`, and reference it hundreds of times. Changing your focus duration from 25 to 50 minutes requires editing a single line, instantly propagating to your entire calendar.
+### AI-ready
+Text configuration is the native language of coding agents. Hand your agent a
+timetable, a screenshot, or a description of your week; the `build-schedule`
+skill turns it into valid TOML and checks it with `rmd check` before it goes
+live.
 
-### 4. AI-Ready
-Text-based configuration is the native language of LLMs. You can paste a messy email, a screenshot, or a stream-of-consciousness thought into an AI model and ask it to "generate the TOML config for this."
+## Getting started
 
-## How It Works
-
-At its heart, Schedule Everything is a lightweight daemon that monitors system time against your defined rules.
-
-1.  **Load**: Reads `settings.toml` and the appropriate weekly schedule (`odd_weeks.toml` or `even_weeks.toml`).
-2.  **Monitor**: Checks for event triggers every minute.
-3.  **Alert**: When a time matches, it executes the configured alert strategy (sound + dialog).
-4.  **Persist**: Alarms continue until explicitly acknowledged, preventing accidental dismissal.
-
-## Getting Started
-
-Ready to take control of your time?
-
-*   **[Installation Guide](installation.md)**: Set up the environment and background service.
-*   **[Quick Start](quick-start.md)**: Create your first schedule in minutes.
+*   **[Installation](installation.md)**: set up the CLI and the background service.
+*   **[Quick start](quick-start.md)**: get a working schedule in minutes.
+*   **[AI agent plugins](ai-agents.md)**: let your agent build and plan for you.

@@ -1,6 +1,7 @@
 
 ---
 sidebar_position: 3
+description: How odd_weeks.toml, even_weeks.toml, [common], and today's plan combine into the reminders you get.
 ---
 
 # Weekly Schedules
@@ -35,6 +36,31 @@ Weekly schedule files (`odd_weeks.toml` and `even_weeks.toml`) define your day-t
 # Events that apply to all days
 ```
 
+Only `[monday]` through `[sunday]` and `[common]` are allowed. `[common]`
+applies to every day; a weekday entry at the same time overrides it. Use
+`skip_days` in `settings.toml` for days with no reminders.
+
+## How today's schedule is built
+
+<Figure
+  src="img/diagrams/todays-schedule.svg"
+  alt="The odd or even week file is chosen by ISO week, merged with the [common] entries, and today's plan then adds task titles to untitled focus blocks"
+/>
+
+1. **Pick this week's file** by ISO week number: odd weeks use
+   `odd_weeks.toml`, even weeks use `even_weeks.toml` (`rmd status` shows the
+   current parity).
+2. **Merge** today's weekday table with `[common]`. At the same time, the
+   weekday entry wins.
+3. **Overlay today's plan**, if there is one. Untitled `pomodoro` and `potato`
+   blocks are focus slots; a plan saved with
+   [`rmd sync --apply`](../cli/schedule-management.md#sync) (usually by the
+   `plan-day` skill) gives them task titles for today only. Your week files
+   never change.
+
+The result is what the reminder service announces and what `rmd status -v`
+and the browser timeline show.
+
 ## Event Types
 
 ### 1. Time Block References
@@ -56,7 +82,8 @@ Reference time points defined in `settings.toml`:
 ```
 
 ### 3. Direct Messages
-Write custom messages directly:
+Write custom messages directly. They show as a plain reminder with no duration,
+and `rmd check` warns about them because an unknown label is usually a typo:
 
 ```toml
 "15:00" = "Team standup meeting starts now! 👥"
@@ -186,10 +213,13 @@ admin_work = 15
 Always test your schedule configuration:
 
 ```bash
-# Check for configuration errors
-rmd status
+# Check for configuration errors (missing files, TOML syntax, unknown blocks)
+rmd check
 
-# View your complete schedule
+# Reload reminders with the new files
+rmd update
+
+# View today's complete schedule
 rmd status -v
 
 # Generate a visual schedule
@@ -198,9 +228,11 @@ rmd view
 
 ## Common Patterns
 
+Each pattern below is one day; repeat it under the other weekdays you need.
+
 ### Developer Schedule
 ```toml
-[weekday]
+[monday]
 "08:30" = "pomodoro"
 "09:30" = "long_break"
 "10:30" = "pomodoro"
@@ -213,7 +245,7 @@ rmd view
 
 ### Student Schedule
 ```toml
-[weekday]
+[monday]
 "07:00" = "wake_up"
 "08:00" = "breakfast"
 "09:00" = { block = "study", title = "Morning Study Session" }
@@ -225,7 +257,7 @@ rmd view
 
 ### Flexible Worker Schedule
 ```toml
-[weekday]
+[monday]
 "09:00" = { block = "deep_work", title = "Creative Work" }
 "11:00" = "long_break"
 "13:00" = { block = "meeting", title = "Client Check-in" }
@@ -236,13 +268,13 @@ rmd view
 ## Troubleshooting
 
 ### Schedule Not Loading
-- Check TOML syntax with an online validator
+- Run `rmd check` to find TOML syntax errors, missing files, and unknown blocks
 - Ensure all referenced time blocks exist in `settings.toml`
 - Verify file permissions and paths
 
 ### Events Not Triggering
 - Check system time and timezone settings
-- Verify the service is running: `launchctl list | grep schedule`
+- Verify the service is running: `launchctl list | grep schedule` (macOS) or `systemctl --user status schedule-management.service` (Linux)
 - Review logs for error messages
 
 ### Overlapping Events

@@ -6,32 +6,43 @@ sidebar_position: 2
 
 Commands for managing your schedule, viewing upcoming events, and controlling the reminder service.
 
-## setup
+## AI agent plugins
 
-Launch an interactive setup wizard that builds or modifies schedules with a pi-powered assistant. pi owns credentials and model selection; `rmd setup` only carries an optional model override.
+Building a weekly routine and planning a day happen in your own coding agent
+through the `schedule-everything` plugin for Claude Code, OpenAI Codex, or
+Google Antigravity. The plugin works through the local `rmd` CLI. The agent
+sends what it reads to its own model provider; Schedule Everything itself makes
+no AI calls. The full guide is [AI agent plugins](../ai-agents.md).
 
-### Syntax
-```bash
-rmd setup
-```
+<Figure
+  src="img/diagrams/how-it-works.svg"
+  alt="You ask your AI coding agent; the schedule-everything plugin runs rmd commands such as rmd check, rmd sync --json, rmd sync --apply, rmd switch, and rmd update; rmd writes local files that drive reminders and the browser workspace"
+/>
 
-### What it does
-- Credentials and model selection are handled by pi (its own auth store and provider env vars); authenticate with `pi` first.
-- Optionally override the model via `~/.schedule_management/llm.toml` (a single `model = "..."` line; leave it unset to use pi's default).
-- Uses pi (`pi`) as the setup-agent runtime.
-- Checks whether a complete local schedule configuration already exists.
-- Routes to either a build flow (new schedule) or a modify flow (existing schedule).
-- Reads or writes `profile.md` in the same config directory as `settings.toml`.
-- In build flow, iteratively refines the profile first, asks for timetable context when available, then produces a pure-text schedule summary before generating TOML.
-- In modify flow, reads `profile.md` first so edits stay aligned with the user's long-term context.
-- Writes the first accepted schedule to `user_config_0`, then versions later accepted edits as `user_config_n+1`.
-- Switches the active config snapshot after an accepted modification.
-- Before applying a modification, shows a diff of the proposed schedule files (up to 100 lines) and asks for approval. Rejecting it lets you request a revision.
-- Uses evidence-informed defaults around sleep regularity, physical activity, movement breaks, and daytime light exposure when the user leaves details open.
-- Only after you confirm the summary does it generate TOML configuration files.
-- During build/modify turns, the pi-backed agent can attach local files/images and read local context files when needed. The CLI limits its tools to reading and searching; it applies generated files after your approval.
-- Recommends `rmd view` and supports iterative adjustments.
-- Press `Ctrl+C` or close terminal input to cancel the setup conversation without applying a pending schedule.
+### Install
+
+<AgentInstall />
+
+Then ask your agent things like "Build my weekly schedule", "Plan my focus
+blocks for today", or "Move my workouts to the evenings".
+
+### build-schedule
+
+Builds or changes your weekly routine.
+
+- Interviews you profile-first, reading `profile.md` when it exists.
+- Proposes a plain-language summary and waits for your confirmation before writing any file.
+- Writes `settings.toml`, `odd_weeks.toml`, `even_weeks.toml`, `habits.toml`, and `profile.md`, validates them with [`rmd check`](#check), then reloads reminders with `rmd update`.
+- For changes to an existing schedule, copies the active config to a new `user_config_<n>` version, edits the copy, validates it with `rmd check --dir`, and activates it with `rmd switch <n>`. Older versions remain for rollback.
+- Applies evidence-informed defaults when you leave details open: at least 7 hours of sleep opportunity, 150–300 minutes of moderate activity per week with strength work on 2 or more days, movement breaks, demanding work in your best-focus windows, daylight early in the day, and no stimulating late-night work. These are heuristics, not medical advice; your own constraints win.
+
+### plan-day
+
+Fills today's focus blocks.
+
+- Reads today's context with `rmd sync --json`.
+- Assigns open tasks to today's focus blocks and confirms the plan with you.
+- Saves the plan with `rmd sync --apply`. See [sync](#sync).
 
 ## switch
 
@@ -73,7 +84,7 @@ rmd update
 ### What it does
 - Pulls the latest config changes when your config directory is git-managed.
 - Restarts the installer-managed reminder service when its restart helper is available.
-- Falls back to a local-only reload flow for configs created by `rmd setup` or manual edits.
+- Falls back to a local-only reload flow for configs that are not git-managed, such as those written by an AI agent or by hand.
 
 ### Examples
 ```bash
@@ -84,8 +95,8 @@ rmd update
 ## status
 
 Show upcoming events and current service status.
-When `rmd sync` has produced an accepted overlay for today, pomodoro and
-potato blocks show both the block type and the assigned task title.
+When today has a saved plan (see [sync](#sync)), pomodoro and potato blocks
+show both the block type and the planned task title.
 
 ### Syntax
 ```bash
@@ -108,31 +119,103 @@ rmd status -v
 
 ## sync
 
-Generate today's pomodoro/potato task assignments from `tasks/tasks.json` with
-an LLM, show a preview, and only save the overlay after you approve it.
+Show, save, or clear today's plan for focus blocks (untitled `pomodoro` and
+`potato` blocks). `rmd sync` makes no AI calls: the
+[`plan-day`](#plan-day) skill in your AI agent reads `--json`, drafts the plan
+with you, and saves it with `--apply`.
 
 ### Syntax
 ```bash
-rmd sync
+rmd sync [--json | --apply FILE | --clear]
 ```
 
+### Options
+| Option | Description |
+|--------|-------------|
+| (none) | Show today's focus blocks and the planned task for each, or a hint to plan with your AI agent |
+| `--json` | Print today's context for agents as JSON |
+| `--apply FILE` | Save a plan for today from a JSON file; use `-` to read standard input |
+| `--clear` | Remove today's plan |
+
 ### What it does
-- Loads today's untitled pomodoro/potato blocks from the active schedule.
-- Reads tasks from `tasks/tasks.json` and sorts them by priority.
-- Uses the same pi-backed model configuration flow as `rmd setup`.
-- Shows a preview table before writing `synced_schedule.toml`.
-- If you reject the preview, asks for a reason and regenerates using that feedback.
-- Applies the accepted overlay only to the matching day, so base odd/even templates stay unchanged.
+- `--json` prints `date`, `weekday`, `parity`, `mode`, `skipped`, `slots` (each with `time`, `block`, `minutes`, and planned `title`), the day's `events`, open `tasks` (priority, type, postponement, and procrastination), upcoming `deadlines`, and the current `plan`.
+- `--apply` reads a plan like the one below. Keys must be today's slot times; a partial plan is fine. Titles can be up to 120 characters. Applying replaces any earlier plan for today.
+- The plan is stored as the overlay `synced_schedule.toml` in the config root. Reminders and `rmd status` pick it up automatically, without a restart.
+- A plan changes only today; `odd_weeks.toml` and `even_weeks.toml` are never modified.
+- Bare `rmd sync` and `--apply` are refused in P mode, and `--apply` is refused on skip days. `--json` and `--clear` work in both modes.
+
+<Figure
+  src="img/diagrams/todays-schedule.svg"
+  alt="The odd or even week file is chosen by ISO week, merged with the [common] entries, and today's plan then adds task titles to untitled pomodoro and potato blocks"
+  caption="A saved plan is an overlay on today's merged schedule. See how today's schedule is built in Weekly Schedules."
+/>
+
+```json
+{
+  "date": "2026-11-04",
+  "assignments": {
+    "09:00": "Draft thesis intro",
+    "14:00": "Review lab PR"
+  }
+}
+```
 
 ### Examples
 ```bash
-# Generate and review today's focus-block assignments
+# Show today's focus blocks and their planned tasks
 rmd sync
+
+# Print today's context for an AI agent
+rmd sync --json
+
+# Save a plan from a file, or from standard input
+rmd sync --apply plan.json
+rmd sync --apply - < plan.json
+
+# Remove today's plan
+rmd sync --clear
+```
+
+## check
+
+Validate a config directory: the active one by default, or the one given with
+`--dir`.
+
+### Syntax
+```bash
+rmd check [--dir DIR] [--json]
+```
+
+### Options
+| Option | Description |
+|--------|-------------|
+| `--dir DIR` | Config directory to check instead of the active one |
+| `--json` | Print the result and config paths as JSON |
+
+### What it does
+- Requires `settings.toml`, `odd_weeks.toml`, and `even_weeks.toml`.
+- Checks TOML and JSON syntax and required tables: `settings.toml` needs `[settings]`, `[time_blocks]`, and `[time_points]`; `habits.toml` needs `[habits]`; `ddl.json` must be a list of event/deadline objects.
+- Checks the week files against `settings.toml`. An inline `{ block = "...", title = "..." }` whose `block` is not a `[time_blocks]` name is an error, because reminders ignore it.
+- Reports warnings that do not make the directory invalid: a missing `[tasks]` or `[paths]` table (built-in defaults apply), and a plain label that is not a `[time_blocks]` or `[time_points]` name (it is shown as a plain reminder message with no duration, which is usually a typo).
+- Prints the config root, the checked directory, its files, errors, and warnings. Exits with code 1 when the directory is invalid.
+- `--json` prints `configRoot`, `activeId`, `activeConfigDir`, `configIds`, `nextConfigId`, `nextConfigDir`, `directory`, `files` (each with `path` and `exists`), `valid`, `errors`, and `warnings`.
+
+### Examples
+```bash
+# Validate the active config directory
+rmd check
+
+# Validate a new version before activating it
+rmd check --dir ~/.schedule_management/config/user_config_2
+rmd switch 2
+
+# Machine-readable result for scripts and AI agents
+rmd check --json
 ```
 
 ## view
 
-Generate a visual representation of your schedule as a PDF document. This command creates a multi-page PDF combining your Odd and Even week schedules and immediately opens it in your default PDF viewer on macOS.
+Generate a visual representation of your schedule as a PDF document. This command creates a multi-page PDF combining your Odd and Even week schedules and opens it in your default PDF viewer (`xdg-open` on Linux).
 
 ### Syntax
 ```bash
@@ -187,9 +270,8 @@ rmd settings
 - Shows one shortcut per action in the footer, with local editing actions above navigation and save/quit controls.
 - Uses `Esc` to return from a section or cancel the current editor. At the section list, `Esc` stays in settings; use `q` to quit.
 - Prompts when quitting with unsaved changes: `s` saves and quits, `d` discards and quits, and `Esc` keeps editing. Repeating `q` does not discard changes.
-- Shows a modified marker for unsaved settings or model changes, including on the section list. `Ctrl+C` also opens the quit confirmation when changes are unsaved.
+- Shows a modified marker for unsaved settings changes, including on the section list. `Ctrl+C` also opens the quit confirmation when changes are unsaved.
 - Persists changes back to your active `settings.toml` configuration on save (`s`).
-- Includes a **🤖 Model Settings** page (listed at the top) for the optional pi `--model` override. Edit the value as free text (e.g. a `provider/model-id` or pattern), or choose **clear** to reset it and let pi choose. The override is stored in the global `~/.schedule_management/llm.toml` (shared across config sets); credentials and model selection otherwise remain with pi. Pressing `s` saves both `settings.toml` and `llm.toml`.
 
 ### Keyboard actions
 
@@ -197,7 +279,6 @@ rmd settings
 | --- | --- |
 | Section list | `↑` / `↓` Move · `Enter` Open · `s` Save · `q` Quit |
 | Settings section | `↑` / `↓` Move · `Enter` Edit (or `Space` Toggle for booleans) · `a` Add · `d` Delete · `Esc` Back · `s` Save · `q` Quit |
-| Model Settings | `↑` / `↓` Move · `Enter` Edit or Clear, depending on the selected row · `Esc` Back · `s` Save · `q` Quit |
 | Choice picker | `↑` / `↓` Move · `Enter` Apply · `Esc` Cancel |
 | Multi-select | `↑` / `↓` Move · `Space` Toggle · `Enter` Apply · `Esc` Cancel |
 | Text/number/time editor | `Enter` Apply · `Esc` Cancel · `Backspace` Delete a character |
