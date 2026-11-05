@@ -454,7 +454,7 @@ function Tour(): ReactNode {
             </Translate>,
           ]}
           docLink={{
-            to: '/docs/browser#activity-gallery-and-weekly-overview',
+            to: '/docs/browser#activity-tree-gallery-and-weekly-overview',
             label: <Translate id="homepage.activity.link">About the gallery</Translate>,
           }}
           media={
