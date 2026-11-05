@@ -1,170 +1,296 @@
-# Schedule Everything
-
 <p align="center">
-  <img src="assets/logo.png" alt="Schedule Everything logo" width="520">
+  <img src="documentation/static/img/logo.svg" alt="" width="88">
 </p>
 
-[![Logic Tests](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/logic-tests.yml/badge.svg)](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/logic-tests.yml)
-[![CLI Tests](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/cli-tests.yml/badge.svg)](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/cli-tests.yml)
-[![PyPI version](https://badge.fury.io/py/schedule-management.svg)](https://pypi.org/project/schedule-management)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://PhDeasy-org.github.io/schedule-everything/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PhDeasy-org/schedule-everything)
-[中文版本](README_zh.md)
-
-Schedule Everything is a local-first, AI-assisted scheduling workspace with a browser interface and CLI for building a
-durable weekly routine and then turning today's focus blocks into concrete
-work.
-
-## Workflow
+<h1 align="center">Schedule Everything</h1>
 
 <p align="center">
-  <img
-    src="assets/workflow.png"
-    alt="Workflow for building a schedule with rmd setup, then assigning daily tasks with rmd sync"
-    width="860"
-  >
+  <strong>Your AI agent plans the week. Persistent reminders keep you on it.</strong><br>
+  A local-first weekly routine, task list, and focus-block reminder app with a vivid browser workspace and the <code>rmd</code> CLI.
 </p>
 
-## Quick Start
+<p align="center">
+  <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/logic-tests.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/logic-tests.yml/badge.svg" alt="Logic tests"></a>
+  <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/cli-tests.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/cli-tests.yml/badge.svg" alt="CLI tests"></a>
+  <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml/badge.svg" alt="Browser tests"></a>
+  <a href="https://pypi.org/project/schedule-management"><img src="https://badge.fury.io/py/schedule-management.svg" alt="PyPI version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-6250d6.svg" alt="MIT license"></a>
+</p>
 
-### 1. Install
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#a-tour-of-the-workspace">Tour</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="https://autophd-org.github.io/schedule-everything/">Documentation</a> ·
+  <a href="README_zh.md">中文</a>
+</p>
 
-Using curl (recommended):
+<p align="center">
+  <img src="documentation/static/img/hero.webp" alt="The Schedule Everything browser workspace: the J-mode overview, the weekly overview in dark mode, and P mode on a phone" width="100%">
+</p>
+
+## Why Schedule Everything
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>🧠 Your agent plans</h3>
+      Tell Claude Code, Codex, or Antigravity about your life. Its <code>build-schedule</code> skill interviews you and writes your weekly routine; <code>plan-day</code> fills today's focus blocks with real tasks.
+    </td>
+    <td width="33%" valign="top">
+      <h3>⏰ Reminders that stick</h3>
+      A background service sounds an alarm and shows a dialog at the start and end of every block until you respond. Deadlines, habits, and urgent tasks get their own nudges.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🔒 Local and plain text</h3>
+      Your routine is TOML, your tasks and history are JSON, all on your computer. The app makes no AI calls itself; your agent talks to its own model provider.
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>Healthy defaults, not just a full calendar</strong></summary>
+
+When your preferences leave gaps, `build-schedule` protects a few
+evidence-informed defaults: at least 7 hours of sleep opportunity with regular
+sleep and wake times, 150–300 minutes of moderate activity a week with
+strength work on two or more days, short movement breaks in long sedentary
+stretches, demanding work in your best-focus window, and daylight early in the
+day. These are scheduling heuristics, not medical advice; your real
+constraints always win.
+
+- Watson NF et al. *Recommended Amount of Sleep for a Healthy Adult.* [AASM consensus](https://aasm.org/resources/pdf/pressroom/adult-sleep-duration-consensus.pdf)
+- Sletten TL et al. *The importance of sleep regularity.* [Sleep Health, 2023](https://doi.org/10.1016/j.sleh.2023.07.016)
+- World Health Organization. *Physical activity recommendations for adults.* [WHO](https://www.who.int/initiatives/behealthy/physical-activity)
+- Albulescu P et al. *"Give me a break!"* [PLOS ONE, 2022](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0272460)
+- Figueiro MG et al. *The impact of daytime light exposures on sleep and mood in office workers.* [Sleep Health, 2017](https://doi.org/10.1016/j.sleh.2017.03.005)
+
+</details>
+
+## How it works
+
+<p align="center">
+  <img src="documentation/static/img/diagrams/how-it-works.svg" alt="You ask your AI coding agent; the Schedule Everything plugin runs rmd commands; rmd validates and writes local files that drive reminders and the browser workspace" width="100%">
+</p>
+
+The plugin's skills do the thinking. The `rmd` CLI does the deterministic
+work they need: `rmd check` validates your configuration and reports its
+paths, `rmd sync --json` describes today's focus blocks and open tasks, and
+`rmd sync --apply` saves today's plan. A background service turns the result
+into reminders, and `rmd web` shows everything in the browser.
+
+## Quick start
+
+### 1. Install Schedule Everything
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/PhDeasy-org/schedule-everything/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
 ```
 
-Or from a local clone:
+Or from a clone:
+
 ```bash
-git clone https://github.com/PhDeasy-org/schedule-everything.git
+git clone https://github.com/AutoPhd-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
 ```
 
-`install.sh` sets up the local environment, copies files, scaffolds the configuration, and registers background services. pi is
-required for AI-assisted commands such as `rmd setup` and `rmd sync`; the installer
-can install it via `npm install -g @earendil-works/pi-coding-agent`.
+The installer sets up a Python environment, scaffolds your configuration in
+`~/.schedule_management/config`, and registers the reminder service
+(LaunchAgent on macOS, systemd on Linux). Existing configuration is kept.
 
-### 2. Build Your Schedule with One Command!
+### 2. Add the plugin to your AI agent
 
-```bash
-rmd setup
-```
+<table>
+  <tr><th>Claude Code</th><th>OpenAI Codex</th><th>Google Antigravity</th></tr>
+  <tr>
+    <td valign="top"><pre lang="bash">claude plugin marketplace add AutoPhd-org/schedule-everything
+claude plugin install schedule-everything@schedule-everything</pre></td>
+    <td valign="top"><pre lang="bash">codex plugin marketplace add AutoPhd-org/schedule-everything
+codex plugin add schedule-everything@schedule-everything</pre></td>
+    <td valign="top"><pre lang="bash">git clone https://github.com/AutoPhd-org/schedule-everything.git
+agy plugin install ./schedule-everything/plugins/schedule-everything</pre></td>
+  </tr>
+</table>
 
-After a short conversation about your workday, constraints, and habits,
-`rmd setup` builds or updates `profile.md`, shows a summary for confirmation,
-and only then writes your schedule files into `user_config_0`. pi owns
-credentials and model selection (authenticate with `pi` first); an optional
-model override can be set in `~/.schedule_management/llm.toml`. Later accepted changes are
-saved as `user_config_1`, `user_config_2`, and so on under the same config
-root while `tasks/` remains shared.
+Inside a Claude Code session you can run the same steps as
+`/plugin marketplace add` and `/plugin install`. The installer also prints
+these commands, and the browser's **Schedule** page has copy buttons for them.
 
-Once that schedule exists, the system can remind you about scheduled blocks,
-habit/deadline prompts, and give you both a live status view and a PDF
-visualization of the result.
+### 3. Ask your agent
 
-### 3. Add Tasks and Sync Today
+| Say | What happens |
+| --- | --- |
+| **"Build my weekly schedule"** | `build-schedule` asks about your work, constraints, energy, and habits, shows a plain-language summary, and only after you confirm writes `settings.toml`, `odd_weeks.toml`, `even_weeks.toml`, `habits.toml`, and `profile.md`. It validates them with `rmd check` and reloads reminders. |
+| **"Plan my focus blocks for today"** | `plan-day` reads `rmd sync --json`, matches your most important tasks and nearest deadlines to today's pomodoro and potato blocks, confirms with you, and saves the plan with `rmd sync --apply`. |
+| **"Move my workouts to the evenings"** | Changes become a new `user_config_<n>` version, validated with `rmd check --dir` and activated with `rmd switch <n>`. Earlier versions stay for rollback. |
 
-Plans change faster than weekly templates. When that happens, add tasks and
-sync the current day instead of rebuilding the whole schedule.
-
-```bash
-rmd add "Finish proposal draft" 9
-rmd add "Review PR #128" 7
-# Postpone daily urgent alarm until tomorrow (optional third argument: days)
-rmd add "Biology homework" 9 1
-rmd sync
-```
-
-Set `show_tasks_after_change = true` under `[settings]` if you want every
-successful `rmd add ...` or `rmd rm ...` to immediately print the same task table as `rmd ls`.
-
-`rmd sync` reads `tasks/tasks.json`, proposes task assignments for today's
-pomodoro/potato blocks, and regenerates if you reject the preview with
-feedback.
-
-### 4. Check the Result
-
-```bash
-rmd status
-rmd status -v
-rmd view
-rmd update
-rmd switch 0
-```
-
-When a sync overlay exists for today, `rmd status` shows the block type and
-the specific assigned event, for example `pomodoro: Finish proposal draft`.
-`rmd update` reloads the reminder service. If your config directory is a git
-repository, it pulls the latest schedule changes first; otherwise it skips the
-git step and reloads your local files as-is.
-
-### 5. Open the Browser Workspace
-
-Launch the local browser interface:
+### 4. Open the workspace
 
 ```bash
 rmd web
 ```
 
-Your tasks, schedules, settings, and habit records remain in the same local
-files used by the CLI. The browser includes task creation and editing,
-completion/cancellation, deadlines, habit checks, AI schedule conversations,
-sync proposal review, configuration editing, mode and schedule switching,
-reminder controls, and a schedule PDF download. Tasks are grouped by type, with importance,
-postponement, and procrastination details preserved. All tasks are shown.
-Deadlines use the same types as tasks, with a category selector when adding or
-editing a deadline. In J mode the overview highlights overdue deadlines, deadlines due
-today, available high-importance tasks, and habit progress alongside your current
-schedule block, nearest deadlines, and today's timeline. P mode keeps only the
-tasks-by-type board. Switch with the **J / P** toggle in the header or `rmd mode`.
-**Routines & deadlines** adds an interactive year calendar: click a day to add a
-deadline, pick a marker color, and drag deadlines to reschedule them. **Activity**
-is a gallery of finished, cancelled, and dropped tasks with a weekly overview that
-compares the week with previous weeks. Use the sun, moon, or monitor controls in
-the header for light, dark, or system appearance; your choice is remembered in
-this browser.
+The browser workspace runs on `127.0.0.1` only, reads the same files as the
+CLI, and reuses an open tab when you launch it again.
 
-Launching again reuses an open workspace tab. The app asks the browser to bring
-it forward; browser focus permissions can prevent it from becoming the active
-tab. If the tab has been closed, a new tab opens on the existing server.
-The server listens only on `127.0.0.1` and continues running when the terminal
-closes. CLI commands remain available.
+## A tour of the workspace
 
-The installed package includes the browser assets; Node.js is only needed to
-rebuild them during development. No native desktop app or widget is shipped.
-See [Browser workspace](documentation/docs/browser.md) for details.
+### Two ways to run your day
 
-## Core Commands
+<p align="center">
+  <img src="documentation/static/img/modes.webp" alt="J mode shows status, right now, deadlines, tasks, and the timeline; P mode shows only the tasks-by-type board" width="100%">
+</p>
+
+**J mode** is the structured day: overdue and due-today counts, high-importance
+tasks, habit progress, the current and next block, upcoming deadlines, and
+today's timeline. **P mode** is for flexible days: alarms for selected events
+pause and the overview keeps only your tasks, grouped by type, as a loose
+collage. Flip the **J / P** switch in the header, or run `rmd mode j|p`.
+
+### Plan with your agent
+
+<p align="center">
+  <img src="documentation/static/img/screens/schedule-agents.webp" alt="The Schedule page with today's timeline, today's plan, and tabbed plugin install commands for Claude Code, Codex, and Antigravity" width="100%">
+</p>
+
+Today's timeline shows each planned block with its task. The Schedule page
+also has the plugin install commands with copy buttons, example prompts, and a
+button to clear today's plan.
+
+### Your year at a glance
+
+<p align="center">
+  <img src="documentation/static/img/screens/calendar.webp" alt="An interactive year calendar with colored deadline days, an open day card for November 21, and draggable upcoming deadline chips" width="82%">
+</p>
+
+**Routines & deadlines** puts every deadline on a year calendar. Click a day
+to add one, pick one of eight marker colors, recolor or edit it from the day
+card, and drag a chip onto another day to reschedule. Today's habits live on
+the same page.
+
+### Little wins add up
+
+<p align="center">
+  <img src="documentation/static/img/screens/activity-gallery.webp" alt="The Activity page with the weekly overview card, a rhythm grid of completed tasks per day, filters, and a gallery of finished tasks with generated artwork" width="100%">
+</p>
+
+**Activity** is a gallery of everything you finished, cancelled, or let go,
+each card with artwork in its type's color. Filter by outcome or type, search,
+sort, or click a day in the rhythm grid. Open a card to see when it started,
+how long it took, and how that compares with your other tasks.
+
+<table>
+  <tr>
+    <td width="50%" valign="top"><img src="documentation/static/img/screens/lightbox-dark.webp" alt="A task's detail card in dark mode, showing when it was added and finished and how its time compares with other tasks"></td>
+    <td width="50%" valign="top"><img src="documentation/static/img/screens/weekly-dark.webp" alt="The weekly overview in dark mode: tasks completed with an eight-week trend, habit rings, streak, daily rhythm, effort by type, outcomes, habit check-ins, pace, and highlights"></td>
+  </tr>
+  <tr>
+    <td valign="top"><strong>Every task has a story.</strong> Open any card for its timeline and pace.</td>
+    <td valign="top"><strong>Your week in color.</strong> The weekly overview compares this week with last week and your recent average, mostly as charts.</td>
+  </tr>
+</table>
+
+### On your phone, too
+
+<table>
+  <tr>
+    <td width="33%"><img src="documentation/static/img/screens/mobile-overview.webp" alt="The J-mode overview on a phone"></td>
+    <td width="33%"><img src="documentation/static/img/screens/mobile-activity.webp" alt="The Activity page on a phone"></td>
+    <td width="33%"><img src="documentation/static/img/screens/mobile-overview-p-dark.webp" alt="P mode in dark theme on a phone"></td>
+  </tr>
+</table>
+
+Light, dark, or system theme, remembered per browser. Motion respects your
+system's reduced-motion setting.
+
+## The daily rhythm
+
+<p align="center">
+  <img src="documentation/static/img/diagrams/daily-loop.svg" alt="Build your routine once, then add tasks, plan today, focus with reminders, and look back" width="100%">
+</p>
+
+## How today's schedule is built
+
+<p align="center">
+  <img src="documentation/static/img/diagrams/todays-schedule.svg" alt="The odd or even week file is chosen by ISO week, merged with common entries, then today's plan adds task titles to focus blocks" width="100%">
+</p>
+
+```toml
+# odd_weeks.toml (even_weeks.toml has the same shape)
+[wednesday]
+"09:00" = "pomodoro"                                  # a [time_blocks] name: alarm at start and end
+"14:00" = { block = "meeting", title = "Advisor 1:1" }
+
+[common]                                              # every day; a weekday entry at the same time wins
+"12:30" = "lunch_time"                                # a [time_points] name: one reminder
+"20:00" = "potato"
+```
+
+Untitled `pomodoro` and `potato` blocks are the focus slots a daily plan can
+fill. A plan changes only today; your weekly files never change.
+
+## Commands
 
 | Command | What it does |
 | --- | --- |
-| `rmd web` | Open the local browser workspace, reusing an existing tab |
-| `rmd setup` | Build or modify your schedule with a profile-first AI workflow |
-| `rmd sync` | Assign today's pomodoro/potato blocks to tasks with preview + approval |
-| `rmd status [-v]` | Show what is happening now and today's schedule, including synced titles |
-| `rmd add/ls/rm` | Manage the task list that feeds the sync flow (`rm` counts as completed) |
-| `rmd cancel` / `rmd drop` | Remove a task without counting it as done (added by mistake, or giving up) |
-| `rmd history [n]` | Show recent task activities; completed, cancelled, and dropped are shown distinctly (default: 5) |
-| `rmd track` | Record habits |
-| `rmd ddl` | Manage deadlines; entries two or more days overdue are auto-pruned |
-| `rmd view` | Generate a PDF schedule visualization |
-| `rmd switch <id>` | Activate a different `user_config_n` snapshot and reload the service |
-| `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms and shows a tasks-only browser overview) |
-| `rmd settings` | Interactive TUI for editing `settings.toml` and the optional pi model override (↑/↓ to move, Enter to open/apply, Esc to back/cancel, Space to toggle, `s` to save, `q` to quit) |
+| `rmd web` | Open the browser workspace, reusing an existing tab |
+| `rmd status [-v]` | What is happening now and next, with today's planned task titles |
+| `rmd add "task" 8 [type] [days]` | Add a task with importance 1–10, an optional type, and an optional postponement |
+| `rmd ls` · `rmd rm` · `rmd cancel` · `rmd drop` | List tasks; finish one (counts as completed), or remove one as a mistake or a dropped goal |
+| `rmd history [n]` | Recent finished, cancelled, and dropped tasks |
+| `rmd ddl` · `rmd ddl add <event> <M.D>` · `rmd ddl rm` | Manage deadlines |
+| `rmd track` | Record today's habits |
+| `rmd sync [--json \| --apply FILE \| --clear]` | Show today's focus blocks and plan; `--json` and `--apply` are what `plan-day` uses |
+| `rmd check [--dir DIR] [--json]` | Validate a config directory and report its paths |
+| `rmd mode [j\|p]` | Show or switch between J and P mode |
+| `rmd switch <id>` · `rmd update` · `rmd stop` | Activate a `user_config_<n>` version, reload reminders, or stop them |
+| `rmd settings` | Edit `settings.toml` in an interactive terminal UI |
+| `rmd view` · `rmd report weekly\|monthly` | Export a schedule PDF or a productivity report |
 
-`rmd setup` previews proposed file changes before applying a schedule modification. Press `Ctrl+C` to cancel. The settings editor shows actions for the current panel; quitting with unsaved changes offers `s` to save and quit, `d` to discard and quit, or Esc to keep editing. In time lists, Space edits an item, Enter applies the list, and Esc cancels it.
+## Configuration
 
-## Manual Setup and Docs
+```text
+~/.schedule_management/config/
+├── user_config_0/            # one complete version of your routine
+│   ├── settings.toml         # time blocks, time points, reminder times, task types
+│   ├── odd_weeks.toml        # schedule for odd ISO weeks
+│   ├── even_weeks.toml       # schedule for even ISO weeks
+│   ├── habits.toml           # daily habits
+│   ├── ddl.json              # deadlines (with optional marker colors)
+│   └── profile.md            # what your agent knows about you
+├── user_config_1/            # a later version made by build-schedule
+├── synced_schedule.toml      # today's plan
+└── tasks/                    # tasks, history, habit records, mode
+```
 
-The low-level manual configuration flow has been moved to the docs.
+You can edit every file by hand, in the browser's configuration editor, or
+with `rmd settings`. Run `rmd check` after manual edits.
 
-- [Introduction](https://PhDeasy-org.github.io/schedule-everything/docs/intro)
-- [Quick Start](https://PhDeasy-org.github.io/schedule-everything/docs/quick-start)
-- [Installation](https://PhDeasy-org.github.io/schedule-everything/docs/installation)
-- [Configuration Overview](https://PhDeasy-org.github.io/schedule-everything/docs/configuration/overview)
-- [CLI Overview](https://PhDeasy-org.github.io/schedule-everything/docs/cli/overview)
+## Documentation
+
+- [Introduction](https://autophd-org.github.io/schedule-everything/docs/intro)
+- [AI agent plugins](https://autophd-org.github.io/schedule-everything/docs/ai-agents)
+- [Quick start](https://autophd-org.github.io/schedule-everything/docs/quick-start)
+- [Browser workspace](https://autophd-org.github.io/schedule-everything/docs/browser)
+- [Configuration](https://autophd-org.github.io/schedule-everything/docs/configuration/overview)
+- [CLI reference](https://autophd-org.github.io/schedule-everything/docs/cli/overview)
+
+## Development
+
+```bash
+uv venv .venv && source .venv/bin/activate
+uv pip install -e .
+uv run pytest -q        # Python tests
+
+npm ci
+npm test                # browser workspace tests
+npm run build           # rebuild the bundled browser assets
+```
+
+The browser frontend lives in `web/`, and `npm run build` writes the bundle
+into `src/schedule_management/web/static/`, which ships with the Python
+package. The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
 
 ## License
 

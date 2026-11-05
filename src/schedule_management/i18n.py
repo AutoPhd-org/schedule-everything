@@ -292,58 +292,19 @@ ZH_TRANSLATIONS = {
     "❌ Error updating: {e}": "❌ 更新错误：{e}",
 
     # -------------------------------------------------------------------------
-    # Setup Command (setup.py)
+    # Sync Command (sync.py): today's focus-block plan
     # -------------------------------------------------------------------------
-    "❌ Setup can only be run interactively in a terminal": "❌ 设置向导只能在终端中交互式运行",
-    "✨ Schedule Everything Setup Wizard ✨": "✨ Schedule Everything 设置向导 ✨",
-    "This wizard will help you configure your schedule and notification settings.": "本向导将帮助您配置日程和通知设置。",
-    "Setup cancelled by user.": "用户取消了设置安排。",
-    "Failed to initialize LLM config:": "初始化 LLM 配置失败：",
-    "Detected an existing completed configuration in": "检测到已存在的完整配置：",
-    "Do you want to modify existing schedules?": "您是否想要修改已有的日程？",
-    "No changes made.": "未做任何修改。",
-    "No valid completed configuration detected": "未检测到有效的完整配置",
-    "Do you want to build a new schedule?": "您是否想要构建一个新的日程？",
-
-    # -------------------------------------------------------------------------
-    # Sync Command (sync.py)
-    # -------------------------------------------------------------------------
-    "❌ Sync command requires 'google-generativeai' package. Install with 'pip install google-generativeai'": "❌ 同步命令需要 'google-generativeai' 库。请通过 'pip install google-generativeai' 安装",
-    "🔍 Fetching active tasks and today's schedule...": "🔍 正在获取活动任务和今日日程...",
-    "ℹ️  Today is a rest day (skip day) in your configuration.": "ℹ️ 您的配置中显示今天是休息日（跳过）。",
-    "   No activity blocks need task assignments today.": "   今天没有活动时间块需要分配任务。",
-    "ℹ️  No tasks found in your task list. Add some using 'rmd add <task> <priority>' first!": "ℹ️ 您的任务列表中没有任务。请先使用 'rmd add <task> <priority>' 添加一些任务！",
-    "ℹ️  No activity blocks (pomodoro/potato) scheduled for today.": "ℹ️ 今天没有安排活动时间块（pomodoro/potato）。",
-    "🧠 Analyzing tasks and schedule blocks with LLM...": "🧠 正在通过 LLM 分析任务和日程块...",
-    "❌ LLM generation failed: {e}": "❌ LLM 生成失败：{e}",
-    "📋 Today's Planned Task Allocations": "📋 今日计划任务分配",
-    "Approved! Saving task assignments for today.": "已批准！保存今日任务分配。",
-    "✅ Task assignments saved successfully!": "✅ 任务分配保存成功！",
-    "❌ Save cancelled by user.": "❌ 保存已被用户取消。",
-    "❌ Error saving task assignments: {e}": "❌ 保存任务分配错误：{e}",
     "Failed to load today's schedule:": "加载今日日程失败：",
     "Today is a skipped day. Nothing to sync.": "今天是跳过的休息日。无需同步。",
-    "No schedule found for today.": "今日未找到日程。",
-    "No untitled pomodoro/potato blocks need syncing today.": "今天没有未命名的 pomodoro/potato 时间块需要同步。",
-    "No tasks found in tasks.json. Add tasks before running sync.": "在 tasks.json 中未找到任何任务。请在运行同步前添加任务。",
-    "Sync cancelled by user.": "用户取消了同步。",
-    "Failed to initialize LLM config:": "初始化 LLM 配置失败：",
-    "Generating task assignments...": "正在生成任务分配...",
-    "Could not generate a synced schedule:": "无法生成同步日程：",
-    "Failed to save synced schedule:": "保存同步日程失败：",
-    "Saved accepted sync overlay to": "已将接受的同步覆盖保存至",
-    "Run `rmd status` to inspect the assigned focus blocks.": "运行 `rmd status` 查看已分配的专注块。",
-    "Accept this synced schedule?": "是否接受此同步日程？",
-    "Please answer with yes or no.": "请用 yes 或 no 回答。",
-    "What should change before I regenerate it?": "在重新生成之前有什么需要修改的？",
-    "Please provide a short reason.": "请提供简短的原由。",
-    "Synced Schedule Preview": "同步日程预览",
-    "Model Summary": "模型总结",
-    "No untitled pomodoro/potato blocks need syncing today.": "今天没有未密名的 pomodoro/potato 专注时间块需要同步。",
-    "No tasks found in tasks.json. Add tasks before running sync.": "在 tasks.json 中没有找到任务。请先使用 'rmd add <task> <priority>' 添加任务！",
-    "Failed to save synced schedule:": "保存同步日程失败：",
-    "Saved accepted sync overlay to": "已将接受的同步覆盖保存至",
-    "Run `rmd status` to inspect the assigned focus blocks.": "运行 `rmd status` 来查看已分配的专注时间块。",
+    "No untitled pomodoro/potato blocks need syncing today.": "今天没有未命名的 pomodoro/potato 专注时间块需要规划。",
+    "Currently in p mode. Switch back to j mode to execute this command.": "当前处于 p mode，若想使用则切换到 j mode",
+    "Today's focus blocks": "今日专注时间块",
+    "Block": "时间块",
+    "Planned task": "计划任务",
+    "No plan yet. Ask your AI agent to plan today with the Schedule Everything plugin, or apply a plan with `rmd sync --apply plan.json`.": "还没有计划。请让你的 AI 智能体通过 Schedule Everything 插件规划今天，或使用 `rmd sync --apply plan.json` 应用计划。",
+    "Saved today's plan with {count} focus blocks to {path}.": "已将包含 {count} 个专注时间块的今日计划保存至 {path}。",
+    "Cleared today's plan.": "已清除今日计划。",
+    "There was no saved plan.": "没有已保存的计划。",
 
     # -------------------------------------------------------------------------
     # Popups, Reminders, Platform & Run Wizards

@@ -15,12 +15,6 @@ export type ScheduleEvent = {
   syncable: boolean;
 };
 
-export type SchedulePreviewEvent = {
-  time: string;
-  label: string;
-  block: string | null;
-};
-
 export type TaskItem = {
   description: string;
   priority: number;
@@ -137,17 +131,6 @@ export type Snapshot = {
   habits: HabitItem[];
   taskTypes: Record<string, string>;
   history: HistoryItem[];
-};
-
-export type SyncProposal = {
-  summary: string | null;
-  plan: {
-    target_date: string;
-    parity: string;
-    weekday: string;
-    assignments: Record<string, { block: string; title: string }>;
-  };
-  preview: SchedulePreviewEvent[];
 };
 
 export type BridgeClient = {

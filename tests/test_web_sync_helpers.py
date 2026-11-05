@@ -1,84 +1,48 @@
+"""Browser API coverage for today's plan overlay and the removed in-app AI commands."""
+
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 
-def test_generate_sync_proposal_uses_feedback(monkeypatch):
+def test_sync_clear_removes_todays_plan(monkeypatch, tmp_path):
     from schedule_management.commands import sync as sync_module
+    from schedule_management.web import api
 
-    schedule = {
-        "09:00": "pomodoro",
-        "09:25": "short_break",
-        "10:00": "potato",
-    }
-
+    overlay = tmp_path / "synced_schedule.toml"
+    monkeypatch.setenv("REMINDER_SYNCED_SCHEDULE_PATH", str(overlay))
+    monkeypatch.setattr(sync_module, "_today", lambda: date(2026, 11, 4))
+    monkeypatch.setattr(sync_module, "load_mode", lambda: "j")
     monkeypatch.setattr(
         sync_module,
         "_get_base_today_schedule",
-        lambda: (schedule, "even", False, _FakeConfig()),
+        lambda: ({"09:00": "pomodoro"}, "even", False, None),
     )
-    monkeypatch.setattr(
-        sync_module,
-        "_load_ranked_tasks",
-        lambda: [{"description": "Draft proposal", "priority": 9}],
-    )
-    monkeypatch.setattr(sync_module, "ensure_llm_config", lambda: {"provider": "fake"})
-    monkeypatch.setattr(sync_module, "LLMClient", _FakeClient)
-    monkeypatch.setattr(sync_module, "_today", lambda: date(2026, 4, 28))
-    monkeypatch.setattr(
-        sync_module,
-        "_now",
-        lambda: datetime(2026, 4, 28, 8, 30),
-    )
+    sync_module.apply_sync_plan({"assignments": {"09:00": "Write"}})
+    assert overlay.exists()
 
-    proposal = sync_module.generate_sync_proposal(["make the first block specific"])
-
-    assert proposal["summary"] == "Use the strongest task first."
-    assert proposal["plan"]["target_date"] == "2026-04-28"
-    assert proposal["plan"]["assignments"]["09:00"]["title"] == "Draft proposal"
-    assert proposal["preview"][0]["time"] == "09:00"
-    assert "make the first block specific" in _FakeClient.last_prompt
+    assert api.dispatch({"command": "sync_clear", "payload": {}}) == {"ok": True, "data": {"cleared": True}}
+    assert not overlay.exists()
+    assert api.dispatch({"command": "sync_clear", "payload": {}}) == {"ok": True, "data": {"cleared": False}}
 
 
-def test_accept_sync_plan_persists_payload(monkeypatch, tmp_path):
-    from schedule_management.commands import sync as sync_module
+def test_in_app_ai_commands_are_gone():
+    from schedule_management.web import api
 
-    saved_paths = []
-
-    def fake_save(plan):
-        saved_paths.append(plan)
-        return tmp_path / "synced_schedule.toml"
-
-    monkeypatch.setattr(sync_module, "save_synced_schedule", fake_save)
-
-    result = sync_module.accept_sync_plan(
-        {
-            "target_date": "2026-04-28",
-            "parity": "even",
-            "weekday": "tuesday",
-            "assignments": {
-                "09:00": {"block": "pomodoro", "title": "Draft proposal"},
-            },
-        }
-    )
-
-    assert result["savedPath"].endswith("synced_schedule.toml")
-    assert saved_paths[0].assignments["09:00"]["title"] == "Draft proposal"
+    for command in ("sync_generate", "sync_accept", "setup_turn", "setup_accept"):
+        response = api.dispatch({"command": command, "payload": {}})
+        assert response["ok"] is False
+        assert response["error"]["code"] == "unknown_command"
 
 
-class _FakeConfig:
-    time_blocks = {"pomodoro": 25, "potato": 30}
+def test_config_editor_no_longer_exposes_model_settings():
+    from schedule_management.web import workspace
+    from schedule_management.web.services import WebError
 
-
-class _FakeClient:
-    last_prompt = ""
-
-    def __init__(self, config):
-        self.config = config
-
-    def generate(self, system_prompt, user_prompt):
-        type(self).last_prompt = user_prompt
-        return (
-            '{"summary": "Use the strongest task first.", '
-            '"assignments": {"09:00": "Draft proposal", "10:00": "Draft proposal"}}'
-        )
+    assert "model" not in workspace.FILES
+    try:
+        workspace._file_path("model")
+    except WebError as exc:
+        assert exc.code == "invalid_input"
+    else:
+        raise AssertionError("model file should be rejected")

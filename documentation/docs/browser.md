@@ -1,5 +1,6 @@
 ---
-sidebar_position: 4
+sidebar_position: 5
+description: The local browser workspace opened by rmd web — overview, schedule, year calendar, activity gallery, weekly overview, and settings.
 ---
 
 # Browser workspace
@@ -12,19 +13,28 @@ rmd web
 
 The server runs on your computer and reads the same local files as `rmd`.
 Closing the launching terminal does not stop the server. After launch, you can
-manage your workspace without returning to the terminal. A fresh configuration
-opens a setup prompt; missing or malformed schedule files can be repaired in the
-browser.
+manage your workspace without returning to the terminal. When the schedule
+files are missing or invalid, a banner offers **Build a schedule with your AI
+agent** (which opens the Schedule page) and **Edit configuration**; malformed
+files can be repaired in the browser.
+
+<Figure
+  src="img/screens/overview-j.webp"
+  darkSrc="img/screens/overview-j-dark.webp"
+  eager
+  alt="The J-mode overview: status orbs for overdue, due today, high importance, and habits; the right-now card; next deadlines; and tasks by type"
+  caption="The overview in J mode. Switch the site theme to see the workspace's dark appearance."
+/>
 
 ## What you can do
 
 | Area | Operations |
 | --- | --- |
 | Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
-| Schedule | View today's timeline; generate, revise, discard, and accept sync proposals; build or modify a weekly schedule through a conversation; download the schedule PDF |
+| Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines on an interactive year calendar (click a day to add, choose a marker color, drag to reschedule); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Browse a gallery of completed, cancelled, and dropped tasks with filters, search, and a daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
-| Settings | Edit shared task/deadline types, TOML schedules, habits, profile, and optional model settings; switch schedule versions and modes; reload or stop reminders |
+| Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
 ## J mode and P mode
 
@@ -36,12 +46,24 @@ task-first: the overview keeps only the tasks-by-type board, laid out as a loose
 collage, and the workspace uses a warmer palette. Other pages are the same in
 both modes.
 
+<Figure
+  src="img/modes.webp"
+  alt="J mode shows status, right now, deadlines, tasks, and the timeline; P mode shows only the tasks-by-type board in a darker, warmer palette"
+/>
+
 ## Year calendar
 
 **Routines & deadlines** opens with a calendar for the current year. Days with
 deadlines are tinted with the deadline's marker color; a day with several
 deadlines shows a dot for each. Use the arrows to change year and **Today** to
 return.
+
+<Figure
+  src="img/screens/calendar.webp"
+  maxWidth={640}
+  alt="The year calendar with colored deadline days, an open day card for November 21 with two deadlines and color swatches, and the Upcoming list of draggable chips"
+  caption="Click a day to open its card; drag an Upcoming chip onto another day to move it."
+/>
 
 - Click a day to open its card. Name a deadline, pick a color and type, and
   choose **Add**. Past days are read-only.
@@ -66,6 +88,17 @@ see one day. Open a card for when it was added and finished, how long it took,
 and how that compares with your other completed tasks. Use the arrows or
 arrow keys to move between cards.
 
+<Figure
+  src="img/screens/activity-gallery.webp"
+  alt="The Activity page: the weekly overview card, the rhythm grid of completed tasks per day, outcome and type filters, and gallery cards with generated artwork"
+/>
+
+<Figure
+  src="img/screens/lightbox-dark.webp"
+  alt="A task's detail card in dark mode: added and completed times, time to finish, importance 9 of 10, and how its time compares with 75 completed tasks"
+  caption="Open any card for its full story."
+/>
+
 The weekly overview replaces the weekly and monthly PDF reports in the browser.
 Open it from the **Weekly overview** card and use the arrows to move between
 weeks. It compares the week with the previous week and with the average of up
@@ -82,6 +115,13 @@ to four earlier weeks that have recorded activity:
 - median time from adding a task to completing it, and the average importance
   of completed tasks
 - the most important tasks you finished
+
+<Figure
+  src="img/screens/weekly.webp"
+  darkSrc="img/screens/weekly-dark.webp"
+  maxWidth={720}
+  alt="The weekly overview: tasks completed with an eight-week trend, habit consistency rings, streak, daily rhythm, effort by type, outcomes, habit check-ins, pace, and highlights"
+/>
 
 Days follow your computer's local time zone. The CLI still generates weekly and
 monthly PDF reports.
@@ -106,6 +146,15 @@ header to change appearance on any page. System is the default and follows
 changes to your operating system's appearance. An explicit choice persists in
 this browser, and switching themes preserves any form you are editing.
 
+The layout adapts to narrow windows down to phone width: the sidebar becomes
+an icon rail and cards stack.
+
+<FigureRow columns={3}>
+  <Figure src="img/screens/mobile-overview.webp" alt="The J-mode overview at phone width" caption="J-mode overview" />
+  <Figure src="img/screens/mobile-overview-p-dark.webp" alt="P mode in the dark theme at phone width" caption="P mode, dark" />
+  <Figure src="img/screens/mobile-activity.webp" alt="The Activity page at phone width" caption="Activity" />
+</FigureRow>
+
 Tasks preserve their importance (1–10), type, postponed reminder date, and
 procrastination status. The board groups the same tasks returned by `rmd ls`
 without imposing a display limit. Inside each group, the existing ordering is
@@ -115,16 +164,24 @@ The CLI table and task IDs are
 unchanged. Completing a task matches `rmd rm`; cancel and drop remain distinct
 from completion in history and reports.
 
-The schedule assistant accepts text or image timetable attachments up to 5 MB.
-Files are copied to temporary local storage for the AI request and removed
-afterward. Attachments are included in subsequent turns of the same conversation.
+## AI agent plugins
 
-AI features use the same pi installation, account authentication, and model
-configuration as `rmd setup` and `rmd sync`. Install and authenticate pi before
-using those features; manual task, schedule, and settings editing works without
-AI. Initial setup presents a summary for explicit confirmation before generating
-files, then presents the proposed files for acceptance. Schedule modifications
-create a new `user_config_n` version when accepted.
+Schedule building and daily planning happen in your own coding agent through
+the Schedule Everything plugin for Claude Code, OpenAI Codex, or Google
+Antigravity. The **Plan with your AI agent** card on the Schedule page has a tab
+for each agent with its install commands (each with a copy button) and example
+prompts such as "Build my weekly schedule" and "Plan my focus blocks for
+today". See [AI agent plugins](ai-agents.md).
+
+<Figure
+  src="img/screens/schedule-agents.webp"
+  alt="The Schedule page with today's timeline, the today's plan card, and tabbed plugin install commands for Claude Code, Codex, and Antigravity"
+/>
+
+When today has a plan, a **Today's plan** card appears and each planned focus
+block in the timeline shows its task. **Clear today's plan** removes it, like
+`rmd sync --clear`; your weekly routine files are not changed. Task, schedule,
+and settings editing in the browser works without an agent.
 
 ## Reusing an open tab
 
@@ -149,9 +206,9 @@ The local `.browser.json` registry and `.browser.log` are runtime files; exclude
 ## Local storage and access
 
 The server binds only to `127.0.0.1`. It checks the host, request origin, and
-session token before accepting API calls. It does not upload the local database.
-AI requests send scheduling context to the provider selected through pi, just
-as the CLI does. Browser settings edits are validated before saving and reject
+session token before accepting API calls. It does not upload the local database
+and makes no AI requests. If you use an agent plugin, the agent sends what it
+reads to its own model provider. Browser settings edits are validated before saving and reject
 stale revisions. Saving changes reloads the installer-managed reminder service
 when available; standalone installs report when that helper is absent.
 

@@ -23,8 +23,8 @@ Comprehensive guide for setting up and using Schedule Management on Linux.
 The easiest way to install on Linux:
 
 ```bash
-# Clone the repository (with submodules for AI-assisted commands)
-git clone --recurse-submodules https://github.com/PhDeasy-org/schedule-everything.git
+# Clone the repository
+git clone https://github.com/AutoPhd-org/schedule-everything.git
 cd schedule-everything
 
 # Run the installation script
@@ -46,7 +46,7 @@ variables in your shell profile (`~/.bashrc` or `~/.zshrc`):
 
 ```bash
 export PATH="$HOME/SCHEDULE_MANAGEMENT:$PATH"
-export REMINDER_CONFIG_DIR="$HOME/SCHEDULE_MANAGEMENT/config"
+export REMINDER_CONFIG_DIR="$HOME/.schedule_management/config"
 ```
 
 ## System Service Setup

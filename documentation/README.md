@@ -1,41 +1,18 @@
-# Website
+# Documentation website
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
-
-## Installation
-
-```bash
-yarn
-```
-
-## Local Development
+The Schedule Everything docs, built with [Docusaurus](https://docusaurus.io/)
+and published to https://autophd-org.github.io/schedule-everything/ by
+`.github/workflows/deploy-docs.yml`. Requires Node.js 20 or newer.
 
 ```bash
-yarn start
+npm ci              # install exact dependencies from package-lock.json
+npm start           # local dev server (English)
+npm start -- --locale zh   # local dev server (Chinese)
+npm run build       # production build for en and zh into build/
+npm run serve       # serve the production build
+npm run typecheck   # TypeScript check
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
-
-```bash
-yarn build
-```
-
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
-
-## Deployment
-
-Using SSH:
-
-```bash
-USE_SSH=true yarn deploy
-```
-
-Not using SSH:
-
-```bash
-GIT_USER=<Your GitHub username> yarn deploy
-```
-
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+- Docs pages: `docs/` (Chinese overrides in `i18n/zh/docusaurus-plugin-content-docs/current/`)
+- Homepage: `src/pages/index.tsx`; Chinese strings in `i18n/zh/code.json`
+- Images and diagrams: `static/img/` (use `<Figure src="img/..." alt="..." />` in docs)

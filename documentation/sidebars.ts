@@ -1,27 +1,13 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
-/**
- * Creating a sidebar enables you to:
- - create an ordered group of docs
- - render a sidebar for each doc of that group
- - provide next/previous navigation
-
- The sidebars can be generated from the filesystem, or explicitly defined here.
-
- Create as many sidebars as you want.
- */
+// The docs sidebar, in reading order.
 const sidebars: SidebarsConfig = {
-  // By default, Docusaurus generates a sidebar from the docs folder structure
   tutorialSidebar: [
     {
       type: 'category',
       label: 'Getting Started',
-      items: [
-        'intro',
-        'installation',
-        'quick-start',
-        'browser',
-      ],
+      collapsible: false,
+      items: ['intro', 'installation', 'quick-start', 'ai-agents', 'browser'],
     },
     {
       type: 'category',
@@ -40,21 +26,18 @@ const sidebars: SidebarsConfig = {
         'cli/overview',
         'cli/schedule-management',
         'cli/task-management',
+        'cli/deadline-management',
       ],
     },
     {
       type: 'category',
       label: 'Platform Guides',
-      items: [
-        'platform/macos',
-      ],
+      items: ['platform/macos', 'platform/linux'],
     },
     {
       type: 'category',
       label: 'Advanced Features',
-      items: [
-        'advanced/weekly-rotation',
-      ],
+      items: ['advanced/weekly-rotation'],
     },
   ],
 };

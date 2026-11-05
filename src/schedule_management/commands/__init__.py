@@ -7,9 +7,8 @@ This package contains all CLI command implementations, organized by domain:
 - habits: Habit tracking commands
 - completion: Shell completion script generation
 - status: Status and schedule viewing commands
-- sync: LLM-assisted task assignment for today's work blocks
+- sync: Today's focus-block plan overlay (show, apply, clear)
 - service: Service management (update, switch, stop, report)
-- setup: Interactive AI-assisted schedule setup
 - settings: Interactive TUI for editing settings.toml
 """
 
@@ -32,7 +31,6 @@ from schedule_management.commands.service import (
     edit_schedule_command,
     mode_command,
 )
-from schedule_management.commands.setup import setup_command
 from schedule_management.commands.settings import settings_command
 
 __all__ = [
@@ -63,8 +61,6 @@ __all__ = [
     "report_command",
     "edit_schedule_command",
     "mode_command",
-    # Setup command
-    "setup_command",
     # Settings command
     "settings_command",
 ]

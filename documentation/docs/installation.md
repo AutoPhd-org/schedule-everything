@@ -1,125 +1,131 @@
 ---
 sidebar_position: 2
+title: Installation
+description: Install the rmd CLI and background reminder service on macOS or Linux, then add the schedule-everything plugin to your AI agent.
 ---
 
 # Installation
 
-This guide details how to install and configure Schedule Management on your system.
+This guide installs the `rmd` CLI, your configuration, and the background
+reminder service, then adds the plugin to your AI agent.
 
-> **Compatibility Note**: This tool is currently optimized for **macOS** (via `launchd`) and **Linux**. Windows support is on the roadmap.
+> **Compatibility**: macOS (via `launchd`) and Linux (via a `systemd` user
+> service). Windows support is on the roadmap.
 
 ## Prerequisites
 
-Before proceeding, ensure you have the following installed:
-
 *   **Python 3.12+**: [Download Python](https://www.python.org/downloads/)
 *   **Git**: [Download Git](https://git-scm.com/downloads)
-*   **Terminal**: Any standard terminal emulator (Terminal.app, iTerm2, etc.)
-*   **pi CLI**: Required for `rmd setup` and `rmd sync`
-*   **Node.js**: Needed only to rebuild browser assets from source. The Python package includes them.
+*   **Terminal**: any standard terminal (Terminal.app, iTerm2, GNOME Terminal, …)
+*   **An AI coding agent** (optional): Claude Code, OpenAI Codex, or Google Antigravity, to build schedules and plan days with the Schedule Everything plugin
+*   **Node.js**: only needed to rebuild the browser assets from source; the Python package includes them
 
-## Installation Methods
+## Method 1: Automated installer (recommended)
 
-We provide an automated installer for convenience, but manual installation is fully supported for users who prefer granular control.
+The `install.sh` script installs dependencies, scaffolds your configuration,
+and registers the background service in one go. It installs `rmd` as the
+primary CLI and keeps `reminder` as a compatibility alias.
 
-### Method 1: Automated Installer (Recommended)
+```bash
+curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
+```
 
-The `install.sh` script handles dependency installation, configuration scaffolding, and service registration in one go.
-It installs `rmd` as the primary CLI and keeps `reminder` as a compatibility alias.
+Or, from a clone of the repository:
 
-1.  **Run the installer**:
-    You can run the installation script directly using `curl`:
+```bash
+git clone https://github.com/AutoPhd-org/schedule-everything.git
+cd schedule-everything
+./install.sh
+```
+
+The script:
+
+*   downloads the repository to a temporary directory when run through `curl`;
+*   installs the app and a Python environment (managed by `uv`) in `~/SCHEDULE_MANAGEMENT`, including the `rmd` wrapper, logs, and a copy of the agent plugin;
+*   creates your config root in `~/.schedule_management/config` with a first `user_config_0` version (an existing config is kept);
+*   prompts for missing required config values one by one;
+*   registers the background service (LaunchAgent on macOS, systemd user service on Linux).
+
+Then start the service:
+
+-   **macOS** (launchd):
     ```bash
-    curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
+    launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
     ```
-
-    Alternatively, if you have cloned the repository locally:
+-   **Linux** (systemd user service):
     ```bash
-    ./install.sh
+    systemctl --user start schedule-management.service
+    systemctl --user enable schedule-management.service  # auto-start at login
     ```
+    Enable lingering so the user service runs without an active login
+    session: `loginctl enable-linger "$USER"`.
 
-    The script will:
-    *   Automatically download or clone the repository (in temp space) if run via `curl`.
-    *   Install the Python package and dependencies.
-    *   Create the `~/SCHEDULE_MANAGEMENT` directory structure.
-    *   Ensure required config files exist and scaffold config layout.
-    *   Prompt for missing required config values one by one.
-    *   Interactively prompt to install the pi CLI (if `npm` is available).
-    *   Register the background service (on macOS and Linux).
+## Method 2: Manual installation
 
-2.  **Finalize Setup**:
-    Follow the on-screen instructions to start the background service.
-    -   **macOS** (launchd):
-        ```bash
-        launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
-        ```
-    -   **Linux** (systemd user service):
-        ```bash
-        systemctl --user start schedule-management.service
-        systemctl --user enable schedule-management.service  # auto-start at login
-        ```
-        > Make sure lingering is enabled so the user service runs without an
-        > active login session: `loginctl enable-linger "$USER"`.
+For advanced users or those integrating into existing environments. This
+method does not register the background service; use the installer for that.
 
-### Method 2: Manual Installation
-
-For advanced users or those integrating into existing environments.
-
-1.  **Clone the repository**:
+1.  **Clone the repository and install the package** in a virtual environment:
     ```bash
-    git clone https://github.com/sergiudm/schedule-everything.git
+    git clone https://github.com/AutoPhd-org/schedule-everything.git
     cd schedule-everything
-    ```
-
-2.  **Install the Package**:
-    We recommend installing in editable mode (`-e`) to easily pull updates.
-    ```bash
+    uv venv .venv
+    source .venv/bin/activate
     uv pip install -e .
     ```
-    *Tip: Consider using a virtual environment managed by `uv` or `venv`.*
 
-3.  **Install pi CLI** if you want the AI-assisted commands:
+2.  **Create the configuration** from the templates in `config/user_config_0/`:
     ```bash
-    npm install -g @earendil-works/pi-coding-agent
+    mkdir -p ~/.schedule_management/config/user_config_0
+    cp config/user_config_0/settings_template.toml ~/.schedule_management/config/user_config_0/settings.toml
+    cp config/user_config_0/week_schedule_template.toml ~/.schedule_management/config/user_config_0/odd_weeks.toml
+    cp config/user_config_0/week_schedule_template.toml ~/.schedule_management/config/user_config_0/even_weeks.toml
+    cp config/user_config_0/habits_template.toml ~/.schedule_management/config/user_config_0/habits.toml
     ```
 
-4.  **Create Configuration Directory**:
+3.  **Point the CLI at it** (optional when you use the default location above).
+    Add to your shell profile (`~/.zshrc`, `~/.bashrc`, …):
     ```bash
-    mkdir -p ~/SCHEDULE_MANAGEMENT/config/user_config_0
+    export REMINDER_CONFIG_DIR="$HOME/.schedule_management/config"
     ```
 
-5.  **Initialize Config Files**:
-    Copy the templates into the first versioned config set:
+4.  **Validate**:
     ```bash
-    cp config/settings_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/settings.toml
-    cp config/week_schedule_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/odd_weeks.toml
-    cp config/week_schedule_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/even_weeks.toml
+    rmd check
     ```
 
-6.  **Configure Shell Environment**:
-    Add the following to your shell profile (`~/.zshrc`, `~/.bash_profile`, etc.) to access the `rmd` CLI:
+## Method 3: PyPI
 
-    ```bash
-    export PATH="$HOME/SCHEDULE_MANAGEMENT:$PATH"
-    export REMINDER_CONFIG_DIR="$HOME/SCHEDULE_MANAGEMENT/config"
-    alias rmd="$HOME/SCHEDULE_MANAGEMENT/rmd"
-    ```
-
-7.  **Apply Changes**:
-    ```bash
-    source ~/.zshrc  # or your specific profile file
-    ```
-
-### Method 3: PyPI Installation
-
-*Note: This method installs the library code but requires manual configuration setup.*
+This installs the library and the `rmd` command, without configuration or the
+background service:
 
 ```bash
 pip install schedule-management
 ```
-After installation, follow steps 3-6 from the "Manual Installation" section above.
 
-## Browser Workspace
+Then follow steps 2–4 of the manual installation.
+
+## Add the AI agent plugin (optional)
+
+Building a schedule and planning a day happen in your own coding agent. The
+plugin lives in the [`plugins/schedule-everything`](https://github.com/AutoPhd-org/schedule-everything/tree/main/plugins/schedule-everything)
+directory of the repository and is installed into your agent, not into
+Schedule Everything:
+
+<Figure
+  src="img/diagrams/how-it-works.svg"
+  alt="You ask your AI coding agent; the schedule-everything plugin installed in the agent runs rmd commands; rmd writes local files that drive reminders and the browser workspace"
+/>
+
+<AgentInstall />
+
+The installer also copies the plugin to `~/SCHEDULE_MANAGEMENT/plugins/schedule-everything`,
+so Antigravity users can run `agy plugin install ~/SCHEDULE_MANAGEMENT/plugins/schedule-everything`
+instead of cloning. See [AI agent plugins](ai-agents.md) for the skills and
+example prompts. The agent sends what it reads to its own model provider;
+Schedule Everything itself makes no AI calls.
+
+## Browser workspace
 
 Launch the local browser interface:
 
@@ -127,59 +133,53 @@ Launch the local browser interface:
 rmd web
 ```
 
-Your tasks, schedules, settings, and habit records remain in the same local
-files used by the CLI. The browser includes task creation and editing,
-completion/cancellation, deadlines, habit checks, AI schedule conversations,
-sync proposal review, configuration editing, mode and schedule switching,
-reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
-postponement, and procrastination details preserved. All tasks are shown.
+It uses the same local files as the CLI: tasks, deadlines, habits, today's
+plan, the agent plugin install commands, configuration editing, mode and
+schedule switching, reminder controls, and PDF downloads. Launching again
+reuses an open workspace tab. The server listens only on `127.0.0.1` and keeps
+running when the terminal closes. The installed package includes the browser
+assets; no native desktop app or widget is shipped. See
+[Browser workspace](browser.md).
 
-Launching again reuses an open workspace tab. The app asks the browser to bring
-it forward; browser focus permissions can prevent it from becoming the active
-tab. If the tab has been closed, a new tab opens on the existing server.
-The server listens only on `127.0.0.1` and continues running when the terminal
-closes. CLI commands remain available.
+## Verifying the installation
 
-The installed package includes the browser assets; Node.js is only needed to
-rebuild them during development. No native desktop app or widget is shipped.
-See [Browser workspace](browser.md) for details.
-
-## Verifying Installation
-
-Confirm that everything is working correctly.
-
-1.  **Check CLI**:
+1.  **Check the CLI**:
     ```bash
     rmd --help
     ```
-    *Expected output: A list of available commands.*
+    *Expected: a list of available commands.*
 
-2.  **Check Service Status**:
+2.  **Check the service**:
     -   **macOS**:
         ```bash
         launchctl list | grep schedule
         ```
-        *Expected output: A process ID and status code (usually 0).*
+        *Expected: a process ID and status code (usually 0).*
     -   **Linux**:
         ```bash
         systemctl --user status schedule-management.service
         ```
-        *Expected output: `active (running)` with recent log lines.*
+        *Expected: `active (running)` with recent log lines.*
 
-3.  **View Schedule**:
+3.  **Validate the configuration**:
+    ```bash
+    rmd check
+    ```
+    *Expected: the config root, the checked directory and its files, then "Configuration is valid."*
+
+4.  **View the schedule**:
     ```bash
     rmd status
     ```
-    *Expected output: A summary of upcoming events or "No upcoming events".*
+    *Expected: what is active now and the next event.*
 
 ## Uninstallation
 
-To completely remove the application:
-
-1.  **Unload the Service**:
+1.  **Unload the service**:
     -   **macOS**:
         ```bash
         launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
+        rm ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
         ```
     -   **Linux**:
         ```bash
@@ -187,21 +187,24 @@ To completely remove the application:
         systemctl --user disable schedule-management.service
         ```
 
-2.  **Remove Configuration & Data**:
+2.  **Remove the app**:
     ```bash
     rm -rf "$HOME/SCHEDULE_MANAGEMENT"
     ```
 
-3.  **Remove Python Package**:
+3.  **Remove your configuration and history** (optional; this deletes your
+    schedules, tasks, and habit records):
     ```bash
-    pip uninstall schedule-management
+    rm -rf "$HOME/.schedule_management"
     ```
+
+4.  **Remove the plugin** from your agent with that agent's plugin commands.
 
 ## Troubleshooting
 
-*   **"Command not found: rmd"**: Ensure you have added the alias and exports to your shell profile and sourced it.
-*   **Service not starting**: Check the logs (standard error/output) or try running `rmd update` to refresh the service definition.
-*   **"Schedule Everything is damaged and can't be opened" on macOS**: Since pre-built DMGs from GitHub Releases are unsigned, macOS Gatekeeper might block them by marking them as "damaged". You can resolve this by running the following command in your terminal:
-    ```bash
-    xattr -r -d com.apple.quarantine "/Applications/Schedule Everything.app"
-    ```
+*   **"command not found: rmd"**: add `~/SCHEDULE_MANAGEMENT` to your `PATH`
+    (the installer prints the exact line) and reload your shell profile.
+*   **Service not starting**: check the logs in `~/SCHEDULE_MANAGEMENT/logs/`,
+    or run `rmd update` to reload the service.
+*   **Configuration errors**: run `rmd check` for missing files, TOML syntax
+    errors, unknown blocks, and likely label typos.

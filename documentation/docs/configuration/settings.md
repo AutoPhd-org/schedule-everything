@@ -51,7 +51,7 @@ show_tasks_after_add = false
 sound_file = "/System/Library/Sounds/Glass.aiff"
 alarm_interval = 3
 max_alarm_duration = 600
-config_dir = "~/schedule_management/config"
+config_dir = "~/.schedule_management/config"
 log_level = "INFO"
 ```
 
@@ -136,8 +136,8 @@ show_completed = false          # Show completed tasks in list
 
 ## Browser Settings
 
-Launch `rmd web`, then open **Settings** to edit task types, reminders, schedules,
-habits, your profile, or the optional AI model override. The configuration editor
+Launch `rmd web`, then open **Settings** to edit task types, reminders, settings,
+odd/even week schedules, habits, deadlines, or your profile. The configuration editor
 validates TOML and refuses to overwrite a file that changed since it was loaded.
 The browser uses the same active configuration as the CLI.
 

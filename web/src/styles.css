@@ -401,21 +401,24 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .now-pill { background: var(--grad); color: var(--on-grad); border-color: transparent; }
 .pill.light { background: color-mix(in oklab, var(--accent) 10%, var(--surface-solid)); color: var(--accent-ink); }
 
-/* ----- Schedule ------------------------------------------------------------- */
-.sync-card { background: var(--grad-soft), var(--surface); }
-.sync-card h2 { font-size: 25px; line-height: 1.3; margin-bottom: 11px; }
-.sync-card > .button { margin-top: 20px; }
-.sync-card > p { font-size: 13px; line-height: 1.8; }
-.conversation { max-height: 370px; overflow: auto; margin-top: 20px; }
-.message { padding: 14px 16px; border-radius: 22px 22px 22px 6px; background: var(--surface-alt); margin-bottom: 10px; animation: rise .4s var(--ease); }
-.message.user { background: var(--grad-soft); margin-left: 28px; border-radius: 22px 22px 6px 22px; }
-.message small { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; }
-.message p, .proposal p { white-space: pre-wrap; font-size: 13px; line-height: 1.85; margin-top: 6px; color: var(--text); }
-.proposal { padding: 16px; border: 1px solid var(--line); background: var(--surface-alt); border-radius: 22px; margin: 15px 0; }
-.proposal details { font-size: 12px; margin: 14px 0; cursor: pointer; }
-.proposal > .button { margin-top: 12px; }
-.assistant form { margin: 15px 0; }
-.assistant form textarea { margin-bottom: 10px; }
+/* ----- Schedule: AI agent plugins and today's plan ---------------------------- */
+.agent-card, .plan-card { background: var(--grad-soft), var(--surface); }
+.agent-card h2, .plan-card h2 { font-size: 25px; line-height: 1.3; margin-bottom: 10px; }
+.agent-card code, .plan-card code { font: 600 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.agent-tabs { display: inline-flex; gap: 3px; margin: 20px 0 14px; padding: 4px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line); }
+.agent-tab { border: 0; background: transparent; color: var(--muted); font: 700 12.5px/1 var(--display); padding: 9px 15px; border-radius: 999px; transition: color .2s, background .3s, transform .3s var(--spring); }
+.agent-tab:hover { color: var(--text); }
+.agent-tab[aria-selected="true"] { background: var(--grad); color: var(--on-grad); box-shadow: 0 8px 18px -10px var(--accent); }
+.agent-panel { animation: rise .45s var(--ease); }
+.agent-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.agent-steps li { display: flex; align-items: center; gap: 12px; padding: 9px 9px 9px 12px; border-radius: 20px 20px 20px 8px; background: var(--surface-solid); border: 1px solid var(--line); }
+.agent-steps code { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.step-num { display: grid; place-items: center; width: 26px; height: 26px; flex-shrink: 0; border-radius: 46% 54% 50% 50% / 52% 46% 54% 48%; background: var(--grad); color: var(--on-grad); font: 800 12px/1 var(--display); }
+.agent-panel > .muted { margin-top: 10px; }
+.try-label { margin: 22px 0 10px; }
+.prompt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.prompt-chip svg { color: var(--accent); }
+.plan-card { margin-bottom: 22px; }
 
 /* ----- Routines: habits ----------------------------------------------------- */
 .habit-hero { display: flex; align-items: center; gap: 18px; margin: 4px 0 12px; }

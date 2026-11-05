@@ -19,45 +19,20 @@ Comprehensive guide for setting up and using Schedule Management on macOS.
 The easiest way to install on macOS:
 
 ```bash
-# Clone the repository
-git clone https://github.com/sergiudm/schedule_management.git
-cd schedule_management
-
-# Run the installation script
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
 ```
 
 The script will:
-1. Install Python dependencies
-2. Create the application directory (`~/schedule_management/`)
-3. Set up configuration files
-4. Install the launchd service for auto-start
-5. Configure the CLI tool
+1. Install the app and a Python environment in `~/SCHEDULE_MANAGEMENT/`
+2. Create your config root in `~/.schedule_management/config/`
+3. Install the LaunchAgent for auto-start
+4. Create the `rmd` CLI wrapper and convenience scripts
 
 ### Manual Installation
 
-If you prefer manual control:
-
-```bash
-# Install Python package
-pip install schedule-management
-
-# Create directories
-mkdir -p ~/schedule_management/config/user_config_0
-
-# Copy configuration templates
-cp config/settings_template.toml ~/schedule_management/config/user_config_0/settings.toml
-cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/odd_weeks.toml
-cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/even_weeks.toml
-
-# Set up shell profile
-echo 'export PATH="$HOME/schedule_management:$PATH"' >> ~/.zshrc
-echo 'export REMINDER_CONFIG_DIR="$HOME/schedule_management/config"' >> ~/.zshrc
-echo 'alias rmd="$HOME/schedule_management/rmd"' >> ~/.zshrc
-
-# Reload shell
-source ~/.zshrc
-```
+If you prefer manual control, follow the
+[manual installation](../installation.md#method-2-manual-installation) steps.
+Manual installs do not register the LaunchAgent.
 
 ## System Service Setup
 
@@ -65,29 +40,34 @@ source ~/.zshrc
 
 The installation creates a LaunchAgent that runs the reminder service automatically:
 
-**Location**: `~/Library/LaunchAgents/com.sergiudm.schedule_management.plist`
+**Location**: `~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist`
 
-**Contents**:
+**Contents** (abridged):
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.sergiudm.schedule_management</string>
+    <string>com.sergiudm.schedule.management.reminder</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/python3</string>
-        <string>/Users/YOUR_USERNAME/schedule_management/reminder_macos.py</string>
+        <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/.venv/bin/python</string>
+        <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/src/schedule_management/reminder_macos.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/schedule_management/logs/stdout.log</string>
+    <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/logs/schedule_management.out</string>
     <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/schedule_management/logs/stderr.log</string>
+    <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/logs/schedule_management.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REMINDER_CONFIG_DIR</key>
+        <string>/Users/YOUR_USERNAME/.schedule_management/config</string>
+    </dict>
 </dict>
 </plist>
 ```
@@ -96,17 +76,17 @@ The installation creates a LaunchAgent that runs the reminder service automatica
 
 ```bash
 # Load the service (start automatically)
-launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule_management.plist
+launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
 
 # Unload the service (stop automatically)
-launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule_management.plist
+launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
 
 # Check if service is running
 launchctl list | grep schedule
 
 # View service logs
-tail -f ~/schedule_management/logs/stdout.log
-tail -f ~/schedule_management/logs/stderr.log
+tail -f ~/SCHEDULE_MANAGEMENT/logs/schedule_management.out
+tail -f ~/SCHEDULE_MANAGEMENT/logs/schedule_management.err
 ```
 
 ## Browser Workspace
@@ -119,9 +99,9 @@ rmd web
 
 Your tasks, schedules, settings, and habit records remain in the same local
 files used by the CLI. The browser includes task creation and editing,
-completion/cancellation, deadlines, habit checks, AI schedule conversations,
-sync proposal review, configuration editing, mode and schedule switching,
-reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
+completion/cancellation, deadlines, habit checks, today's plan with a clear
+option, agent plugin install commands and example prompts, configuration
+editing, mode and schedule switching, reminder controls, and PDF downloads. Tasks are grouped by type, with importance,
 postponement, and procrastination details preserved. All tasks are shown.
 
 Launching again reuses an open workspace tab. The app asks the browser to bring

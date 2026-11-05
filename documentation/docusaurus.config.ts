@@ -1,36 +1,41 @@
-
 import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
+const repoUrl = 'https://github.com/AutoPhd-org/schedule-everything';
+
 const config: Config = {
   title: 'Schedule Everything',
-  tagline: '晨钟暮鼓 - A TOML-based scheduling tool with persistent reminders',
-  favicon: 'img/favicon.ico',
+  tagline:
+    'Your AI agent plans the week. Persistent reminders keep you on it.',
+  favicon: 'img/logo.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
+    // `v4: true` also turns on Docusaurus Faster (Rspack/SWC), which needs the
+    // optional @docusaurus/faster package. Keep the webpack bundler instead.
+    faster: false,
   },
 
-  // Set the production url of your site here
-  url: 'https://PhDeasy-org.github.io',
-  // Set the /<baseUrl>/ pathname under which your site is served
-  // For GitHub pages deployment, it is often '/<projectName>/'
+  url: 'https://autophd-org.github.io',
   baseUrl: '/schedule-everything/',
 
-  // GitHub pages deployment config.
-  // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'PhDeasy-org', // Usually your GitHub org/user name.
-  projectName: 'schedule-everything', // Usually your repo name.
+  // GitHub Pages deployment config.
+  organizationName: 'AutoPhd-org',
+  projectName: 'schedule-everything',
 
   onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
 
-  // Even if you don't use internationalization, you can use this field to set
-  // useful metadata like html lang. For example, if your site is Chinese, you
-  // may want to replace "en" with "zh-Hans".
+  markdown: {
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+    },
+  },
+
   i18n: {
     defaultLocale: 'en',
     locales: ['en', 'zh'],
@@ -42,6 +47,7 @@ const config: Config = {
       zh: {
         label: '中文',
         direction: 'ltr',
+        htmlLang: 'zh-CN',
       },
     },
   },
@@ -52,26 +58,9 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/PhDeasy-org/schedule-everything/tree/main/documentation/',
+          editUrl: `${repoUrl}/tree/main/documentation/`,
         },
-        blog: {
-          showReadingTime: true,
-          feedOptions: {
-            type: ['rss', 'atom'],
-            xslt: true,
-          },
-          // Please change this to your repo.
-          // Remove this to remove the "edit this page" links.
-          editUrl:
-            'https://github.com/PhDeasy-org/schedule-everything/tree/main/documentation/',
-          // Useful options to enforce blogging best practices
-          onInlineTags: 'warn',
-          onInlineAuthors: 'warn',
-          onUntruncatedBlogPosts: 'warn',
-        },
+        blog: false,
         theme: {
           customCss: './src/css/custom.css',
         },
@@ -80,16 +69,31 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/social-card.jpg',
+    metadata: [
+      {
+        name: 'keywords',
+        content:
+          'schedule, routine, reminders, pomodoro, TOML, CLI, Claude Code, Codex, Antigravity, local-first',
+      },
+      {name: 'twitter:card', content: 'summary_large_image'},
+    ],
     colorMode: {
       respectPrefersColorScheme: true,
     },
+    docs: {
+      sidebar: {
+        hideable: true,
+      },
+    },
     navbar: {
       title: 'Schedule Everything',
+      hideOnScroll: false,
       logo: {
-        alt: 'Schedule Everything Logo',
+        alt: 'Schedule Everything logo',
         src: 'img/logo.svg',
+        width: 32,
+        height: 32,
       },
       items: [
         {
@@ -99,68 +103,77 @@ const config: Config = {
           label: 'Docs',
         },
         {
+          type: 'doc',
+          docId: 'ai-agents',
+          position: 'left',
+          label: 'AI agents',
+        },
+        {
+          type: 'doc',
+          docId: 'browser',
+          position: 'left',
+          label: 'Browser',
+        },
+        {
+          type: 'doc',
+          docId: 'cli/overview',
+          position: 'left',
+          label: 'CLI',
+        },
+        {
           type: 'localeDropdown',
           position: 'right',
         },
         {
-          href: 'https://github.com/PhDeasy-org/schedule-everything',
-          label: 'GitHub',
+          href: repoUrl,
           position: 'right',
+          className: 'header-github-link',
+          'aria-label': 'GitHub repository',
         },
       ],
     },
     footer: {
       style: 'dark',
+      logo: {
+        alt: 'Schedule Everything logo',
+        src: 'img/logo.svg',
+        width: 44,
+        height: 44,
+        href: repoUrl,
+      },
       links: [
         {
-          title: 'Docs',
+          title: 'Start',
           items: [
-            {
-              label: 'Getting Started',
-              to: '/docs/intro',
-            },
-            {
-              label: 'Configuration',
-              to: '/docs/configuration/overview',
-            },
-            {
-              label: 'CLI Commands',
-              to: '/docs/cli/overview',
-            },
+            {label: 'Introduction', to: '/docs/intro'},
+            {label: 'Installation', to: '/docs/installation'},
+            {label: 'Quick start', to: '/docs/quick-start'},
+            {label: 'AI agent plugins', to: '/docs/ai-agents'},
+          ],
+        },
+        {
+          title: 'Use it',
+          items: [
+            {label: 'Browser workspace', to: '/docs/browser'},
+            {label: 'Weekly schedules', to: '/docs/configuration/weekly-schedules'},
+            {label: 'CLI commands', to: '/docs/cli/overview'},
           ],
         },
         {
           title: 'Community',
           items: [
-            {
-              label: 'GitHub Issues',
-              href: 'https://github.com/PhDeasy-org/schedule-everything/issues',
-            },
-            {
-              label: 'Discussions',
-              href: 'https://github.com/PhDeasy-org/schedule-everything/discussions',
-            },
-          ],
-        },
-        {
-          title: 'More',
-          items: [
-            {
-              label: 'GitHub Repository',
-              href: 'https://github.com/PhDeasy-org/schedule-everything',
-            },
-            {
-              label: 'PyPI Package',
-              href: 'https://pypi.org/project/schedule-everything/',
-            },
+            {label: 'GitHub', href: repoUrl},
+            {label: 'Issues', href: `${repoUrl}/issues`},
+            {label: 'PyPI package', href: 'https://pypi.org/project/schedule-management/'},
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Schedule Everything. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Schedule Everything · MIT licensed · Your files stay on your computer.`,
     },
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
+      additionalLanguages: ['toml', 'bash', 'json'],
     },
   } satisfies Preset.ThemeConfig,
 };

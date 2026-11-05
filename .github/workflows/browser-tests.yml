@@ -23,4 +23,4 @@ jobs:
       - run: npm run build
       - name: Check bundled assets match frontend source
         run: git diff --exit-code -- src/schedule_management/web/static
-      - run: uv run pytest tests/test_browser_server.py tests/test_web_api.py tests/test_web_services.py tests/test_web_sync_helpers.py -q
+      - run: uv run pytest tests/test_browser_server.py tests/test_web_api.py tests/test_web_services.py tests/test_web_sync_helpers.py tests/test_web_insights.py -q

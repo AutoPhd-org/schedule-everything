@@ -1,74 +1,108 @@
 ---
 sidebar_position: 3
+title: Quick Start
+description: Install Schedule Everything, add the plugin to your AI agent, and get a working weekly schedule with reminders in minutes.
 ---
 
 # Quick Start
 
 This guide focuses on the fastest path to a useful schedule.
 
-If you want the AI-assisted flow, start with `rmd setup`.
-If you prefer hand-editing TOML, the manual path is included later on this page.
+If you use an AI coding agent (Claude Code, OpenAI Codex, or Google
+Antigravity), let it build your schedule through the Schedule Everything plugin.
+If you prefer hand-editing TOML, the [manual path](#manual-path-hand-editing-the-schedule)
+is further down this page.
 
-## Fastest Path: AI-Assisted Setup
+<Figure
+  src="img/diagrams/how-it-works.svg"
+  alt="You ask your AI coding agent; the schedule-everything plugin runs rmd commands; rmd validates and writes local files that drive reminders and the browser workspace"
+/>
 
-### 1. Install the project and pi
+## Fastest path: build it with your AI agent
+
+### 1. Install Schedule Everything
 
 ```bash
-git clone https://github.com/sergiudm/schedule-everything.git
+curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
+```
+
+Or from a clone:
+
+```bash
+git clone https://github.com/AutoPhd-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
-npm install -g @earendil-works/pi-coding-agent
 ```
 
-### 2. Run the profile-first planner
+The installer sets up a Python environment, scaffolds your configuration in
+`~/.schedule_management/config`, and registers the reminder service. See
+[Installation](installation.md) for details.
 
-```bash
-rmd setup
-```
+### 2. Install the plugin in your agent
 
-What happens:
+<AgentInstall notes={false} />
 
-- pi handles credentials and model selection; authenticate with `pi` first. An optional model override can be placed in `~/.schedule_management/llm.toml`.
-- It creates or refines `profile.md` next to your schedule files.
+More options and what the plugin does: [AI agent plugins](ai-agents.md).
+
+### 3. Ask your agent to build your schedule
+
+Ask: "Build my weekly schedule". What happens:
+
+- The `build-schedule` skill creates or refines `profile.md` next to your schedule files.
 - It asks follow-up questions until that profile is detailed enough to plan from.
-- It shows a summary before writing the schedule.
+- It shows a plain-language summary and waits for your confirmation before writing the schedule.
+- It validates the files with `rmd check` and reloads reminders with `rmd update`.
 
-### 3. Add tasks and sync today
+The agent sends what it reads to its own model provider; Schedule Everything
+itself makes no AI calls.
+
+### 4. Add tasks and plan today
 
 ```bash
 rmd add "Finish proposal draft" 9
 rmd add "Review pull request" 7
-rmd sync
 ```
 
-`rmd sync` reads `tasks/tasks.json`, assigns today's untitled
-`pomodoro`/`potato` blocks to specific tasks, shows a preview, and only writes
-`synced_schedule.toml` after approval.
+Then ask your agent: "Plan my focus blocks for today". The `plan-day` skill
+reads `rmd sync --json`, assigns open tasks to today's untitled
+`pomodoro`/`potato` blocks, confirms the plan with you, and saves it to
+`synced_schedule.toml` with `rmd sync --apply`.
 
-### 4. Verify and launch
+### 5. Open the workspace and verify
 
 ```bash
-rmd status
-rmd status -v
-rmd view
-rmd update
+rmd web      # browser workspace
+rmd check    # validate the active configuration
+rmd status   # what is active now and next
+rmd sync     # today's focus blocks and their planned tasks
 ```
 
-## Manual Path: Hand-Editing the Schedule
+<Figure
+  src="img/screens/schedule-agents.webp"
+  alt="The Schedule page with today's timeline, the today's plan card, and tabbed plugin install commands for Claude Code, Codex, and Antigravity"
+  caption="The Schedule page in rmd web: each planned focus block shows its task, and the agent card has the install commands with copy buttons."
+/>
 
-Use this if you want full manual control over the TOML files.
+## Manual path: hand-editing the schedule
 
-### 1. Create the config files
+Use this if you want full manual control over the TOML files. The installer
+already creates a starting `user_config_0`; edit it with `rmd edit settings`,
+`rmd edit odd`, and `rmd edit even`, or in the browser under **Settings**.
+
+### 1. Create the config files (without the installer)
+
+From a clone of the repository:
 
 ```bash
-mkdir -p ~/schedule_management/config/user_config_0
-cp config/settings_template.toml ~/schedule_management/config/user_config_0/settings.toml
-cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/odd_weeks.toml
-cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/even_weeks.toml
+mkdir -p ~/.schedule_management/config/user_config_0
+cp config/user_config_0/settings_template.toml ~/.schedule_management/config/user_config_0/settings.toml
+cp config/user_config_0/week_schedule_template.toml ~/.schedule_management/config/user_config_0/odd_weeks.toml
+cp config/user_config_0/week_schedule_template.toml ~/.schedule_management/config/user_config_0/even_weeks.toml
+cp config/user_config_0/habits_template.toml ~/.schedule_management/config/user_config_0/habits.toml
 ```
 
-Later accepted schedule edits create `user_config_1`, `user_config_2`, and so
-on under the same config root.
+Schedule changes made by the `build-schedule` skill create `user_config_1`,
+`user_config_2`, and so on under the same config root.
 
 ### 2. Define reusable blocks in `settings.toml`
 
@@ -107,9 +141,18 @@ standup = "Daily Standup Meeting 🗣️"
 
 For a simple weekly schedule, copy the same structure to `even_weeks.toml`.
 
-### 4. Optional: add a synced overlay later
+### 4. Validate and reload
 
-Once you start using tasks, `rmd sync` can generate a daily overlay file:
+```bash
+rmd check
+rmd update
+```
+
+### 5. Optional: plan today later
+
+Once you start using tasks, save a plan for today's focus blocks with
+`rmd sync --apply` (or let the `plan-day` skill do it). The plan is stored as
+a daily overlay:
 
 ```toml
 [schedule]
@@ -117,18 +160,13 @@ Once you start using tasks, `rmd sync` can generate a daily overlay file:
 ```
 
 That overlay lives in `synced_schedule.toml` and does not rewrite your base
-odd/even week templates.
+odd/even week templates. `rmd sync --clear` removes it. See
+[how today's schedule is built](configuration/weekly-schedules.md#how-todays-schedule-is-built).
 
-## Next Steps
+## Next steps
 
-- [Installation](installation.md)
-- [Configuration Overview](configuration/overview.md)
-- [Weekly Schedules](configuration/weekly-schedules.md)
-- [CLI Overview](cli/overview.md)
-
-
-## Browser workspace
-
-Run `rmd web` to manage the same local data through the browser. The task board
-groups all tasks by type and retains importance and reminder details. Existing
-CLI syntax and task numbering are unchanged. See [Browser workspace](browser.md).
+- [AI agent plugins](ai-agents.md)
+- [Browser workspace](browser.md)
+- [Configuration overview](configuration/overview.md)
+- [Weekly schedules](configuration/weekly-schedules.md)
+- [CLI overview](cli/overview.md)

@@ -1,0 +1,26 @@
+{
+  "title": {
+    "message": "Schedule Everything",
+    "description": "The title in the navbar"
+  },
+  "logo.alt": {
+    "message": "Schedule Everything 标志",
+    "description": "The alt text of navbar logo"
+  },
+  "item.label.Docs": {
+    "message": "文档",
+    "description": "Navbar item with label Docs"
+  },
+  "item.label.AI agents": {
+    "message": "AI 智能体",
+    "description": "Navbar item with label AI agents"
+  },
+  "item.label.Browser": {
+    "message": "浏览器",
+    "description": "Navbar item with label Browser"
+  },
+  "item.label.CLI": {
+    "message": "命令行",
+    "description": "Navbar item with label CLI"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "schedule-everything",
+  "displayName": "Schedule Everything",
+  "version": "1.0.0",
+  "description": "Build your weekly Schedule Everything routine and plan each day's focus blocks with your coding agent, using the local `rmd` CLI.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Build my weekly schedule with Schedule Everything",
+    "Plan my focus blocks for today",
+    "Move my gym sessions to the evenings"
+  ],
+  "author": {
+    "name": "Schedule Everything"
+  },
+  "homepage": "https://github.com/AutoPhd-org/schedule-everything",
+  "repository": "https://github.com/AutoPhd-org/schedule-everything",
+  "license": "MIT",
+  "keywords": [
+    "schedule",
+    "planning",
+    "habits",
+    "productivity",
+    "rmd"
+  ]
+}
