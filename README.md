@@ -165,9 +165,10 @@ button to clear today's plan.
 </p>
 
 **Routines & deadlines** puts every deadline on a year calendar. Click a day
-to add one, pick one of eight marker colors, recolor or edit it from the day
-card, and drag a chip onto another day to reschedule. Today's habits live on
-the same page.
+to add one, make it repeat weekly, every two weeks, or monthly, pick one of
+eight marker colors, recolor or edit it from the day card, and drag a chip onto
+another day to reschedule. Repeating events show every occurrence and roll
+forward on their own. Today's habits live on the same page.
 
 ### Little wins add up
 
@@ -239,7 +240,7 @@ fill. A plan changes only today; your weekly files never change.
 | `rmd add "task" 8 [type] [days]` | Add a task with importance 1–10, an optional type, and an optional postponement |
 | `rmd ls` · `rmd rm` · `rmd cancel` · `rmd drop` | List tasks; finish one (counts as completed), or remove one as a mistake or a dropped goal |
 | `rmd history [n]` | Recent finished, cancelled, and dropped tasks |
-| `rmd ddl` · `rmd ddl add <event> <M.D>` · `rmd ddl rm` | Manage deadlines |
+| `rmd ddl` · `rmd ddl add <event> <M.D> [--repeat weekly\|biweekly\|monthly]` · `rmd ddl rm` | Manage deadlines, including repeating ones |
 | `rmd track` | Record today's habits |
 | `rmd sync [--json \| --apply FILE \| --clear]` | Show today's focus blocks and plan; `--json` and `--apply` are what `plan-day` uses |
 | `rmd check [--dir DIR] [--json]` | Validate a config directory and report its paths |

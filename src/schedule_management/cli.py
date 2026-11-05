@@ -302,6 +302,11 @@ def create_parser() -> argparse.ArgumentParser:
         "date",
         help="Due date in M.D or MM.DD format (e.g., '7.4' for July 4th)",
     )
+    ddl_add_parser.add_argument(
+        "--repeat",
+        choices=["weekly", "biweekly", "monthly"],
+        help="Repeat the deadline weekly, every two weeks, or monthly",
+    )
     ddl_add_parser.set_defaults(func=add_deadline)
 
     # ddl rm

@@ -8,11 +8,11 @@ Commands for managing event deadlines with automatic date handling and visual ur
 
 ## ddl add
 
-Add a new deadline or update an existing one.
+Add a new deadline or update an existing one, optionally repeating.
 
 ### Syntax
 ```bash
-rmd ddl add "EVENT_NAME" "M.D"
+rmd ddl add "EVENT_NAME" "M.D" [--repeat weekly|biweekly|monthly]
 ```
 
 ### Parameters
@@ -20,9 +20,14 @@ rmd ddl add "EVENT_NAME" "M.D"
 | ---------------- | ------ | ---------------------------------------------------------- |
 | `EVENT_NAME`     | string | Name of the event (quoted if contains spaces)              |
 | `M.D` or `MM.DD` | string | Deadline date in month.day format (e.g., "7.4" or "07.04") |
+| `--repeat`       | option | Repeat `weekly`, `biweekly` (every two weeks), or `monthly`; the date is the first occurrence |
 
 ### Examples
 ```bash
+# Repeating deadlines
+rmd ddl add "rent" "12.1" --repeat monthly
+rmd ddl add "team report" "11.6" --repeat biweekly
+
 # Add basic deadline
 rmd ddl add "homework2" "7.4"
 
@@ -133,6 +138,13 @@ Deadlines are automatically removed once they are two or more days overdue
 (`days_left <= -2`). A deadline that was due yesterday remains visible as
 overdue, while a deadline that was due two days ago is pruned the next time
 deadlines are listed or checked by the reminder service.
+
+Repeating deadlines are never removed this way. At the same point they move to
+their next occurrence (a week, two weeks, or a month later), so `rmd ddl`, the
+reminders, and the browser always show the next one. In `rmd ddl` their event
+names carry a ↻ marker with the repeat rule. A monthly deadline set on the 29th,
+30th, or 31st falls on the last day of shorter months and returns to its day
+afterward. Remove a repeating deadline with `rmd ddl rm` to stop it.
 
 ### Filtering and Sorting
 

@@ -1,7 +1,7 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, weeklyView, type GalleryFilter, type HistoryStatus, type HistorySort } from "./activity";
-import { deadlineSwatch, yearCalendar, type CalendarState } from "./calendar";
+import { deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState } from "./calendar";
 import { ring } from "./charts";
 import { bindTilt, burst } from "./effects";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
@@ -288,7 +288,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     return deadlines.length ? `<ul class="deadline-list">${(limit ? deadlines.slice(0, limit) : deadlines).map(d => {
       const index = s.deadlines.indexOf(d);
       const label = d.daysLeft === null ? "Check date" : d.daysLeft === 0 ? "Due today" : d.daysLeft < 0 ? `${-d.daysLeft}d overdue` : d.daysLeft === 1 ? "Tomorrow" : `${d.daysLeft}d left`;
-      return `<li class="deadline-${e(d.status)} ${sw(deadlineSwatch(d, s.taskTypes))}"><span class="ddl-dot" aria-hidden="true"></span><div class="deadline-copy"><strong>${e(d.event)}</strong><div class="deadline-meta"><time>${e(d.deadline)}</time><span class="type-badge ${d.type ? sw(typeSwatch(s.taskTypes, d.type)) : "untyped"}">${e(d.typeName ?? d.type ?? "Uncategorized")}</span></div></div><span class="deadline-status ${e(d.status)}">${label}</span><button class="text-button" data-deadline="${index}" data-operation="edit" aria-label="Edit ${e(d.event)}" type="button">Edit</button><button class="icon-button danger" data-deadline="${index}" data-operation="remove" aria-label="Remove ${e(d.event)}" type="button">${icons.close}</button></li>`;
+      return `<li class="deadline-${e(d.status)} ${sw(deadlineSwatch(d, s.taskTypes))}"><span class="ddl-dot" aria-hidden="true"></span><div class="deadline-copy"><strong>${e(d.event)}</strong><div class="deadline-meta"><time>${e(d.deadline)}</time>${repeatBadge(d.repeat)}<span class="type-badge ${d.type ? sw(typeSwatch(s.taskTypes, d.type)) : "untyped"}">${e(d.typeName ?? d.type ?? "Uncategorized")}</span></div></div><span class="deadline-status ${e(d.status)}">${label}</span><button class="text-button" data-deadline="${index}" data-operation="edit" aria-label="Edit ${e(d.event)}" type="button">Edit</button><button class="icon-button danger" data-deadline="${index}" data-operation="remove" aria-label="Remove ${e(d.event)}" type="button">${icons.close}</button></li>`;
     }).join("")}</ul>` : empty("No deadlines to track.");
   }
 
@@ -504,7 +504,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       const existing = s.deadlines.find(d => d.event === name);
       if (existing && existing.deadline !== day && !window.confirm(`“${name}” is already due ${existing.deadline}. Move it to this day?`)) return;
       void action(async () => {
-        await request("deadline_add", {event: name, date: day, type: data.get("popType") ?? "", color: data.get("popColor") ?? ""});
+        await request("deadline_add", {event: name, date: day, type: data.get("popType") ?? "", color: data.get("popColor") ?? "", repeat: data.get("popRepeat") ?? ""});
         state.calendar.day = null;
         state.calendar.flash = day;
         await reload();
@@ -530,8 +530,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const selected = deadline?.type ?? "";
     const color = deadline?.color;
     const unknown = selected && !(selected in state.snapshot!.taskTypes) ? `<option value="${e(selected)}" selected>${e(deadline?.typeName ?? selected)} (unavailable)</option>` : "";
-    dialog(deadline ? "Edit deadline" : "New deadline", `${field("event", "Event", "text", deadline?.event ?? "", "required")}${field("date", "Due date", "date", deadline?.deadline ?? state.snapshot!.today.date, "required")}<label>Deadline type<select name="type"><option value="">Uncategorized</option>${typeOptions(state.snapshot!, selected)}${unknown}</select></label>${swatchPicker("color", isSwatch(color) ? color : "", "Match type color")}`, async data => {
-      await request(deadline ? "deadline_update" : "deadline_add", {event: data.get("event"), date: data.get("date"), type: data.get("type"), color: data.get("color") ?? "", originalEvent: deadline?.event});
+    dialog(deadline ? "Edit deadline" : "New deadline", `${field("event", "Event", "text", deadline?.event ?? "", "required")}${field("date", "Due date", "date", deadline?.deadline ?? state.snapshot!.today.date, "required")}<label>Deadline type<select name="type"><option value="">Uncategorized</option>${typeOptions(state.snapshot!, selected)}${unknown}</select></label><label>Repeat<select name="repeat">${repeatOptions(deadline?.repeat)}</select></label>${swatchPicker("color", isSwatch(color) ? color : "", "Match type color")}`, async data => {
+      await request(deadline ? "deadline_update" : "deadline_add", {event: data.get("event"), date: data.get("date"), type: data.get("type"), color: data.get("color") ?? "", repeat: data.get("repeat") ?? "", originalEvent: deadline?.event});
       state.calendar.day = null;
       await reload();
     });

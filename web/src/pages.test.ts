@@ -1,7 +1,7 @@
 // Tests for P/J overview layouts, the activity gallery and weekly overview, and the year calendar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
-import { deadlineSwatch, monthCells } from "./calendar";
+import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
 import type { BridgeClient, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
 import { addDays } from "./ui";
@@ -198,7 +198,7 @@ describe("year calendar", () => {
     popover.querySelector<HTMLSelectElement>('[name="popType"]')!.value = "3";
     popover.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
     await flush(); await flush();
-    expect(send).toHaveBeenCalledWith("deadline_add", {event: "Submit draft", date: "2026-10-10", type: "3", color: "violet"});
+    expect(send).toHaveBeenCalledWith("deadline_add", {event: "Submit draft", date: "2026-10-10", type: "3", color: "violet", repeat: ""});
     expect(root.querySelector(".day-popover")).toBeNull();
   });
 
@@ -234,7 +234,67 @@ describe("year calendar", () => {
   });
 });
 
+describe("recurring events", () => {
+  const recurring = () => {
+    const data = structuredClone(snapshot);
+    data.deadlines.push({event: "Team report", deadline: "2026-10-09", daysLeft: 4, status: "soon", type: "1", typeName: "Coding", repeat: "biweekly", repeatDay: null});
+    send.mockImplementation(async (command: string) => command === "status_snapshot" ? structuredClone(data) : command === "workspace_info" ? {configIds: [0], mode: "j"} : {});
+  };
+
+  it("shows every occurrence through the end of the year and lists the series once", async () => {
+    recurring();
+    await renderApp(root, client);
+    click('[data-page="routines"]');
+    const base = root.querySelector('[data-day="2026-10-09"]')!;
+    expect(base.className).toContain("repeats");
+    expect(base.className).not.toContain("occurrence");
+    for (const day of ["2026-10-23", "2026-11-06", "2026-12-18"]) expect(root.querySelector(`[data-day="${day}"]`)?.className).toContain("occurrence");
+    expect(root.querySelector('[data-day="2026-10-16"]')?.className).not.toContain("has-ddl");
+    expect(root.querySelector('[data-day="2026-11-06"]')?.getAttribute("aria-label")).toContain("Team report (repeats every 2 weeks)");
+    const chips = [...root.querySelectorAll(".ddl-chip")].map(chip => chip.textContent ?? "");
+    expect(chips.filter(text => text.includes("Team report"))).toHaveLength(1);
+    expect(chips.find(text => text.includes("Team report"))).toContain("↻ Every 2 weeks");
+    expect(root.querySelector(".deadline-list .repeat-badge")?.textContent).toBe("Every 2 weeks");
+    click('[data-cal="next"]');
+    expect(root.querySelector('[data-day="2027-01-01"]')?.className).toContain("occurrence");
+  });
+
+  it("adds a repeating event from a day card and edits the rule in the dialog", async () => {
+    recurring();
+    await renderApp(root, client);
+    click('[data-page="routines"]');
+    click('[data-day="2026-10-12"]');
+    const popover = root.querySelector<HTMLElement>(".day-popover")!;
+    popover.querySelector<HTMLInputElement>('[name="popEvent"]')!.value = "Gym";
+    popover.querySelector<HTMLSelectElement>('[name="popRepeat"]')!.value = "weekly";
+    popover.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("deadline_add", expect.objectContaining({event: "Gym", date: "2026-10-12", repeat: "weekly"}));
+
+    click('[data-day="2026-11-06"]');
+    expect(root.querySelector(".day-popover .pop-copy small")?.textContent).toContain("↻ Every 2 weeks, next on");
+    click('.day-popover [data-pop-edit="2"]');
+    const dialog = root.querySelector("dialog")!;
+    expect(dialog.querySelector<HTMLSelectElement>('[name="repeat"]')!.value).toBe("biweekly");
+    dialog.querySelector<HTMLSelectElement>('[name="repeat"]')!.value = "monthly";
+    dialog.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+    await flush();
+    expect(send).toHaveBeenCalledWith("deadline_update", expect.objectContaining({originalEvent: "Team report", repeat: "monthly"}));
+  });
+});
+
 describe("page helpers", () => {
+  it("computes repeat occurrences like the backend", () => {
+    expect(nextOccurrence("2026-11-04", "weekly")).toBe("2026-11-11");
+    expect(nextOccurrence("2026-12-30", "biweekly")).toBe("2027-01-13");
+    expect(nextOccurrence("2026-01-31", "monthly", 31)).toBe("2026-02-28");
+    expect(nextOccurrence("2026-02-28", "monthly", 31)).toBe("2026-03-31");
+    expect(nextOccurrence("2026-12-15", "monthly")).toBe("2027-01-15");
+    const days = deadlinesByDay([{event: "Rent", deadline: "2026-10-31", daysLeft: 0, status: "ok", type: null, typeName: null, repeat: "monthly", repeatDay: 31}], {}, "2026-12-31");
+    expect([...days.keys()]).toEqual(["2026-10-31", "2026-11-30", "2026-12-31"]);
+    expect(days.get("2026-11-30")![0].occurrence).toBe(true);
+  });
+
   it("builds Monday-first month grids", () => {
     const cells = monthCells(2026, 10);
     expect(cells.slice(0, 7)).toEqual([null, null, null, null, null, null, "2026-11-01"]);

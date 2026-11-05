@@ -305,6 +305,9 @@ ZH_TRANSLATIONS = {
     "Saved today's plan with {count} focus blocks to {path}.": "已将包含 {count} 个专注时间块的今日计划保存至 {path}。",
     "Cleared today's plan.": "已清除今日计划。",
     "There was no saved plan.": "没有已保存的计划。",
+    "Weekly": "每周",
+    "Every 2 weeks": "每两周",
+    "Monthly": "每月",
 
     # -------------------------------------------------------------------------
     # Popups, Reminders, Platform & Run Wizards

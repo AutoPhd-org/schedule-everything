@@ -7,16 +7,19 @@ This module provides CLI command handlers for managing deadlines:
 - show_deadlines: Display all deadlines in a formatted table
 
 Deadlines are stored in a JSON file with 'event', 'deadline',
-and 'added' fields.
+and 'added' fields. A recurring deadline also has 'repeat' (weekly,
+biweekly, or monthly); once it passes, it rolls forward to its next
+occurrence instead of being removed.
 
 Example Usage (via CLI):
     $ rmd ddl add "project1" 7.15    # Add deadline for July 15th
+    $ rmd ddl add "rent" 12.1 --repeat monthly
     $ rmd ddl                         # List all deadlines
     $ rmd ddl rm "project1"           # Delete a deadline
 """
 
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from schedule_management.i18n import _t
 
@@ -29,18 +32,26 @@ except ImportError:
     sys.exit(1)
 
 from schedule_management.data import load_deadlines, save_deadlines
+from schedule_management.recurrence import REPEAT_LABELS, anchor_day, repeat_rule, roll_forward
 
 AUTO_REMOVE_OVERDUE_DAYS = -2
 
 
-def prune_expired_deadlines(
+def refresh_deadlines(
     deadlines: list[dict[str, Any]],
     today: date | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Split deadlines into retained and auto-removed overdue entries."""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], bool]:
+    """Remove long-overdue one-off deadlines and roll recurring ones forward.
+
+    Returns (kept, removed, changed); callers persist `kept` when `changed`.
+    A recurring deadline is never removed: once it is as overdue as a one-off
+    deadline would be when pruned, it moves to its next occurrence.
+    """
     current_date = today or datetime.now().date()
+    earliest_kept = current_date + timedelta(days=AUTO_REMOVE_OVERDUE_DAYS + 1)
     kept_deadlines: list[dict[str, Any]] = []
     removed_deadlines: list[dict[str, Any]] = []
+    rolled = False
 
     for deadline in deadlines:
         try:
@@ -51,12 +62,29 @@ def prune_expired_deadlines(
             kept_deadlines.append(deadline)
             continue
 
-        days_left = (deadline_date - current_date).days
-        if days_left <= AUTO_REMOVE_OVERDUE_DAYS:
-            removed_deadlines.append(deadline)
-        else:
+        if deadline_date >= earliest_kept:
             kept_deadlines.append(deadline)
+            continue
+        rule = repeat_rule(deadline)
+        if rule is None:
+            removed_deadlines.append(deadline)
+            continue
+        next_date = roll_forward(deadline_date, rule, earliest_kept, anchor_day(deadline, deadline_date))
+        kept_deadlines.append({**deadline, "deadline": next_date.isoformat()})
+        rolled = True
 
+    return kept_deadlines, removed_deadlines, rolled or bool(removed_deadlines)
+
+
+def prune_expired_deadlines(
+    deadlines: list[dict[str, Any]],
+    today: date | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split deadlines into retained and auto-removed overdue entries.
+
+    Recurring deadlines in the retained list are rolled to their next occurrence.
+    """
+    kept_deadlines, removed_deadlines, _changed = refresh_deadlines(deadlines, today)
     return kept_deadlines, removed_deadlines
 
 
@@ -138,6 +166,11 @@ def add_deadline(args) -> int:
         "deadline": deadline_str,
         "added": datetime.now(timezone.utc).isoformat(),
     }
+    repeat = getattr(args, "repeat", None)
+    if isinstance(repeat, str) and repeat:
+        new_deadline["repeat"] = repeat
+        if repeat == "monthly":
+            new_deadline["repeat_day"] = deadline_date.day
 
     # Update existing or add new
     if existing_index is not None:
@@ -193,10 +226,10 @@ def show_deadlines(args) -> int:
     console = Console()
     current_date = datetime.now().date()
 
-    deadlines, removed_deadlines = prune_expired_deadlines(
+    deadlines, _removed, changed = refresh_deadlines(
         load_deadlines(), today=current_date
     )
-    if removed_deadlines:
+    if changed:
         try:
             save_deadlines(deadlines)
         except Exception as e:
@@ -260,6 +293,9 @@ def show_deadlines(args) -> int:
         # Format date for display
         deadline_display = deadline_date.strftime("%b %d, %Y")
 
+        rule = repeat_rule(ddl)
+        if rule:
+            event_name = f"{event_name} [dim]↻ {_t(REPEAT_LABELS[rule])}[/dim]"
         table.add_row(event_name, deadline_display, days_text, status, style=row_style)
 
     console.print(table)
