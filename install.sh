@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_URL="https://github.com/PhDeasy-org/schedule-everything"
+REPO_URL="https://github.com/AutoPhd-org/schedule-everything"
 TEMP_DIR=""
 
 # Colors for output
@@ -114,9 +114,6 @@ scaffold_versioned_config_root() {
         for source_path in "$SCRIPT_DIR"/config/*; do
             local base_name
             base_name="$(basename "$source_path")"
-            if [[ "$base_name" == "llm.toml" ]]; then
-                continue
-            fi
             if [[ -f "$source_path" ]]; then
                 cp "$source_path" "$INSTALL_ACTIVE_CONFIG_DIR/$base_name"
             fi
@@ -310,6 +307,12 @@ setup_project() {
     if [[ -d "third_party" ]]; then
         cp -r third_party "$INSTALL_DIR/"
         log_success "third_party/ directory copied"
+    fi
+
+    # Agent plugins (Claude Code, Codex, Antigravity) for building and planning schedules.
+    if [[ -d "plugins" ]]; then
+        cp -r plugins "$INSTALL_DIR/"
+        log_success "plugins/ directory copied"
     fi
 
     # Copy build metadata files needed by editable installs.
@@ -646,41 +649,6 @@ setup_autocompletion() {
     fi
 }
 
-# Install pi CLI if missing and npm is available
-install_pi() {
-    if command -v pi &> /dev/null; then
-        return 0
-    fi
-
-    if ! command -v npm &> /dev/null; then
-        return 0
-    fi
-
-    if [[ "$AUTO_YES" == "true" ]]; then
-        log_info "Skipping pi CLI installation in non-interactive mode."
-        return 0
-    fi
-    echo
-    while true; do
-        read -r -p "Install pi CLI? (required for AI-assisted commands) [Y/n]: " install_pi_answer
-        case "$install_pi_answer" in
-            [yY]|[yY][eE][sS]|"")
-                log_info "Installing pi CLI..."
-                npm install -g @earendil-works/pi-coding-agent
-                log_success "pi CLI installed"
-                break
-                ;;
-            [nN]|[nN][oO])
-                log_info "Skipping pi CLI installation"
-                break
-                ;;
-            *)
-                log_warning "Invalid input. Please answer with y or n."
-                ;;
-        esac
-    done
-}
-
 # Display usage (platform-specific)
 display_usage() {
     log_info "Installation completed successfully!"
@@ -697,13 +665,13 @@ display_usage() {
     echo "  $INSTALL_DIR/start_reminders.sh"
     echo "  $INSTALL_DIR/stop_reminders.sh"
     echo
-    if ! command -v pi &> /dev/null; then
-        echo "pi CLI installation (required for AI-assisted commands):"
-        echo "  npm install -g @earendil-works/pi-coding-agent"
-        echo "  To use a non-PATH binary, run:"
-        echo "    export REMINDER_PI_BIN=/path/to/pi"
-        echo
-    fi
+    echo "Build and plan your schedule with an AI coding agent (optional):"
+    echo "  Claude Code: claude plugin marketplace add AutoPhd-org/schedule-everything"
+    echo "               claude plugin install schedule-everything@schedule-everything"
+    echo "  Codex:       codex plugin marketplace add AutoPhd-org/schedule-everything"
+    echo "               codex plugin add schedule-everything@schedule-everything"
+    echo "  Antigravity: agy plugin install $INSTALL_DIR/plugins/schedule-everything"
+    echo
     if [[ "$OS_TYPE" == "macos" ]]; then
         echo "LaunchAgent:"
         echo "  launchctl load $LAUNCH_AGENT_PLIST   # Enable auto-start"
@@ -775,7 +743,6 @@ main() {
     create_venv
     configure_configs
     install_dependencies
-    install_pi
     
     if [[ "$OS_TYPE" == "macos" ]]; then
         create_launch_agent

@@ -162,46 +162,6 @@ def test_task_edit_retains_metadata_and_removal_status(monkeypatch, tmp_path):
     assert json.loads(log.read_text())[-1]["action"] == "dropped"
 
 
-def test_setup_apply_rejects_stale_or_missing_proposals():
-    with pytest.raises(WebError, match="No schedule"):
-        workspace.setup_accept({"sessionId":"missing"})
-
-
-def test_setup_accept_only_applies_reviewed_validated_files(monkeypatch, tmp_path):
-    from schedule_management.commands.setup_agent import workflow as flow
-    paths = workspace.resolve_runtime_paths()
-    bundle = {"settings.toml": '[settings]\n[time_blocks]\n[time_points]\n[tasks]\n[paths]\n', "odd_weeks.toml": '[monday]\n"09:00" = "pomodoro"\n', "even_weeks.toml": '[monday]\n"09:00" = "pomodoro"\n'}
-    session = {"configDir":str(paths.active_config_dir),"revision":workspace._revision(flow._render_current_files(paths.active_config_dir)),"bundle":bundle,"profile":"Profile","modify":True}
-    monkeypatch.setitem(workspace.SETUP_SESSIONS,"proposal",session)
-    applied=[]
-    monkeypatch.setattr(flow,"_apply_versioned_schedule_update",lambda *args,**kwargs:applied.append((args,kwargs)))
-    monkeypatch.setattr(workspace,"_reload",lambda:{"reloaded":True})
-    assert workspace.setup_accept({"sessionId":"proposal"})["reloaded"]
-    assert len(applied)==1 and "habits.toml" in applied[0][0][1]
-    assert "proposal" not in workspace.SETUP_SESSIONS
-
-
-def test_setup_turn_preserves_summary_approval_boundary(monkeypatch):
-    from schedule_management.commands.setup_agent import workflow as flow
-    from schedule_management.commands.setup_agent.models import AgentTurn, LLMConfig
-    from schedule_management.commands.setup_agent import configuration
-    monkeypatch.setattr(configuration,"has_completed_configuration",lambda path:(False,"missing"))
-    monkeypatch.setattr(flow,"ensure_llm_config",lambda:LLMConfig())
-    validators=[]
-    def fake_turn(client,system,prompt,**kwargs):
-        validators.append(kwargs["turn_validator"])
-        return AgentTurn(phase="summary",conversation="A routine",needs_user_input=True,profile_markdown="My profile",schedule_summary="Work nine to five",question_to_user="Ready?"),None
-    monkeypatch.setattr(flow,"_request_agent_turn",fake_turn)
-    result=workspace.setup_turn({"message":"Work nine to five"})
-    session=workspace.SETUP_SESSIONS[result["sessionId"]]
-    final=AgentTurn(phase="final",conversation="Done",needs_user_input=False)
-    assert validators[0](final) is not None
-    workspace.setup_turn({"sessionId":result["sessionId"],"message":"Yes","confirmSummary":True})
-    assert validators[-1](final) is not None
-    assert session["confirmed"] is False  # A revised summary requires fresh approval.
-    del workspace.SETUP_SESSIONS[result["sessionId"]]
-
-
 def test_missing_schedule_still_opens_browser_setup(monkeypatch, tmp_path):
     from schedule_management.web import services
     import schedule_management.data.loaders as loaders
@@ -236,22 +196,3 @@ def test_type_labels_round_trip_special_characters(tmp_path):
     assert tomllib.loads(path.read_text()) == values
 
 
-def test_setup_attachment_is_local_temporary_and_reused(monkeypatch):
-    import base64
-    from schedule_management.commands.setup_agent import workflow as flow
-    from schedule_management.commands.setup_agent.models import AgentTurn, LLMConfig
-    monkeypatch.setattr(flow, "ensure_llm_config", lambda: LLMConfig())
-    attached_paths = []
-    def turn(client, system, prompt, **kwargs):
-        attachment = kwargs["attachment"]
-        attached_paths.append(attachment.path)
-        assert attachment.text_content == "Work 9 to 5"
-        assert attachment.path.is_file()
-        assert attachment.path.name == "timetable.txt"
-        return AgentTurn("discovery", "What are your goals?", True, question_to_user="Goals?"), None
-    monkeypatch.setattr(flow, "_request_agent_turn", turn)
-    result = workspace.setup_turn({"message":"Use my timetable", "attachment":{"name":"../../timetable.txt","data":base64.b64encode(b"Work 9 to 5").decode()}})
-    assert not attached_paths[0].exists()
-    workspace.setup_turn({"sessionId":result["sessionId"], "message":"Time for exercise"})
-    assert len(attached_paths) == 2 and not attached_paths[1].exists()
-    del workspace.SETUP_SESSIONS[result["sessionId"]]

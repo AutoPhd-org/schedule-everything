@@ -22,12 +22,6 @@ from rich.text import Text
 
 from schedule_management.config_layout import resolve_runtime_paths
 from schedule_management.toml_writer import dump_toml, load_toml_raw
-from schedule_management.commands.setup_agent.configuration import (
-    LLMConfig,
-    _resolve_llm_config_path,
-    load_llm_config,
-    save_llm_config,
-)
 
 
 # =============================================================================
@@ -46,13 +40,7 @@ SECTION_LABELS: dict[str, str] = {
     "tasks": "📋  Task Scheduling",
     "paths": "📁  File Paths",
     "task_types": "🏷️  Task Types",
-    "llm": "🤖  Model Settings",
 }
-
-# Synthetic section key for the global llm.toml model-override page.
-# It is never present in settings.toml, so it cannot collide with real sections.
-LLM_SECTION = "llm"
-LLM_CLEAR_KEY = "__clear__"
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
 
@@ -62,25 +50,6 @@ def _valid_time(value: str) -> bool:
     if not m:
         return False
     return 0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59
-
-
-def _load_llm_model() -> str | None:
-    """Read the optional pi ``--model`` override from the global llm.toml.
-
-    Returns ``None`` when the file is missing, unreadable, or the model is
-    unset (meaning: let pi choose). Credentials are owned by pi itself.
-    """
-    path = _resolve_llm_config_path()
-    config = load_llm_config(path)
-    if config is None:
-        return None
-    return config.model
-
-
-def _save_llm_model(model: str | None) -> None:
-    """Persist the optional model override to the global llm.toml."""
-    path = _resolve_llm_config_path()
-    save_llm_config(path, LLMConfig(model=model))
 
 
 # =============================================================================
@@ -257,7 +226,6 @@ class _Mode(Enum):
     TIME_LIST = "time_list"
     CONFIRM_QUIT = "confirm_quit"
     ADD_KEY = "add_key"
-    LLM_EDIT = "llm_edit"
 
 
 # =============================================================================
@@ -311,13 +279,6 @@ class SettingsTUI:
         # Add-key target section
         self._add_section = ""
 
-        # Model Settings page state (backed by the global llm.toml, not
-        # SettingsModel). llm_model is the optional pi --model override;
-        # None means "let pi choose". llm_dirty tracks unsaved changes.
-        self.llm_model: str | None = _load_llm_model()
-        self._saved_llm_model = self.llm_model
-        self.llm_dirty = False
-
         self._build_rows()
 
     # --------------------------------------------------------------------- #
@@ -335,11 +296,7 @@ class SettingsTUI:
         self._clamp_cursor()
 
     def _sections_list(self) -> list[str]:
-        real = self.model.sections()
-        # Always surface the synthetic Model Settings page at the top.
-        if LLM_SECTION in real:
-            return real
-        return [LLM_SECTION, *real]
+        return self.model.sections()
 
     def _move_section(self, delta: int) -> None:
         sections = self._sections_list()
@@ -355,15 +312,7 @@ class SettingsTUI:
         self.browse_level = 1
         self.cursor = 0
         self.scroll_offset = 0
-        if self.browse_section == LLM_SECTION:
-            self._build_llm_rows()
-        else:
-            self._build_rows()
-
-    def _build_llm_rows(self) -> None:
-        """Rows for the synthetic Model Settings page (not from settings.toml)."""
-        self.rows = [Row(LLM_SECTION, "model"), Row(LLM_SECTION, LLM_CLEAR_KEY)]
-        self._clamp_cursor()
+        self._build_rows()
 
     def _go_back_to_sections(self) -> None:
         sections = self._sections_list()
@@ -374,16 +323,12 @@ class SettingsTUI:
         self.rows = []
 
     def _is_dirty(self) -> bool:
-        return self.model.dirty or self.llm_dirty
+        return self.model.dirty
 
     def _save_all(self) -> None:
-        """Persist both settings.toml and the global llm.toml when dirty."""
+        """Persist settings.toml when it has unsaved changes."""
         if self.model.dirty:
             self.model.save()
-        if self.llm_dirty:
-            _save_llm_model(self.llm_model)
-            self._saved_llm_model = self.llm_model
-            self.llm_dirty = False
 
     def _nav_indices(self) -> list[int]:
         return [i for i, r in enumerate(self.rows) if not r.is_header]
@@ -458,7 +403,7 @@ class SettingsTUI:
                 return self._render_picker()
             case _Mode.MULTI_SELECT:
                 return self._render_multi_select()
-            case _Mode.INLINE | _Mode.ADD_KEY | _Mode.LLM_EDIT:
+            case _Mode.INLINE | _Mode.ADD_KEY:
                 return self._render_inline()
             case _Mode.TIME_LIST:
                 return self._render_time_list()
@@ -471,8 +416,6 @@ class SettingsTUI:
     def _render_browse(self) -> Panel:
         if self.browse_level == 0:
             return self._render_sections_view()
-        if self.browse_section == LLM_SECTION:
-            return self._render_llm_view()
         return self._render_keys_view()
 
     def _render_sections_view(self) -> Panel:
@@ -492,10 +435,7 @@ class SettingsTUI:
             sel = idx == self.section_cursor
             prefix = "  ▸ " if sel else "    "
             label = SECTION_LABELS.get(section, section)
-            if section == LLM_SECTION:
-                detail = "(global)"
-            else:
-                detail = f"({len(self.model.keys_in(section))} keys)"
+            detail = f"({len(self.model.keys_in(section))} keys)"
             style = "bold cyan" if sel else "cyan"
             t.append(prefix, style=style)
             t.append(label, style=style)
@@ -586,52 +526,6 @@ class SettingsTUI:
             title += "  •  modified"
         return Panel(t, title=title, border_style="bright_blue", padding=(0, 1))
 
-    # ---- Model Settings (global llm.toml) ------------------------------ #
-
-    def _render_llm_view(self) -> Panel:
-        t = Text()
-        t.append("  ← Model Settings\n\n", style="bold cyan")
-        t.append(
-            "  pi owns credentials and model selection. This optional override "
-            "is passed straight to\n  `pi --model` (e.g. a provider/model id or "
-            "pattern); leave it blank to let pi choose.\n",
-            style="dim italic",
-        )
-        t.append(
-            "  Stored in ~/.schedule_management/llm.toml (global, shared across "
-            "config sets).\n\n",
-            style="dim italic",
-        )
-
-        for idx, row in enumerate(self.rows):
-            sel = idx == self.cursor
-            prefix = "  ▸ " if sel else "    "
-            kstyle = "bold white" if sel else "white"
-            vstyle = "bold yellow" if sel else "dim"
-            t.append(prefix, style=kstyle)
-            if row.key == LLM_CLEAR_KEY:
-                t.append(f"{'clear':<26s}", style=kstyle)
-                t.append("reset to pi default\n", style=vstyle)
-            else:
-                t.append(f"{row.key:<26s}", style=kstyle)
-                value = self.llm_model if self.llm_model else "(pi default)"
-                t.append(f"{value}\n", style=vstyle)
-
-        action = "Clear" if self._current_row().key == LLM_CLEAR_KEY else "Edit"
-        self._append_actions(
-            t,
-            (("↑↓", "Move"), ("Enter", action)),
-            (("Esc", "Back"), ("s", "Save"), ("q", "Quit")),
-        )
-
-        if self.message:
-            t.append(f"\n\n  {self.message}", style="green")
-
-        title = "⚙  Settings › Model Settings"
-        if self.model.dirty or self.llm_dirty:
-            title += "  •  modified"
-        return Panel(t, title=title, border_style="bright_blue", padding=(0, 1))
-
     # ---- Picker --------------------------------------------------------- #
 
     def _render_picker(self) -> Panel:
@@ -675,22 +569,6 @@ class SettingsTUI:
     def _render_inline(self) -> Panel:
         row = self.editing_row
         t = Text()
-
-        if self.mode == _Mode.LLM_EDIT:
-            current = self.llm_model if self.llm_model else "(pi default)"
-            t.append(f"  Current: {current}\n\n", style="dim")
-            t.append("  New model (blank = pi default): ", style="white")
-            t.append(f"{self.edit_buffer}█\n", style="bold yellow")
-            t.append(
-                "\n  ℹ  Passed straight to `pi --model` (provider/model id or pattern).",
-                style="dim italic",
-            )
-            if self.message:
-                t.append(f"\n  ⚠  {self.message}", style="bold red")
-            self._append_actions(t, (("Enter", "Apply"), ("Esc", "Cancel")))
-            return Panel(
-                t, title="  Edit: model  ", border_style="yellow", padding=(1, 2)
-            )
 
         meta = _get_meta(row.section, row.key or "")
 
@@ -783,7 +661,7 @@ class SettingsTUI:
                 return self._on_picker(key, rc)
             case _Mode.MULTI_SELECT:
                 return self._on_multi_select(key, rc)
-            case _Mode.INLINE | _Mode.LLM_EDIT:
+            case _Mode.INLINE:
                 return self._on_inline(key, rc)
             case _Mode.ADD_KEY:
                 return self._on_add_key(key, rc)
@@ -812,8 +690,6 @@ class SettingsTUI:
             return None
         if self.browse_level == 0:
             return self._on_sections_view(key, rc)
-        if self.browse_section == LLM_SECTION:
-            return self._on_llm_view(key, rc)
         return self._on_keys_view(key, rc)
 
     def _request_quit(self) -> str | None:
@@ -831,23 +707,6 @@ class SettingsTUI:
             self._move_section(1)
         elif key in (rc.key.ENTER, "\r", "\n"):
             self._drill_into_section()
-        return None
-
-    def _on_llm_view(self, key: str, rc: Any) -> str | None:
-        if key == rc.key.UP:
-            self._move(-1)
-        elif key == rc.key.DOWN:
-            self._move(1)
-        elif key in (rc.key.ENTER, "\r", "\n"):
-            row = self._current_row()
-            if row.key == LLM_CLEAR_KEY:
-                self.llm_model = None
-                self.llm_dirty = self.llm_model != self._saved_llm_model
-                self.message = "Model cleared (pi will use its default)"
-            else:
-                self.editing_row = row
-                self.edit_buffer = self.llm_model or ""
-                self.mode = _Mode.LLM_EDIT
         return None
 
     def _on_keys_view(self, key: str, rc: Any) -> str | None:
@@ -941,8 +800,6 @@ class SettingsTUI:
 
     def _on_inline(self, key: str, rc: Any) -> str | None:
         if key in (rc.key.ENTER, "\r", "\n"):
-            if self.mode == _Mode.LLM_EDIT:
-                return self._confirm_llm_edit()
             return self._confirm_inline()
         elif key == "\x1b":
             if self.time_list_editing:
@@ -953,10 +810,6 @@ class SettingsTUI:
                     self.time_list_cursor, max(0, len(self.time_list_values) - 1)
                 )
             else:
-                if self.mode == _Mode.LLM_EDIT:
-                    self.browse_section = LLM_SECTION
-                    self.browse_level = 1
-                    self._build_llm_rows()
                 self.mode = _Mode.BROWSE
                 self.compound_type = None
             return None
@@ -965,20 +818,6 @@ class SettingsTUI:
                 self.edit_buffer = self.edit_buffer[:-1]
         elif len(key) == 1 and key.isprintable():
             self.edit_buffer += key
-        return None
-
-    def _confirm_llm_edit(self) -> str | None:
-        raw = self.edit_buffer.strip()
-        self.llm_model = raw or None
-        self.llm_dirty = self.llm_model != self._saved_llm_model
-        self.mode = _Mode.BROWSE
-        self.browse_section = LLM_SECTION
-        self.browse_level = 1
-        self._build_llm_rows()
-        if raw:
-            self.message = f"Set model = {raw}"
-        else:
-            self.message = "Model cleared (pi will use its default)"
         return None
 
     def _confirm_inline(self) -> str | None:
@@ -1278,7 +1117,7 @@ def settings_command(args: Any) -> int:
 
     if not settings_path.exists():
         print(f"❌ Settings file not found: {settings_path}")
-        print("   Run 'rmd setup' to create a configuration first.")
+        print("   Ask your AI agent to build one with the Schedule Everything plugin, then run 'rmd check'.")
         return 1
 
     try:

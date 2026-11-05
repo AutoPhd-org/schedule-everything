@@ -50,7 +50,6 @@ from schedule_management.commands import (
     report_command,
     edit_schedule_command,
     mode_command,
-    setup_command,
     settings_command,
 )
 
@@ -110,7 +109,6 @@ __all__ = [
     "report_command",
     "edit_schedule_command",
     "mode_command",
-    "setup_command",
     "settings_command",
     # Data loaders
     "load_tasks",

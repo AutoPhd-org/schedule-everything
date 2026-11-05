@@ -12,8 +12,7 @@ from schedule_management.commands.settings import SettingsModel, SettingsTUI, _M
 
 
 @pytest.fixture
-def tui(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "_resolve_llm_config_path", lambda: tmp_path / "llm.toml")
+def tui(tmp_path):
     settings_file = tmp_path / "settings.toml"
     settings_file.write_text(
         '[settings]\nlanguage = "en"\nalarm_interval = 5\n'
@@ -36,7 +35,7 @@ def open_field(tui, key):
     tui._handle_key(readchar.key.ENTER)
 
 
-@pytest.mark.parametrize("section", ["settings", "llm"])
+@pytest.mark.parametrize("section", ["settings", "tasks"])
 @pytest.mark.parametrize("back_key", [readchar.key.ESC, readchar.key.BACKSPACE, "\x08", readchar.key.LEFT])
 def test_back_keeps_changes_and_section_selection(tui, section, back_key):
     open_section(tui, section)
@@ -59,7 +58,7 @@ def test_escape_at_root_stays_in_settings(tui, dirty):
     assert tui.browse_level == 0
 
 
-@pytest.mark.parametrize("section", [None, "settings", "llm"])
+@pytest.mark.parametrize("section", [None, "settings", "tasks"])
 @pytest.mark.parametrize("quit_key", ["q", "e", "x"])
 def test_quit_and_legacy_aliases_share_unsaved_guard(tui, section, quit_key):
     if section:
@@ -77,31 +76,25 @@ def test_quit_and_legacy_aliases_share_unsaved_guard(tui, section, quit_key):
     assert tui.model.dirty
 
 
-def test_save_stays_on_page_and_persists_both_files(tui):
+def test_save_stays_on_page_and_persists_settings(tui):
     open_section(tui, "settings")
     tui.model.set("settings", "alarm_interval", 10)
-    tui.llm_model = "test/model"
-    tui.llm_dirty = True
 
     assert tui._handle_key("s") is None
     assert tui.mode == _Mode.BROWSE
     assert tui.browse_section == "settings"
     assert not tui._is_dirty()
     assert SettingsModel(tui.model.path).get("settings", "alarm_interval") == 10
-    assert settings._load_llm_model() == "test/model"
 
 
 @pytest.mark.parametrize("action", ["s", "d"])
 def test_quit_prompt_save_or_discard(tui, action):
     tui.model.set("settings", "alarm_interval", 10)
-    tui.llm_model = "test/model"
-    tui.llm_dirty = True
     tui._handle_key("q")
 
     assert tui._handle_key(action) == "quit"
     saved = action == "s"
     assert SettingsModel(tui.model.path).get("settings", "alarm_interval") == (10 if saved else 5)
-    assert settings._load_llm_model() == ("test/model" if saved else None)
 
 
 def test_failed_save_keeps_quit_prompt_with_error(tui, monkeypatch):
@@ -196,7 +189,7 @@ def test_cancel_added_time_leaves_no_placeholder(tui, empty):
     assert tui.model.get("tasks", "daily_urgent") == old_values
 
 
-@pytest.mark.parametrize("section", [None, "settings", "llm", "paths"])
+@pytest.mark.parametrize("section", [None, "settings", "tasks", "paths"])
 @pytest.mark.parametrize("width", [50, 80])
 def test_browse_actions_are_visible_and_contextual(tui, section, width):
     if section:
@@ -223,13 +216,6 @@ def test_toggle_and_clear_have_one_visible_action(tui):
     footer = tui._render().renderable.plain
     assert "[Space] Toggle" in footer
     assert "[Enter] Edit" not in footer
-
-    tui._go_back_to_sections()
-    open_section(tui, "llm")
-    tui.cursor = 1
-    footer = tui._render().renderable.plain
-    assert "[Enter] Clear" in footer
-    assert "Edit/Clear" not in footer
 
 
 @pytest.mark.parametrize("width", [50, 80])

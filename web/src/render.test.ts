@@ -48,8 +48,24 @@ describe('browser workspace',()=>{
   it('records habits in the browser',async()=>{await renderApp(root,client);click('[data-page="routines"]');const check=root.querySelector<HTMLInputElement>('[data-habit]')!;check.checked=true;check.dispatchEvent(new Event('change'));await flush();expect(send).toHaveBeenCalledWith('habit_mark',{habitIds:['1']});});
   it('keeps the interface usable after an operation fails',async()=>{await renderApp(root,client);send.mockRejectedValueOnce(new Error('Storage is busy'));click('[data-task="0"][data-operation="deleted"]');await flush();expect(root.querySelector('#notice')?.textContent).toBe('Storage is busy');expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.querySelector<HTMLButtonElement>('[data-action="add-task"]')!.disabled).toBe(false);});
   it('opens and saves configuration with a revision',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:{file:'settings',content:'[settings]',revision:'r1',activeId:0,message:'Saved'});await renderApp(root,client);click('[data-page="settings"]');click('[data-action="open-config"]');await flush();expect(root.querySelector('[name="configContent"]')).not.toBeNull();click('[data-action="config-save"]');await flush();expect(send).toHaveBeenCalledWith('config_save',expect.objectContaining({revision:'r1',activeId:0,content:'[settings]'}));});
-  it('reviews sync proposals before applying them',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:command==='sync_generate'?{summary:'A focused day',plan:{target_date:'2026-10-05',parity:'even',weekday:'monday',assignments:{}},preview:[]}:{});await renderApp(root,client);click('[data-page="schedule"]');click('[data-action="sync-generate"]');await flush();expect(send).not.toHaveBeenCalledWith('sync_accept',expect.anything());click('[data-action="sync-accept"]');await flush();expect(send).toHaveBeenCalledWith('sync_accept',expect.objectContaining({plan:expect.anything()}));});
-  it('conducts schedule conversations and confirms summaries',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:command==='setup_turn'?{sessionId:'session-1',phase:'summary',conversation:'Your routine',question_to_user:'Ready?',schedule_summary:'Work 9–5',profile_markdown:null,bundle:null}:{});await renderApp(root,client);click('[data-page="schedule"]');root.querySelector<HTMLTextAreaElement>('[name="message"]')!.value='I work 9 to 5';root.querySelector('#setup-form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();expect(root.textContent).toContain('Work 9–5');click('[data-action="setup-confirm"]');await flush();expect(send).toHaveBeenCalledWith('setup_turn',expect.objectContaining({sessionId:'session-1',confirmSummary:true}));});
+  it('shows agent plugin install steps on the Schedule page and copies commands',async()=>{
+    const writeText=vi.fn(async()=>{});vi.stubGlobal('navigator',{clipboard:{writeText}});
+    await renderApp(root,client);click('[data-page="schedule"]');
+    expect(root.querySelector('#setup-form')).toBeNull();expect(root.querySelector('[data-action="sync-generate"]')).toBeNull();
+    expect(root.querySelector('[data-agent-tab="claude"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('.agent-steps')?.textContent).toContain('claude plugin marketplace add AutoPhd-org/schedule-everything');
+    click('[data-agent-tab="antigravity"]');
+    expect(root.querySelector('.agent-steps')?.textContent).toContain('agy plugin install ./schedule-everything/plugins/schedule-everything');
+    click('.agent-steps [data-copy]');await flush();
+    expect(writeText).toHaveBeenCalledWith('git clone https://github.com/AutoPhd-org/schedule-everything.git');
+    expect(root.querySelector('#notice')?.textContent).toContain('Copied');
+  });
+  it('clears an agent-made plan for today',async()=>{
+    await renderApp(root,client);click('[data-page="schedule"]');
+    expect(root.querySelector('.plan-card')).not.toBeNull();
+    click('[data-action="sync-clear"]');await flush();
+    expect(send).toHaveBeenCalledWith('sync_clear',{});
+  });
 
   it('adds a deadline with a shared task type',async()=>{
     await renderApp(root,client);click('[data-action="add-deadline"]');await flush();
@@ -128,10 +144,10 @@ describe('browser workspace',()=>{
   });
 
   it('switches themes without discarding unsaved form contents',async()=>{
-    await renderApp(root,client);click('[data-page="schedule"]');
-    const message=root.querySelector<HTMLTextAreaElement>('[name="message"]')!;message.value='An unsaved schedule request';
+    await renderApp(root,client);click('[data-page="settings"]');
+    const name=root.querySelector<HTMLInputElement>('[name="typeName"]')!;name.value='An unsaved type name';
     click('[data-theme-choice="dark"]');
-    expect(root.querySelector('[name="message"]')).toBe(message);
-    expect(message.value).toBe('An unsaved schedule request');
+    expect(root.querySelector('[name="typeName"]')).toBe(name);
+    expect(name.value).toBe('An unsaved type name');
   });
 });

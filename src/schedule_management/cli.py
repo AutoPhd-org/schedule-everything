@@ -13,10 +13,10 @@ Architecture:
     ├── commands/habits.py    - track command
     ├── commands/completion.py - shell completion script generation
     ├── commands/status.py    - status, view commands
-    ├── commands/sync.py      - sync command
+    ├── commands/sync.py      - sync command (daily plan overlay)
     ├── commands/service.py   - update, switch, stop, report commands
     ├── commands/settings.py  - settings command (interactive TUI)
-    └── commands/setup.py     - setup command
+    └── config_check.py       - check command (config validation)
 
 Entry Points:
     - `rmd`: The main CLI command (defined in pyproject.toml)
@@ -38,7 +38,7 @@ Module Dependencies:
     - schedule_management.commands.habits
     - schedule_management.commands.status
     - schedule_management.commands.service
-    - schedule_management.commands.setup
+    - schedule_management.config_check
 """
 
 import argparse
@@ -74,7 +74,7 @@ from schedule_management.commands.service import (
     edit_schedule_command,
     mode_command,
 )
-from schedule_management.commands.setup import setup_command
+from schedule_management.config_check import check_command
 from schedule_management.commands.settings import settings_command
 from schedule_management.commands.browser import browser_command
 
@@ -104,7 +104,8 @@ def create_parser() -> argparse.ArgumentParser:
         │   └── rm <events...>          - Remove deadlines
         ├── track [habit_ids...]        - Track habits
         ├── status [-v]                 - Show current status
-        ├── sync                        - Assign today's work blocks to tasks
+        ├── sync [--json|--apply|--clear] - Show, save, or clear today's plan
+        ├── check [--dir] [--json]      - Validate schedule configuration
         ├── view                        - Generate PDF visualization
         ├── update                      - Update config from git
         ├── switch <config_id>          - Switch active config snapshot
@@ -112,8 +113,7 @@ def create_parser() -> argparse.ArgumentParser:
         ├── report <type>               - Generate report
         ├── edit <file>                 - Edit config file
         ├── settings                    - Interactive settings editor
-        ├── completion [shell]          - Print shell completion script
-        └── setup                       - Interactive schedule setup
+        └── completion [shell]          - Print shell completion script
     """
     # Resolve config directories at runtime so test fixtures and env overrides apply.
     config_root_dir = resolve_config_root_dir()
@@ -363,16 +363,46 @@ def create_parser() -> argparse.ArgumentParser:
     )
     view_parser.set_defaults(func=view_command)
 
-    # sync - Generate task assignments for today's work blocks
+    # sync - Show, save, or clear today's focus-block plan
     sync_parser = subparsers.add_parser(
         "sync",
-        help="Assign today's pomodoro/potato blocks to tasks with an LLM",
+        help="Show, save, or clear today's plan for pomodoro/potato blocks",
         description=(
-            "Generate a preview of today's task-to-block assignments and save "
-            "them only after approval."
+            "Show today's focus blocks and their planned tasks. AI agents with "
+            "the Schedule Everything plugin read --json and save plans with --apply."
         ),
     )
+    sync_actions = sync_parser.add_mutually_exclusive_group()
+    sync_actions.add_argument(
+        "--json",
+        action="store_true",
+        help="Print today's focus slots, tasks, deadlines, and plan as JSON",
+    )
+    sync_actions.add_argument(
+        "--apply",
+        metavar="FILE",
+        help='Save a plan for today from a JSON file ("-" reads standard input)',
+    )
+    sync_actions.add_argument(
+        "--clear",
+        action="store_true",
+        help="Remove today's plan",
+    )
     sync_parser.set_defaults(func=sync_command)
+
+    # check - Validate schedule configuration
+    check_parser = subparsers.add_parser(
+        "check",
+        help="Validate the schedule configuration files",
+        description=(
+            "Validate settings.toml, the week schedules, habits.toml, and ddl.json "
+            "in the active config directory (or --dir), including that every "
+            "schedule label is defined in settings.toml."
+        ),
+    )
+    check_parser.add_argument("--dir", metavar="DIR", help="Config directory to check instead of the active one")
+    check_parser.add_argument("--json", action="store_true", help="Print the result and config paths as JSON")
+    check_parser.set_defaults(func=check_command)
 
     # -------------------------------------------------------------------------
     # Service Management Commands
@@ -450,17 +480,6 @@ def create_parser() -> argparse.ArgumentParser:
         help="File to edit (default: settings)",
     )
     edit_parser.set_defaults(func=edit_schedule_command)
-
-    # setup - Interactive LLM-assisted setup
-    setup_parser = subparsers.add_parser(
-        "setup",
-        help="Interactive setup with LLM-assisted schedule generation",
-        description=(
-            "Configure model credentials and build or modify schedules "
-            "through an interactive wizard."
-        ),
-    )
-    setup_parser.set_defaults(func=setup_command)
 
     # completion - Print shell completion script
     completion_parser = subparsers.add_parser(

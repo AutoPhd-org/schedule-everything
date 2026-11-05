@@ -16,6 +16,7 @@ import schedule_management.runner as schedule_runner
 from schedule_management.synced_schedule import (
     SyncedDaySchedule,
     apply_synced_schedule,
+    load_synced_schedule,
     save_synced_schedule,
 )
 
@@ -977,140 +978,129 @@ class TestCompletionCommand:
 
 
 class TestSyncCommand:
-    """Test the LLM-backed sync command."""
+    """Test the non-AI daily plan command used by agent plugins."""
 
-    @patch("schedule_management.commands.sync._prompt_acceptance", return_value=True)
-    @patch("schedule_management.commands.sync.CONSOLE")
-    @patch("schedule_management.commands.sync.LLMClient")
-    @patch("schedule_management.commands.sync.ensure_llm_config")
-    @patch("schedule_management.commands.sync._load_ranked_tasks")
-    @patch("schedule_management.commands.sync._get_base_today_schedule")
-    def test_sync_command_accepts_preview_and_writes_overlay(
-        self,
-        mock_get_schedule,
-        mock_load_ranked_tasks,
-        mock_ensure_llm_config,
-        mock_llm_client_class,
-        mock_console,
-        _mock_prompt_acceptance,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv(
-            "REMINDER_SYNCED_SCHEDULE_PATH", str(tmp_path / "synced_schedule.toml")
-        )
+    @pytest.fixture
+    def today_schedule(self, monkeypatch, tmp_path):
+        import schedule_management.commands.sync as sync_module
 
-        mock_console.status.return_value.__enter__.return_value = None
-        mock_console.status.return_value.__exit__.return_value = False
-        mock_get_schedule.return_value = (
-            {
-                "09:00": "pomodoro",
-                "10:00": "potato",
-                "12:00": "lunch",
-            },
-            "odd",
-            False,
-            MagicMock(time_blocks={"pomodoro": 25, "potato": 50}),
-        )
-        mock_load_ranked_tasks.return_value = [
-            {"description": "Finish release notes", "priority": 9},
-            {"description": "Review pull request", "priority": 7},
-        ]
-        mock_ensure_llm_config.return_value = MagicMock()
-        mock_llm_client = MagicMock()
-        mock_llm_client.generate.return_value = json.dumps(
-            {
-                "summary": "Urgent writing work goes first.",
-                "assignments": {
-                    "09:00": "Finish release notes",
-                    "10:00": "Review pull request",
+        overlay = tmp_path / "synced_schedule.toml"
+        monkeypatch.setenv("REMINDER_SYNCED_SCHEDULE_PATH", str(overlay))
+        monkeypatch.setattr(sync_module, "_today", lambda: date(2026, 11, 4))
+        monkeypatch.setattr(sync_module, "load_mode", lambda: "j")
+        monkeypatch.setattr(
+            sync_module,
+            "_get_base_today_schedule",
+            lambda: (
+                {
+                    "09:00": "pomodoro",
+                    "10:00": "potato",
+                    "11:00": {"block": "pomodoro", "title": "Fixed review"},
+                    "12:00": "lunch",
                 },
-            }
-        )
-        mock_llm_client_class.return_value = mock_llm_client
-
-        result = reminder.sync_command(MagicMock())
-
-        assert result == 0
-        saved_text = (tmp_path / "synced_schedule.toml").read_text(encoding="utf-8")
-        assert 'title = "Finish release notes"' in saved_text
-        assert 'title = "Review pull request"' in saved_text
-
-    @patch("schedule_management.commands.sync._prompt_rejection_reason")
-    @patch("schedule_management.commands.sync._prompt_acceptance")
-    @patch("schedule_management.commands.sync.CONSOLE")
-    @patch("schedule_management.commands.sync.LLMClient")
-    @patch("schedule_management.commands.sync.ensure_llm_config")
-    @patch("schedule_management.commands.sync._load_ranked_tasks")
-    @patch("schedule_management.commands.sync._get_base_today_schedule")
-    def test_sync_command_retries_with_rejection_feedback(
-        self,
-        mock_get_schedule,
-        mock_load_ranked_tasks,
-        mock_ensure_llm_config,
-        mock_llm_client_class,
-        mock_console,
-        mock_prompt_acceptance,
-        mock_prompt_reason,
-        tmp_path,
-        monkeypatch,
-    ):
-        monkeypatch.setenv(
-            "REMINDER_SYNCED_SCHEDULE_PATH", str(tmp_path / "synced_schedule.toml")
-        )
-
-        mock_console.status.return_value.__enter__.return_value = None
-        mock_console.status.return_value.__exit__.return_value = False
-        mock_get_schedule.return_value = (
-            {
-                "09:00": "pomodoro",
-                "10:00": "pomodoro",
-            },
-            "odd",
-            False,
-            MagicMock(time_blocks={"pomodoro": 25}),
-        )
-        mock_load_ranked_tasks.return_value = [
-            {"description": "Ship urgent bug fix", "priority": 10},
-            {"description": "Clean backlog", "priority": 4},
-        ]
-        mock_ensure_llm_config.return_value = MagicMock()
-        mock_prompt_acceptance.side_effect = [False, True]
-        mock_prompt_reason.return_value = "Put the urgent bug fix first."
-
-        mock_llm_client = MagicMock()
-        mock_llm_client.generate.side_effect = [
-            json.dumps(
-                {
-                    "summary": "First draft.",
-                    "assignments": {
-                        "09:00": "Clean backlog",
-                        "10:00": "Ship urgent bug fix",
-                    },
-                }
+                "even",
+                False,
+                MagicMock(time_blocks={"pomodoro": 25, "potato": 50}, task_types={"1": "Work"}),
             ),
-            json.dumps(
-                {
-                    "summary": "Adjusted to prioritize the urgent work.",
-                    "assignments": {
-                        "09:00": "Ship urgent bug fix",
-                        "10:00": "Clean backlog",
-                    },
-                }
-            ),
-        ]
-        mock_llm_client_class.return_value = mock_llm_client
+        )
+        monkeypatch.setattr(sync_module, "load_tasks", lambda: [
+            {"description": "Release notes", "priority": 9, "type": "1"},
+            {"description": "Later idea", "priority": 4, "alarm_from": "2026-11-20"},
+        ])
+        monkeypatch.setattr(sync_module, "load_procrastinate_records", lambda: {})
+        monkeypatch.setattr(sync_module, "load_deadlines", lambda: [
+            {"event": "Launch", "deadline": "2026-11-06"},
+            {"event": "Past", "deadline": "2026-11-01"},
+        ])
+        return overlay
 
-        result = reminder.sync_command(MagicMock())
+    def test_json_lists_untitled_focus_slots_tasks_and_deadlines(self, today_schedule, capsys):
+        args = reminder.create_parser().parse_args(["sync", "--json"])
+        assert reminder.sync_command(args) == 0
+        context = json.loads(capsys.readouterr().out)
+        assert [(slot["time"], slot["block"], slot["minutes"]) for slot in context["slots"]] == [("09:00", "pomodoro", 25), ("10:00", "potato", 50)]
+        assert context["tasks"][0] == {
+            "description": "Release notes", "priority": 9, "type": "1", "typeName": "Work",
+            "alarmFrom": None, "postponed": False, "procrastinated": False, "procrastinateDays": None,
+        }
+        assert context["tasks"][1]["postponed"] is True
+        assert context["deadlines"] == [{"event": "Launch", "deadline": "2026-11-06", "daysLeft": 2}]
+        assert context["plan"] is None
 
-        assert result == 0
-        assert mock_llm_client.generate.call_count == 2
-        second_user_prompt = mock_llm_client.generate.call_args_list[1].args[1]
-        assert "Put the urgent bug fix first." in second_user_prompt
+    def test_apply_saves_a_partial_plan_and_json_reports_it(self, today_schedule, tmp_path, capsys):
+        plan = tmp_path / "plan.json"
+        plan.write_text(json.dumps({"date": "2026-11-04", "assignments": {"09:00": "  Release   notes "}}), encoding="utf-8")
+        args = reminder.create_parser().parse_args(["sync", "--apply", str(plan)])
+        assert reminder.sync_command(args) == 0
+        saved = load_synced_schedule(today_schedule)
+        assert saved.assignments == {"09:00": {"block": "pomodoro", "title": "Release notes"}}
+        assert (saved.target_date, saved.parity, saved.weekday) == ("2026-11-04", "even", "wednesday")
 
-        saved_text = (tmp_path / "synced_schedule.toml").read_text(encoding="utf-8")
-        assert 'title = "Ship urgent bug fix"' in saved_text
-        assert 'title = "Clean backlog"' in saved_text
+        capsys.readouterr()
+        reminder.sync_command(reminder.create_parser().parse_args(["sync", "--json"]))
+        context = json.loads(capsys.readouterr().out)
+        assert context["plan"] == {"date": "2026-11-04", "assignments": {"09:00": "Release notes"}}
+        assert context["slots"][0]["title"] == "Release notes"
+        assert {"time": "09:00", "label": "pomodoro: Release notes", "block": "pomodoro"} in context["events"]
+
+    @pytest.mark.parametrize(
+        ("payload", "message"),
+        [
+            ({"date": "2026-11-05", "assignments": {"09:00": "A"}}, "today is 2026-11-04"),
+            ({"assignments": {"11:00": "Fixed slot"}}, "not one of today's focus slots"),
+            ({"assignments": {"12:00": "Lunch"}}, "not one of today's focus slots"),
+            ({"assignments": {"09:00": "   "}}, "needs a title"),
+            ({"assignments": {"09:00": "x" * 121}}, "longer than 120"),
+            ({"assignments": {}}, "no assignments"),
+            ({"plan": []}, "assignments"),
+        ],
+    )
+    def test_apply_rejects_invalid_plans_without_writing(self, today_schedule, payload, message):
+        from schedule_management.commands.sync import SyncPlanError, apply_sync_plan
+
+        with pytest.raises(SyncPlanError, match=message):
+            apply_sync_plan(payload)
+        assert not today_schedule.exists()
+
+    def test_apply_reads_stdin_and_accepts_list_form(self, today_schedule, monkeypatch):
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"assignments": [{"time": "10:00", "title": "Deep work"}]})))
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--apply", "-"])) == 0
+        assert load_synced_schedule(today_schedule).assignments == {"10:00": {"block": "potato", "title": "Deep work"}}
+
+    def test_apply_is_refused_in_p_mode_but_json_and_clear_work(self, today_schedule, monkeypatch, capsys):
+        import schedule_management.commands.sync as sync_module
+
+        monkeypatch.setattr(sync_module, "load_mode", lambda: "p")
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--apply", "-"])) == 1
+        assert "p mode" in capsys.readouterr().out
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--json"])) == 0
+        assert json.loads(capsys.readouterr().out)["mode"] == "p"
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--clear"])) == 0
+
+    def test_clear_removes_todays_plan(self, today_schedule, capsys):
+        from schedule_management.commands.sync import apply_sync_plan, clear_sync_plan
+
+        apply_sync_plan({"assignments": {"09:00": "Release notes"}})
+        assert today_schedule.exists()
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--clear"])) == 0
+        assert not today_schedule.exists()
+        assert "Cleared" in capsys.readouterr().out
+        assert clear_sync_plan() == {"cleared": False}
+
+    def test_bare_sync_shows_blocks_and_invalid_json_fails(self, today_schedule, tmp_path, capsys):
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync"])) == 0
+        output = capsys.readouterr().out
+        assert "09:00" in output and "No plan yet" in output
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not json", encoding="utf-8")
+        assert reminder.sync_command(reminder.create_parser().parse_args(["sync", "--apply", str(bad)])) == 1
+        assert "not valid JSON" in capsys.readouterr().err
+
+    def test_sync_flags_are_mutually_exclusive(self):
+        with pytest.raises(SystemExit):
+            reminder.create_parser().parse_args(["sync", "--json", "--clear"])
 
 
 class TestTaskManagement:
@@ -3566,169 +3556,19 @@ class TestSettingsCommand:
         assert tui.mode == _Mode.INLINE
         assert "cannot be empty" in tui.message
 
-    def test_settings_sections_list_includes_llm_first(self, tmp_path):
-        """The synthetic Model Settings page is always present at the top."""
-        from schedule_management.commands.settings import (
-            LLM_SECTION,
-            SettingsModel,
-            SettingsTUI,
-        )
-
-        settings_file = tmp_path / "settings.toml"
-        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
-
-        tui = SettingsTUI(SettingsModel(settings_file))
-        sections = tui._sections_list()
-
-        assert sections[0] == LLM_SECTION
-        assert "settings" in sections
-
-    def test_llm_model_adapter_round_trip(self, tmp_path):
-        """_load_llm_model / _save_llm_model round-trip against llm.toml."""
-        from schedule_management.commands import settings as settings_module
-
-        llm_path = tmp_path / "llm.toml"
-        monkey = patch.object(
-            settings_module, "_resolve_llm_config_path", return_value=llm_path
-        )
-        with monkey:
-            assert settings_module._load_llm_model() is None
-
-            settings_module._save_llm_model("openai/gpt-4.1-mini")
-            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
-
-            # Clearing persists a valid file that reloads as None
-            settings_module._save_llm_model(None)
-            assert settings_module._load_llm_model() is None
-
-    def test_settings_llm_page_edit_and_clear(self, tmp_path):
-        """Editing and clearing the model from the Model Settings page."""
-        from schedule_management.commands import settings as settings_module
-        from schedule_management.commands.settings import (
-            LLM_CLEAR_KEY,
-            LLM_SECTION,
-            SettingsModel,
-            SettingsTUI,
-            _Mode,
-        )
-        import readchar
-
-        llm_path = tmp_path / "llm.toml"
-        settings_file = tmp_path / "settings.toml"
-        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
-
-        with patch.object(
-            settings_module, "_resolve_llm_config_path", return_value=llm_path
-        ):
-            tui = SettingsTUI(SettingsModel(settings_file))
-            assert tui.llm_model is None
-
-            # Drill into the Model Settings page
-            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
-            tui._drill_into_section()
-            assert tui.browse_section == LLM_SECTION
-            assert [r.key for r in tui.rows] == ["model", LLM_CLEAR_KEY]
-
-            # Edit the model row
-            tui.cursor = 0
-            tui._handle_key(readchar.key.ENTER)
-            assert tui.mode == _Mode.LLM_EDIT
-            for ch in "openai/gpt-4.1-mini":
-                tui._handle_key(ch)
-            tui._handle_key(readchar.key.ENTER)
-            assert tui.mode == _Mode.BROWSE
-            assert tui.llm_model == "openai/gpt-4.1-mini"
-            assert tui.llm_dirty is True
-
-            # Persist via 's'
-            tui._handle_key("s")
-            assert tui.llm_dirty is False
-            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
-
-            # Now clear it
-            tui.cursor = 1  # clear row
-            tui._handle_key(readchar.key.ENTER)
-            assert tui.llm_model is None
-            assert tui.llm_dirty is True
-            tui._handle_key("s")
-            assert settings_module._load_llm_model() is None
-
-    def test_settings_llm_page_blank_edit_clears(self, tmp_path):
-        """Submitting an empty model value clears the override."""
-        from schedule_management.commands import settings as settings_module
-        from schedule_management.commands.settings import (
-            LLM_SECTION,
-            SettingsModel,
-            SettingsTUI,
-            _Mode,
-        )
-        import readchar
-
-        llm_path = tmp_path / "llm.toml"
-        settings_file = tmp_path / "settings.toml"
-        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
-
-        with patch.object(
-            settings_module, "_resolve_llm_config_path", return_value=llm_path
-        ):
-            # Seed an existing override
-            settings_module._save_llm_model("anthropic/claude-sonnet")
-            tui = SettingsTUI(SettingsModel(settings_file))
-
-            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
-            tui._drill_into_section()
-            tui.cursor = 0
-            tui._handle_key(readchar.key.ENTER)
-            assert tui.mode == _Mode.LLM_EDIT
-            # Clear the buffer, then confirm blank
-            tui.edit_buffer = ""
-            tui._handle_key(readchar.key.ENTER)
-            assert tui.llm_model is None
-            assert tui.llm_dirty is True
-
-    def test_settings_llm_dirty_blocks_quit(self, tmp_path):
-        """Unsaved model changes route to confirm-quit instead of quitting."""
-        from schedule_management.commands import settings as settings_module
-        from schedule_management.commands.settings import (
-            LLM_SECTION,
-            SettingsModel,
-            SettingsTUI,
-            _Mode,
-        )
-
-        llm_path = tmp_path / "llm.toml"
-        settings_file = tmp_path / "settings.toml"
-        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
-
-        with patch.object(
-            settings_module, "_resolve_llm_config_path", return_value=llm_path
-        ):
-            tui = SettingsTUI(SettingsModel(settings_file))
-            tui.llm_model = "openai/gpt-4.1-mini"
-            tui.llm_dirty = True
-
-            # On the llm page, 'q' should defer to confirm-quit, not quit
-            tui.section_cursor = tui._sections_list().index(LLM_SECTION)
-            tui._drill_into_section()
-            result = tui._handle_key("q")
-            assert result is None  # did not quit
-            assert tui.mode == _Mode.CONFIRM_QUIT
-
-            # 's' saves both and quits
-            result = tui._handle_key("s")
-            assert result == "quit"
-            assert settings_module._load_llm_model() == "openai/gpt-4.1-mini"
-
-    def test_settings_section_title_shows_unsaved_model_change(self, tmp_path):
+    def test_settings_sections_list_has_no_model_page(self, tmp_path):
+        """The TUI lists only settings.toml sections; AI model settings were removed."""
         from schedule_management.commands.settings import SettingsModel, SettingsTUI
 
         settings_file = tmp_path / "settings.toml"
-        settings_file.write_text("[settings]\nfoo = 1\n", encoding="utf-8")
-        tui = SettingsTUI(SettingsModel(settings_file))
-        tui.llm_model = "test/model"
-        tui.llm_dirty = True
+        settings_file.write_text("[settings]\nfoo = 1\n\n[time_blocks]\npomodoro = 25\n", encoding="utf-8")
 
-        assert "modified" in tui._render_sections_view().title
+        tui = SettingsTUI(SettingsModel(settings_file))
+
+        sections = tui._sections_list()
+        assert sections[:2] == ["settings", "time_blocks"]
+        assert "llm" not in sections
+        assert not hasattr(tui, "llm_model")
 
     @patch("schedule_management.commands.settings.Live")
     @patch("readchar.readkey")

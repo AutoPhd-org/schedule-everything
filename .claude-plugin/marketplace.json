@@ -1,0 +1,12 @@
+{
+  "name": "schedule-everything",
+  "description": "Agent plugins for Schedule Everything.",
+  "owner": { "name": "Schedule Everything" },
+  "plugins": [
+    {
+      "name": "schedule-everything",
+      "source": "./plugins/schedule-everything",
+      "description": "Build your weekly routine and plan each day's focus blocks with the local `rmd` CLI."
+    }
+  ]
+}

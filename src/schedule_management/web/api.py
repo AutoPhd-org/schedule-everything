@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
-from schedule_management.commands.sync import accept_sync_plan, generate_sync_proposal
+from schedule_management.commands.sync import clear_sync_plan
 from schedule_management.web.services import (
     WebError,
     deadline_add,
@@ -28,8 +28,7 @@ from schedule_management.web.services import (
 )
 from schedule_management.web.insights import weekly_overview
 from schedule_management.web.workspace import (
-    config_read, config_save, export_pdf, service_action, setup_accept,
-    setup_turn, workspace_info,
+    config_read, config_save, export_pdf, service_action, workspace_info,
 )
 
 BridgeHandler = Callable[[dict[str, Any]], dict[str, Any]]
@@ -39,8 +38,6 @@ COMMANDS: dict[str, BridgeHandler] = {
     "config_save": config_save,
     "workspace_info": workspace_info,
     "service_action": service_action,
-    "setup_turn": setup_turn,
-    "setup_accept": setup_accept,
     "export_pdf": export_pdf,
     "status_snapshot": status_snapshot,
     "task_add": task_add,
@@ -54,24 +51,8 @@ COMMANDS: dict[str, BridgeHandler] = {
     "habit_mark": habit_mark,
     "settings_get_task_types": settings_get_task_types,
     "settings_set_task_types": settings_set_task_types,
-    "sync_generate": lambda payload: generate_sync_proposal(
-        _coerce_feedback(payload.get("feedback", []))
-    ),
-    "sync_accept": lambda payload: accept_sync_plan(_coerce_plan(payload)),
+    "sync_clear": lambda payload: clear_sync_plan(),
 }
-
-
-def _coerce_feedback(value: Any) -> list[str]:
-    if not isinstance(value, list):
-        raise WebError("invalid_input", "feedback must be a list.")
-    return [str(item).strip() for item in value if str(item).strip()]
-
-
-def _coerce_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    plan = payload.get("plan")
-    if not isinstance(plan, dict):
-        raise WebError("invalid_input", "plan is required.")
-    return plan
 
 
 def _error_response(

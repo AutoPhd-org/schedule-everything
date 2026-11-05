@@ -5,7 +5,7 @@ import { deadlineSwatch, yearCalendar, type CalendarState } from "./calendar";
 import { ring } from "./charts";
 import { bindTilt, burst } from "./effects";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
-import type { BridgeClient, DeadlineItem, HistoryItem, Snapshot, SyncProposal, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { BridgeClient, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, hash, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
 
 export { escapeHtml };
@@ -13,12 +13,19 @@ export { escapeHtml };
 type Page = "today" | "schedule" | "routines" | "activity" | "settings";
 type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
-type SetupTurn = {sessionId: string; phase: string; conversation: string; question_to_user: string | null; schedule_summary: string | null; profile_markdown: string | null; bundle: Record<string, string> | null};
 type ActivityState = {view: "gallery" | "week"; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; loading: boolean};
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; sync: SyncProposal | null; feedback: string[]; setup: SetupTurn | null; messages: {role: string; text: string}[]; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState};
+type AgentTab = "claude" | "codex" | "antigravity";
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState};
 
 const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
 const GALLERY_PAGE = 60;
+const REPOSITORY = "AutoPhd-org/schedule-everything";
+const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string}> = {
+  claude: {name: "Claude Code", steps: [`claude plugin marketplace add ${REPOSITORY}`, "claude plugin install schedule-everything@schedule-everything"], note: "Inside a Claude Code session you can run the same steps as /plugin marketplace add and /plugin install."},
+  codex: {name: "Codex", steps: [`codex plugin marketplace add ${REPOSITORY}`, "codex plugin add schedule-everything@schedule-everything"], note: "The plugin also appears in the ChatGPT desktop app once the marketplace is added."},
+  antigravity: {name: "Antigravity", steps: [`git clone https://github.com/${REPOSITORY}.git`, "agy plugin install ./schedule-everything/plugins/schedule-everything"], note: "Antigravity installs the plugin from the cloned folder."}
+};
+const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings"];
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
 
@@ -41,7 +48,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   let appearance = themePreference();
   applyTheme(appearance);
   const state: State = {
-    page: "today", snapshot: null, workspace: null, sync: null, feedback: [], setup: null, messages: [], search: "", busy: false, notice: "", config: null,
+    page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", config: null,
     activity: {view: "gallery", items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null}
   };
@@ -113,7 +120,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       <nav aria-label="Main navigation">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(label)}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? "P mode" : "J mode"}</strong><span>${mode === "p" ? "Flexible, task-first" : "Structured day"}</span></div></div><span class="local-dot"></span> Saved on your computer<p>One day, one thing at a time.</p></div></aside>
       <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
-      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" role="status" aria-live="polite" class="notice"></div>${s.config.error ? `<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
+      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" role="status" aria-live="polite" class="notice"></div>${s.config.error ? `<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
     status();
   }
@@ -160,8 +167,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       state.config = await request<ConfigFile>("config_read", {file: (event.target as HTMLSelectElement).value});
       draw();
     }));
-    root.querySelector<HTMLFormElement>("#setup-form")?.addEventListener("submit", event => { event.preventDefault(); const message = new FormData(event.target as HTMLFormElement).get("message") as string; void action(() => sendSetup(message)); });
     bindTypeRows();
+    root.querySelectorAll<HTMLButtonElement>("[data-agent-tab]").forEach(btn => btn.onclick = () => { state.agentTab = btn.dataset.agentTab as AgentTab; draw(); root.querySelector<HTMLElement>(`#agent-tab-${state.agentTab}`)?.focus(); });
+    root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach(btn => btn.onclick = () => void copyText(btn.dataset.copy!));
     if (state.page === "activity") bindActivity(s);
     if (state.page === "routines") bindCalendar(s);
   }
@@ -170,16 +178,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (id === "refresh") await reload();
     if (id === "add-task") taskDialog();
     if (id === "add-deadline") deadlineDialog();
-    if (id === "sync-generate") {
-      const feedback = root.querySelector<HTMLTextAreaElement>('[name="feedback"]')?.value.trim();
-      if (feedback) state.feedback.push(feedback);
-      state.sync = await request<SyncProposal>("sync_generate", {feedback: state.feedback}); draw();
-    }
-    if (id === "sync-dismiss") { state.sync = null; draw(); }
-    if (id === "sync-accept") { await request("sync_accept", {plan: state.sync!.plan}); state.sync = null; state.feedback = []; await reload(); state.notice = "Today’s plan is ready."; }
-    if (id === "setup-new") { state.setup = null; state.messages = []; draw(); }
-    if (id === "setup-confirm") await sendSetup("I confirm the schedule summary.", true);
-    if (id === "setup-accept") { const result = await request<{message: string}>("setup_accept", {sessionId: state.setup!.sessionId}); state.setup = null; await reload(); state.notice = result.message; }
+    if (id === "sync-clear") { if (!window.confirm("Clear today’s plan? Your weekly routine stays the same.")) return; await request("sync_clear"); await reload(); state.notice = "Today’s plan was cleared."; }
     if (id === "open-config") { state.config = await request<ConfigFile>("config_read", {file: "settings"}); draw(); }
     if (id === "config-save") {
       const content = root.querySelector<HTMLTextAreaElement>('[name="configContent"]')!.value;
@@ -200,6 +199,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (id === "open-week" && state.activity.summary) { state.activity.view = "week"; state.activity.week = state.activity.summary; draw(true); scrollTop(); }
     if (id === "close-week") { state.activity.view = "gallery"; draw(true); }
     if (id === "clear-day") { state.activity.filter.day = null; redrawGallery(); }
+  }
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); state.notice = `Copied: ${text}`; }
+    catch { state.notice = "Could not copy. Select the text and copy it instead."; }
+    status();
   }
   const scrollTop = () => { if (document.scrollingElement) document.scrollingElement.scrollTop = 0; };
 
@@ -291,7 +295,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   // ----- Schedule, routines, settings -------------------------------------------
 
   function schedulePage(s: Snapshot) {
-    return `<div class="page-heading"><div><p class="eyebrow">A RHYTHM THAT WORKS FOR YOU</p><h1>Make a little space<span class="accent-dot">.</span></h1><p class="muted">${e(s.today.parity)} week · ${e(s.today.weekday)} · schedule ${s.config.activeId}</p></div>${button("schedule-pdf", "Download schedule", icons.schedule)}</div><section class="split-grid"><article class="card timeline-card"><div class="section-heading compact"><h2>Today’s timeline</h2><span class="pill light">${s.schedule.events.length} blocks</span></div>${timeline(s)}</article><div><article class="card sync-card"><p class="eyebrow">${icons.spark} PLAN YOUR FOCUS</p><h2>Give your blocks a purpose.</h2><p class="muted">Assign tasks to today’s focus blocks. Review the proposal before it is saved.</p>${state.sync ? `<p>${e(state.sync.summary ?? "")}</p><ol class="timeline">${state.sync.preview.map(item => `<li><time>${e(item.time)}</time><span>${e(item.label)}</span></li>`).join("")}</ol><label>What would you change?<textarea name="feedback" placeholder="More time for writing, fewer context switches…"></textarea></label><div class="button-row">${button("sync-accept", "Accept plan", icons.check, "button primary")}${button("sync-generate", "Revise", icons.refresh)}${button("sync-dismiss", "Discard", "", "button ghost")}</div>` : button("sync-generate", "Plan my day", icons.spark, "button primary")}</article><article class="card assistant"><div class="section-heading compact"><h2>Schedule assistant</h2>${button("setup-new", "New chat", "", "text-button")}</div><p class="muted">Build or adjust your weekly routine with a conversation.</p><div class="conversation">${state.messages.map(m => `<div class="message ${m.role}"><small>${m.role === "user" ? "You" : "Schedule assistant"}</small><p>${e(m.text)}</p></div>`).join("") || '<p class="muted">Tell me about your working hours, goals, habits, and fixed commitments.</p>'}</div>${state.setup?.schedule_summary && !state.setup.bundle ? `<div class="proposal"><h3>Schedule summary</h3><p>${e(state.setup.schedule_summary)}</p>${button("setup-confirm", "Confirm summary", icons.check, "button primary")}</div>` : ""}${state.setup?.bundle ? `<div class="proposal"><h3>Review your new routine</h3>${Object.entries(state.setup.bundle).map(([file, text]) => `<details><summary>${e(file)}</summary><pre>${e(text)}</pre></details>`).join("")}${state.setup.profile_markdown ? `<details><summary>Profile draft</summary><pre>${e(state.setup.profile_markdown)}</pre></details>` : ""}${button("setup-accept", "Apply schedule", icons.check, "button primary")}</div>` : ""}<form id="setup-form"><label class="sr-only" for="setup-message">Message to the schedule assistant</label><textarea id="setup-message" name="message" required placeholder="I work 9 to 5 and want to make room for…"></textarea><label class="attachment-field">Attach a timetable (text or image, up to 5 MB)<input type="file" name="timetable" accept="image/*,.txt,.md,.csv,.tsv,.json,.toml,.yaml,.yml"></label><button class="button primary" type="submit">${icons.spark} Send message</button></form><small class="muted">AI uses your locally configured pi account and model.</small></article></div></section>`;
+    const agent = AGENT_SETUP[state.agentTab];
+    const planCard = s.schedule.hasSyncedOverlay ? `<article class="card plan-card"><p class="eyebrow">${icons.spark} TODAY’S PLAN</p><h2>Your focus blocks have a purpose.</h2><p class="muted">Your AI agent planned today. Each focus block in the timeline shows its task, and reminders announce it. Your weekly routine is unchanged.</p><div class="button-row">${button("sync-clear", "Clear today’s plan", icons.close, "button ghost danger")}</div></article>` : "";
+    return `<div class="page-heading"><div><p class="eyebrow">A RHYTHM THAT WORKS FOR YOU</p><h1>Make a little space<span class="accent-dot">.</span></h1><p class="muted">${e(s.today.parity)} week · ${e(s.today.weekday)} · schedule ${s.config.activeId}</p></div>${button("schedule-pdf", "Download schedule", icons.schedule)}</div><section class="split-grid"><article class="card timeline-card"><div class="section-heading compact"><h2>Today’s timeline</h2><span class="pill light">${s.schedule.events.length} blocks</span></div>${timeline(s)}</article><div>${planCard}
+      <article class="card agent-card"><p class="eyebrow">${icons.spark} PLAN WITH YOUR AI AGENT</p><h2>Let your coding agent build and plan your schedule.</h2><p class="muted">Install the Schedule Everything plugin in Claude Code, Codex, or Antigravity. It interviews you, writes your weekly routine, and fills today’s focus blocks through the local <code>rmd</code> CLI. Your agent sends what it reads to its own model provider.</p>
+        <div class="agent-tabs" role="tablist" aria-label="Choose your agent">${(Object.keys(AGENT_SETUP) as AgentTab[]).map(id => `<button type="button" role="tab" id="agent-tab-${id}" class="agent-tab" data-agent-tab="${id}" aria-selected="${state.agentTab === id}" aria-controls="agent-panel">${e(AGENT_SETUP[id].name)}</button>`).join("")}</div>
+        <div class="agent-panel" role="tabpanel" id="agent-panel" aria-labelledby="agent-tab-${state.agentTab}"><ol class="agent-steps">${agent.steps.map((command, i) => `<li><span class="step-num" aria-hidden="true">${i + 1}</span><code>${e(command)}</code><button type="button" class="icon-button" data-copy="${e(command)}" aria-label="Copy command ${i + 1}">${icons.copy}</button></li>`).join("")}</ol><p class="muted">${e(agent.note)}</p></div>
+        <p class="eyebrow try-label">THEN ASK YOUR AGENT</p><div class="prompt-chips">${AGENT_PROMPTS.map(prompt => `<button type="button" class="chip prompt-chip" data-copy="${e(prompt)}" title="Copy prompt">${icons.spark}${e(prompt)}</button>`).join("")}</div></article></div></section>`;
   }
   function routines(s: Snapshot) {
     const done = s.habits.filter(h => h.completed).length;
@@ -305,8 +315,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">A gallery of everything you finished, cancelled, or let go. Open any piece to see its story.</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, limit: a.limit, today: s.today.date, taskTypes: s.taskTypes})}`;
   }
   function settings(s: Snapshot) {
-    const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile", model: "AI model"};
-    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Shared categories for tasks and deadlines. Keep IDs stable so existing items retain their type and color.</p><div id="type-rows">${Object.entries(s.taskTypes).map(([id, name]) => typeRow(id, name)).join("")}</div><div class="button-row">${button("types-save", "Save types", icons.check)}${button("types-add", "Add type", icons.plus, "button ghost")}</div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or optional AI model here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
+    const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
+    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Shared categories for tasks and deadlines. Keep IDs stable so existing items retain their type and color.</p><div id="type-rows">${Object.entries(s.taskTypes).map(([id, name]) => typeRow(id, name)).join("")}</div><div class="button-row">${button("types-save", "Save types", icons.check)}${button("types-add", "Add type", icons.plus, "button ghost")}</div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -505,18 +515,6 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   // ----- Dialogs ---------------------------------------------------------------
 
-  async function sendSetup(message: string, confirmSummary = false) {
-    const file = root.querySelector<HTMLInputElement>('[name="timetable"]')?.files?.[0];
-    let attachment: {name: string; data: string} | undefined;
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) throw new Error("Choose a file smaller than 5 MB.");
-      const encoded = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = () => reject(new Error("Could not read the attachment.")); reader.readAsDataURL(file); });
-      attachment = {name: file.name, data: encoded};
-    }
-    state.messages.push({role: "user", text: message + (attachment ? `\nAttached: ${attachment.name}` : "")}); draw();
-    state.setup = await request<SetupTurn>("setup_turn", {message, sessionId: state.setup?.sessionId, confirmSummary, attachment});
-    state.messages.push({role: "assistant", text: [state.setup.conversation, state.setup.question_to_user].filter(Boolean).join("\n\n")}); draw();
-  }
   function dialog(title: string, body: string, submit: (data: FormData) => Promise<void>) {
     root.querySelector("dialog.editor-dialog")?.remove();
     const el = document.createElement("dialog"); el.className = "editor-dialog"; el.innerHTML = `<form><div class="section-heading"><h2>${title}</h2><button class="icon-button" type="button" aria-label="Close">${icons.close}</button></div>${body}<div class="button-row"><button class="button primary" type="submit">Save</button><button class="button ghost" type="button" data-close>Cancel</button></div><p class="dialog-error" role="alert"></p></form>`;

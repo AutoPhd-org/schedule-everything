@@ -1,0 +1,10 @@
+{
+  "name": "schedule-everything",
+  "version": "1.0.0",
+  "description": "Build your weekly Schedule Everything routine and plan each day's focus blocks with your coding agent, using the local `rmd` CLI.",
+  "author": { "name": "Schedule Everything" },
+  "homepage": "https://github.com/AutoPhd-org/schedule-everything",
+  "repository": "https://github.com/AutoPhd-org/schedule-everything",
+  "license": "MIT",
+  "keywords": ["schedule", "planning", "habits", "productivity", "rmd"]
+}
