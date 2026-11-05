@@ -1,7 +1,7 @@
 // Tests for P/J overview layouts, the activity gallery and weekly overview, and the year calendar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
-import { axisTones, layoutTree, treeLanes } from "./tree";
+import { axisTones, layoutTree, packLabels, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
 import type { BridgeClient, ConferencePayload, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
@@ -227,6 +227,48 @@ describe("activity tree", () => {
     expect(titles()).toEqual(["Draft essay"]);
     expect(root.querySelector('[name="gallerySearch"]')).toBe(search);
     expect(root.querySelector(".tree.single")).not.toBeNull();
+  });
+
+  it("shows an event's details while hovering it, without opening a dialog", async () => {
+    await openActivity();
+    const card = root.querySelector<HTMLElement>('.tree-node [data-history="2"]')!;
+    card.dispatchEvent(new MouseEvent("pointerover", {bubbles: true}));
+    const peek = document.querySelector<HTMLElement>(".peek")!;
+    expect(peek.classList.contains("visible")).toBe(true);
+    expect(peek.getAttribute("aria-hidden")).toBe("true");
+    expect(peek.querySelector(".peek-title strong")?.textContent).toBe("Wrong task");
+    expect(peek.textContent).toContain("Cancelled");
+    expect(peek.textContent).toContain("Coding");
+    expect(peek.querySelector(".peek-foot b")?.textContent).toBe("2/10");
+    expect(root.querySelector("dialog")).toBeNull();
+    // Moving to a neighbor swaps the card's contents; leaving hides it after a short grace period.
+    const next = root.querySelector<HTMLElement>('.tree-node [data-history="0"]')!;
+    card.dispatchEvent(new MouseEvent("pointerout", {bubbles: true, relatedTarget: next}));
+    next.dispatchEvent(new MouseEvent("pointerover", {bubbles: true}));
+    expect(peek.querySelector(".peek-title strong")?.textContent).toBe("Ship release");
+    // Its only completed peer took just as long.
+    expect(peek.querySelector(".peek-note")?.textContent).toBe("About as quick as your other completed tasks.");
+    vi.useFakeTimers();
+    try {
+      next.dispatchEvent(new MouseEvent("pointerout", {bubbles: true, relatedTarget: root}));
+      expect(peek.classList.contains("visible")).toBe(true);
+      vi.advanceTimersByTime(200);
+      expect(peek.classList.contains("visible")).toBe(false);
+    } finally { vi.useRealTimers(); }
+    // Clicking still opens the full story.
+    next.dispatchEvent(new MouseEvent("pointerover", {bubbles: true}));
+    next.click();
+    expect(peek.classList.contains("visible")).toBe(false);
+    expect(root.querySelector("dialog.lightbox h2")?.textContent).toBe("Ship release");
+  });
+
+  it("puts lane labels in a band above the events", async () => {
+    await openActivity();
+    const tree = root.querySelector<HTMLElement>(".tree")!;
+    expect(tree.style.getPropertyValue("--depths")).toBe("2");
+    expect(tree.querySelector(".tree-stage > .tree-lanes")).not.toBeNull();
+    expect(tree.querySelector(".tree-window > [data-tree-viewport]")).not.toBeNull();
+    expect(tree.querySelector('.tree-lane-head[data-tip="Writing"]')).not.toBeNull();
   });
 
   it("jumps to a rhythm day instead of filtering, and remembers the layout", async () => {
@@ -507,6 +549,30 @@ describe("page helpers", () => {
     expect(layout.height).toBe(layout.nodes[3].y);
     expect(layout.top).toBeLessThan(layout.nodes[0].marks[0].y);
     for (let i = 1; i < layout.nodes.length; i++) expect(layout.nodes[i].y - layout.nodes[i - 1].y).toBeGreaterThanOrEqual(64);
+  });
+
+  it("stacks lane labels in rows and keeps them inside the tree", () => {
+    // Three wide labels over neighboring lanes need three rows; the label at the edge shifts inward.
+    const {placements, rows} = packLabels([{x: 100, width: 80}, {x: 130, width: 80}, {x: 160, width: 80}, {x: 290, width: 60}, {x: 395, width: 40}], 400, 8, 10);
+    expect(rows).toBe(3);
+    expect(placements.map(place => place.row)).toEqual([0, 1, 2, 0, 0]);
+    expect(placements[4].shift).toBe(-25);
+    expect(placements[0].shift).toBe(0);
+    expect(packLabels([], 400).rows).toBe(1);
+  });
+
+  it("floats tooltips on the page so no card can cut them off", async () => {
+    await renderApp(root, client);
+    click('[data-page="activity"]');
+    await flush(); await flush();
+    const cell = root.querySelector<HTMLElement>('.heat-cell[data-heat-day="2026-10-05"]')!;
+    cell.dispatchEvent(new MouseEvent("pointerover", {bubbles: true}));
+    const tip = document.querySelector<HTMLElement>(".float-tip")!;
+    expect(tip.textContent).toBe("Oct 5: 1 completed");
+    expect(tip.classList.contains("visible")).toBe(true);
+    expect(tip.parentElement).toBe(document.body);
+    cell.dispatchEvent(new MouseEvent("pointerout", {bubbles: true, relatedTarget: document.body}));
+    expect(tip.classList.contains("visible")).toBe(false);
   });
 
   it("sorts and groups history by recency", () => {

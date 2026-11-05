@@ -146,7 +146,10 @@ CLI, and reuses an open tab when you launch it again.
 tasks, habit progress, the current and next block, upcoming deadlines, and
 today's timeline. **P mode** is for flexible days: alarms for selected events
 pause and the overview keeps only your tasks, grouped by type, as a loose
-collage. Flip the **J / P** switch in the header, or run `rmd mode j|p`.
+collage. Flip the **J / P** switch in the header, or run `rmd mode j|p`. In
+both modes, groups with more important work come first, you can add a task
+right inside its group, and **Fold** turns each group into a summary of its
+importance and size.
 
 ### Plan with your agent
 
@@ -183,7 +186,7 @@ scrollable timeline tree: each task type has its own lane and color, the trunk
 takes the color of the work around it, and a band in the middle highlights what
 you are looking at. Prefer cards? Switch to the gallery, where each task has
 artwork in its type's color. Filter by outcome or type, search, or click a day
-in the rhythm grid. Open any task to see when it started, how long it took,
+in the rhythm grid. Hover over any task to see when it started, how long it took,
 and how that compares with your other tasks.
 
 <table>
@@ -192,7 +195,7 @@ and how that compares with your other tasks.
     <td width="50%" valign="top"><img src="documentation/static/img/screens/weekly-dark.webp" alt="The weekly overview in dark mode: tasks completed with an eight-week trend, habit rings, streak, daily rhythm, effort by type, outcomes, habit check-ins, pace, and highlights"></td>
   </tr>
   <tr>
-    <td valign="top"><strong>Every task has a story.</strong> Open any card for its timeline and pace.</td>
+    <td valign="top"><strong>Every task has a story.</strong> Hover over any task for its timeline and pace, or click it for the full view.</td>
     <td valign="top"><strong>Your week in color.</strong> The weekly overview compares this week with last week and your recent average, mostly as charts.</td>
   </tr>
 </table>

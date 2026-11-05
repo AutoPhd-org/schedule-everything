@@ -30,10 +30,10 @@ files can be repaired in the browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
+| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add a task right inside its group or from **New task**; fold the groups into summaries; edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
-| Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
+| Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
 | Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
 ## J mode and P mode
@@ -137,9 +137,10 @@ The gallery shows every finished task as a card with generated artwork in its
 type's color. More important completed tasks get larger cards; cancelled and
 dropped tasks get compact cards. Filter by outcome or type, search by name, sort
 by date, importance, or time to finish, or click a square in the rhythm grid to
-see one day. Open a card for when it was added and finished, how long it took,
-and how that compares with your other completed tasks. Use the arrows or
-arrow keys to move between cards.
+see one day. Hover over a card, or over any task in the tree, for when it was
+added and finished, how long it took, and how that compares with your other
+completed tasks; keyboard focus shows the same details. Click a task to open
+its full story, and use the arrows or arrow keys to move between tasks there.
 
 <Figure
   src="img/screens/activity-gallery.webp"
@@ -149,7 +150,7 @@ arrow keys to move between cards.
 <Figure
   src="img/screens/lightbox-dark.webp"
   alt="A task's detail card in dark mode: added and completed times, time to finish, importance 9 of 10, and how its time compares with 75 completed tasks"
-  caption="Open any card for its full story."
+  caption="Click any task for its full story."
 />
 
 The weekly overview replaces the weekly and monthly PDF reports in the browser.
@@ -199,6 +200,9 @@ header to change appearance on any page. System is the default and follows
 changes to your operating system's appearance. An explicit choice persists in
 this browser, and switching themes preserves any form you are editing.
 
+Messages that confirm an action stay at the top of the page until you dismiss
+them with their **×** button or **Esc**.
+
 The layout adapts to narrow windows down to phone width: the sidebar becomes
 an icon rail and cards stack.
 
@@ -210,9 +214,25 @@ an icon rail and cards stack.
 
 Tasks preserve their importance (1–10), type, postponed reminder date, and
 procrastination status. The board groups the same tasks returned by `rmd ls`
-without imposing a display limit. Inside each group, the existing ordering is
-preserved: procrastinated tasks, available tasks, then postponed tasks, with
-importance descending within each section. The overview refreshes every 30 seconds when you are not editing.
+without imposing a display limit, and shows a group for every type in
+**Settings → Task & deadline types**, even before it has tasks. Groups with
+more important work come first: they are ordered by the average importance of
+their tasks, then by how many tasks they hold, and empty groups come last.
+Inside each group, the existing ordering is preserved: procrastinated tasks,
+available tasks, then postponed tasks, with importance descending within each
+section. The overview refreshes every 30 seconds when you are not editing.
+
+To add a task to a group, click **Add a task** at the bottom of the group, type
+it, set its importance, and press **Enter**. The form stays open for the next
+task; **Esc** closes it. **New task** in the heading still opens the full form
+with a postponed start.
+
+**Fold** in the board's heading turns each group into a summary: its average
+importance as a ring, every task as a dot on a 1–10 scale, its share of your
+open tasks, and how many tasks are important (8 or more), waiting for a later
+day, or deferred. **Expand** brings back every task, and the arrow in a group's
+header folds or opens just that group. Your choice is remembered in this
+browser; a search always lists the matching tasks.
 The CLI table and task IDs are
 unchanged. Completing a task matches `rmd rm`; cancel and drop remain distinct
 from completion in history and reports.
