@@ -168,7 +168,9 @@ button to clear today's plan.
 to add one, make it repeat weekly, every two weeks, or monthly, pick one of
 eight marker colors, recolor or edit it from the day card, and drag a chip onto
 another day to reschedule. Repeating events show every occurrence and roll
-forward on their own. Today's habits live on the same page.
+forward on their own. Turn on **AI conferences** to add this year's submission
+deadlines and conference dates for NeurIPS, ICLR, ICML, CVPR, ACL, ICRA, and
+other major venues, in your time zone. Today's habits live on the same page.
 
 ### Little wins add up
 

@@ -1,11 +1,11 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, weeklyView, type GalleryFilter, type HistoryStatus, type HistorySort } from "./activity";
-import { deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState } from "./calendar";
+import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { bindTilt, burst } from "./effects";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
-import type { BridgeClient, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, hash, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
 
 export { escapeHtml };
@@ -15,7 +15,20 @@ type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
 type ActivityState = {view: "gallery" | "week"; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; loading: boolean};
 type AgentTab = "claude" | "codex" | "antigravity";
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState};
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView};
+
+const CONFERENCE_PREFS = "schedule-everything-conferences";
+/** Which AI conferences to show is a per-browser preference. */
+function loadConferencePrefs(): Pick<ConferenceView, "enabled" | "selected"> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(CONFERENCE_PREFS) ?? "null");
+    if (saved && typeof saved === "object") return {enabled: saved.enabled === true, selected: Array.isArray(saved.selected) ? saved.selected.filter((id: unknown) => typeof id === "string") : null};
+  } catch { /* Fall back to defaults when storage is unavailable. */ }
+  return {enabled: false, selected: null};
+}
+function saveConferencePrefs(view: ConferenceView): void {
+  try { window.localStorage.setItem(CONFERENCE_PREFS, JSON.stringify({enabled: view.enabled, selected: view.selected})); } catch { /* Keep working without storage. */ }
+}
 
 const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
 const GALLERY_PAGE = 60;
@@ -50,7 +63,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   const state: State = {
     page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", config: null,
     activity: {view: "gallery", items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, loading: false},
-    calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null}
+    calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
+    conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false}
   };
   let drawn: {page: Page; mode: Mode} | null = null;
   root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>Opening your workspace…</p></div>`;
@@ -306,7 +320,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function routines(s: Snapshot) {
     const done = s.habits.filter(h => h.completed).length;
     return `<div class="page-heading"><div><p class="eyebrow">SMALL THINGS, STEADY PROGRESS</p><h1>Routines & deadlines<span class="accent-dot">.</span></h1><p class="muted">Plant deadlines on your year, color them, and keep your daily habits close.</p></div>${button("add-deadline", "New deadline", icons.plus, "button primary")}</div>
-      ${yearCalendar({deadlines: s.deadlines, taskTypes: s.taskTypes, today: s.today.date, state: state.calendar})}
+      ${yearCalendar({deadlines: s.deadlines, taskTypes: s.taskTypes, today: s.today.date, state: state.calendar, conferences: state.conferences})}
       <section class="split-grid"><article class="card habits-card"><div class="section-heading"><h2>Today’s habits</h2><span class="pill light">${done}/${s.habits.length} complete</span></div>${s.habits.length ? `<div class="habit-hero">${ring({value: done / s.habits.length, size: 96, label: `${done} of ${s.habits.length} habits complete`, center: `${done}/${s.habits.length}`})}<p class="muted">${done === s.habits.length ? "Every habit done today. Lovely." : `${s.habits.length - done} to go. Small and steady.`}</p></div>${s.habits.map((h, i) => `<label class="habit-row ${h.completed ? "done" : ""}" style="--i:${i}"><input type="checkbox" data-habit="${e(h.id)}" ${h.completed ? "checked" : ""}><span class="habit-check" aria-hidden="true">${icons.check}</span><span class="habit-text">${e(h.description)}</span></label>`).join("")}` : empty("Add habits in Settings to build your daily rhythm.")}<p class="muted">Edit your habit definitions in Settings → Habits.</p></article><article class="card"><h2>All deadlines</h2>${deadlineList(s)}</article></section>`;
   }
   function activity(s: Snapshot) {
@@ -404,12 +418,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const card = root.querySelector("#calendar");
     const s = state.snapshot;
     if (!card || !s) return;
-    card.outerHTML = yearCalendar({deadlines: s.deadlines, taskTypes: s.taskTypes, today: s.today.date, state: state.calendar});
+    card.outerHTML = yearCalendar({deadlines: s.deadlines, taskTypes: s.taskTypes, today: s.today.date, state: state.calendar, conferences: state.conferences});
     bindCalendar(s);
     if (focusInput) root.querySelector<HTMLInputElement>('[name="popEvent"]')?.focus();
   }
   function openDay(day: string) {
     state.calendar.day = day;
+    state.conferences.menuOpen = false;
     state.calendar.year = Number(day.slice(0, 4));
     drawCalendar(true);
     if (!root.querySelector('[name="popEvent"]')) root.querySelector<HTMLElement>(".day-popover button")?.focus();
@@ -442,8 +457,59 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       state.notice = `Moved “${deadline.event}” to ${formatDate(day, {weekday: "short", month: "short", day: "numeric"})}.`;
     });
   }
+  /** Fetch conference dates for the viewed year; the server serves them from a weekly cache. */
+  async function loadConferences(refresh = false) {
+    const view = state.conferences;
+    if (!view.enabled || view.loading) return;
+    const year = state.calendar.year;
+    view.loading = true;
+    drawCalendar();
+    // Record the year that was asked for, so a mismatched reply can never trigger another fetch.
+    try { view.data = {...await request<ConferencePayload>("conference_calendar", refresh ? {year, refresh: true} : {year}), year}; }
+    catch (error) { view.data = {year, source: "https://github.com/huggingface/ai-deadlines", fetchedAt: null, error: error instanceof Error ? error.message : String(error), conferences: view.data?.conferences ?? [], events: []}; }
+    finally { view.loading = false; }
+    if (state.page === "routines" && root.isConnected) drawCalendar();
+  }
+  function bindConferences() {
+    const view = state.conferences;
+    // A redraw replaces the clicked control, so put keyboard focus back on its replacement.
+    const redraw = (focus: string) => { drawCalendar(); root.querySelector<HTMLElement>(focus)?.focus(); };
+    const update = (focus: string) => { saveConferencePrefs(view); redraw(focus); };
+    const toggle = root.querySelector<HTMLButtonElement>("[data-conf-toggle]");
+    if (toggle) toggle.onclick = () => { view.enabled = !view.enabled; view.menuOpen = view.enabled && !view.data; update("[data-conf-toggle]"); };
+    const menu = root.querySelector<HTMLButtonElement>("[data-conf-menu]");
+    if (menu) menu.onclick = () => { view.menuOpen = !view.menuOpen; redraw("[data-conf-menu]"); };
+    const ids = view.data?.conferences.map(conference => conference.id) ?? [];
+    root.querySelectorAll<HTMLInputElement>("[data-conf-pick]").forEach(box => box.onchange = () => {
+      const chosen = new Set(view.selected ?? ids);
+      if (box.checked) chosen.add(box.dataset.confPick!); else chosen.delete(box.dataset.confPick!);
+      view.selected = ids.filter(id => chosen.has(id));
+      if (view.selected.length === ids.length) view.selected = null;
+      update(`[data-conf-pick="${box.dataset.confPick}"]`);
+    });
+    const all = root.querySelector<HTMLButtonElement>("[data-conf-all]");
+    if (all) all.onclick = () => { view.selected = null; update("[data-conf-all]"); };
+    const none = root.querySelector<HTMLButtonElement>("[data-conf-none]");
+    if (none) none.onclick = () => { view.selected = []; update("[data-conf-none]"); };
+    const refresh = root.querySelector<HTMLButtonElement>("[data-conf-refresh]");
+    if (refresh) refresh.onclick = () => void loadConferences(true);
+    root.querySelectorAll<HTMLButtonElement>("[data-conf-day]").forEach(item => item.onclick = () => openDay(item.dataset.confDay!));
+    root.querySelectorAll<HTMLButtonElement>("[data-conf-add]").forEach(btn => btn.onclick = () => {
+      const event = view.data?.events.find(item => item.id === btn.dataset.confAdd);
+      if (!event) return;
+      const name = `${event.name} ${event.edition} ${event.label.toLowerCase()}`;
+      void action(async () => {
+        await request("deadline_add", {event: name, date: event.date, type: "", color: conferenceSwatch(event), repeat: ""});
+        state.calendar.flash = event.date;
+        await reload();
+        state.notice = `Added “${name}” to your deadlines.`;
+      });
+    });
+    if (view.enabled && !view.loading && view.data?.year !== state.calendar.year) void loadConferences();
+  }
   function bindCalendar(s: Snapshot) {
     const today = s.today.date;
+    bindConferences();
     if (state.calendar.flash) window.setTimeout(() => { state.calendar.flash = null; }, 1600);
     root.querySelectorAll<HTMLButtonElement>("[data-cal]").forEach(btn => btn.onclick = () => {
       const target = btn.dataset.cal;
@@ -537,15 +603,29 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = "Your existing workspace is ready."; status(); }, {signal});
   root.addEventListener("click", event => {
+    if (state.conferences.menuOpen && event.target instanceof Element && event.target.isConnected && !event.target.closest(".conf-control")) {
+      state.conferences.menuOpen = false;
+      drawCalendar();
+      return;
+    }
     if (!state.calendar.day || !(event.target instanceof Element) || !event.target.isConnected) return;
     if (event.target.closest(".day-popover, .day[data-day], .ddl-chip, dialog, [data-cal]")) return;
     state.calendar.day = null;
     drawCalendar();
   }, {signal});
-  root.addEventListener("keydown", event => {
+  // Listen on the document: redraws replace the focused control, and Safari never focuses clicked buttons,
+  // so Escape often reaches <body> rather than the workspace root.
+  document.addEventListener("keydown", event => {
+    if (!root.isConnected || event.defaultPrevented) return;
+    if (event.key === "Escape" && state.conferences.menuOpen) {
+      state.conferences.menuOpen = false;
+      drawCalendar();
+      root.querySelector<HTMLElement>("[data-conf-menu]")?.focus();
+      return;
+    }
     if (event.key !== "Escape" || !state.calendar.day || root.querySelector("dialog[open]")) return;
     const day = state.calendar.day;
     state.calendar.day = null;

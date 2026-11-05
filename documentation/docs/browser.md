@@ -32,7 +32,7 @@ files can be repaired in the browser.
 | --- | --- |
 | Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
-| Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule); add, edit, and remove deadlines with shared task types and urgency labels |
+| Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Browse a gallery of completed, cancelled, and dropped tasks with filters, search, and a daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
 | Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
@@ -86,6 +86,35 @@ use their type's color. The add/edit dialog also has a color picker; **Auto**
 clears the color. Repeating events store `repeat` (`weekly`, `biweekly`, or
 `monthly`); monthly ones also store `repeat_day`, so an event on the 31st returns
 to the 31st after a shorter month.
+
+### AI conference dates
+
+Turn on **AI conferences** above the calendar to see this year's dates for
+NeurIPS, ICLR, ICML, CVPR, ICCV, ECCV, ACL, EMNLP, COLM, AAAI, IJCAI, ICRA,
+IROS, RSS, and CoRL alongside your own deadlines. It is off until you turn it on.
+
+- A day with an abstract or paper submission deadline gets a small flag in the
+  conference's color. The days a conference takes place get a colored bar along
+  the bottom of each day.
+- Colors follow the field: violet for machine learning, blue for vision, aqua for
+  language, orange for general AI, and magenta for robotics.
+- Use the arrow beside the button to choose which conferences to show. **All**
+  and **None** select or clear every conference. Your choice is remembered in
+  this browser.
+- Deadlines are converted to your time zone, so a 23:59 AoE deadline can land on
+  the next day. A day's card shows both your local time and the original time,
+  links to the conference website, and has a **My deadlines** button that copies
+  an upcoming submission deadline into your own deadlines.
+- The side panel lists the next conference dates; click one to jump to that day.
+
+The dates come from the community-maintained
+[Hugging Face AI Deadlines](https://github.com/huggingface/ai-deadlines) list
+and may change after a conference announces them. The workspace downloads them
+only after you turn the layer on, and then at most once a week; **Refresh** in
+the picker downloads them now. They are cached in `cache/ai_conferences.json`
+inside your config root (`~/.schedule_management/config/` by default; about
+15 KB), so the calendar works offline with the last copy. Set
+`REMINDER_CONFERENCE_CACHE_PATH` to keep the cache somewhere else.
 
 ## Activity gallery and weekly overview
 

@@ -39,6 +39,33 @@ export type DeadlineItem = {
 
 export type RepeatRule = "weekly" | "biweekly" | "monthly";
 
+export type ConferenceKind = "abstract" | "submission" | "conference";
+export type ConferenceGroup = "ml" | "vision" | "language" | "ai" | "robotics";
+export type ConferenceEvent = {
+  id: string;
+  conference: string;
+  name: string;
+  group: ConferenceGroup;
+  edition: number;
+  fullName?: string | null;
+  link?: string | null;
+  place?: string | null;
+  kind: ConferenceKind;
+  label: string;
+  date: string;
+  endDate: string | null;
+  time: string | null;
+  sourceTime: string | null;
+};
+export type ConferencePayload = {
+  year: number;
+  source: string;
+  fetchedAt: string | null;
+  error: string | null;
+  conferences: {id: string; name: string; group: ConferenceGroup}[];
+  events: ConferenceEvent[];
+};
+
 export type HabitItem = {
   id: string;
   description: string;
