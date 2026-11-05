@@ -155,6 +155,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--port", type=int, default=0,
         help="Local port for a new server (default: automatically chosen)",
     )
+    web_parser.add_argument(
+        "--if-running", action="store_true",
+        help="Only restart a running server that is on outdated code; never start one or open a tab",
+    )
     web_parser.set_defaults(func=browser_command)
 
     # -------------------------------------------------------------------------

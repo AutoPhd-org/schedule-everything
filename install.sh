@@ -500,6 +500,15 @@ EOF
     log_success "LaunchAgent created at $LAUNCH_AGENT_PLIST"
 }
 
+# A browser workspace left running keeps the previous version's code in memory
+# while serving the new frontend from disk, so restart it on the new code.
+refresh_browser_workspace() {
+    if [[ -x "$INSTALL_DIR/rmd" ]]; then
+        "$INSTALL_DIR/rmd" web --if-running \
+            || log_warning "Could not restart the running browser workspace. Run 'reminder web' to restart it."
+    fi
+}
+
 # Request permissions (platform-specific)
 request_permissions() {
     if [[ "$OS_TYPE" == "macos" ]]; then
@@ -752,6 +761,7 @@ main() {
     
     request_permissions
     create_scripts
+    refresh_browser_workspace
     test_installation
     setup_autocompletion
     display_usage
