@@ -2,6 +2,7 @@
   "name": "documentation",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "bun@1.4.3",
   "scripts": {
     "docusaurus": "docusaurus",
     "start": "docusaurus start",

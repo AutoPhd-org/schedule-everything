@@ -161,4 +161,4 @@ Use these when you need to answer a focused question quickly.
 
 The local browser interface lives in `web/` (Python services/server) and the
 repository-level `web/` (TypeScript source). Launch with `rmd web`. Run
-`npm run build` after frontend edits to refresh the bundled static assets.
+`bun run build` after frontend edits to refresh the bundled static assets.

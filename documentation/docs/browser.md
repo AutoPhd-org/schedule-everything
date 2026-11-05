@@ -220,17 +220,21 @@ The background reminder service and its system notifications remain available.
 ## Developing the browser interface
 
 ```bash
-npm ci
-npm run build
-npm test
+bun install
+bun run build
+bun run test
 uv run pytest -q
 uv run rmd web
 ```
 
-Frontend source is in `web/`; `npm run build` writes assets into
+Use `bun run test`, not `bun test`: the project's tests run on Vitest, while
+`bun test` starts Bun's own test runner. Dependencies are locked in `bun.lock`;
+the build tools run on Node.js 20 or newer.
+
+Frontend source is in `web/`; `bun run build` writes assets into
 `src/schedule_management/web/static/`. These assets are bundled with the Python
 package, so end users do not need Node.js or a frontend development server.
 Commit the rebuilt assets with frontend changes. For frontend development, run
-`rmd web --port 8765 --no-open`, then `npm run dev`; open the development URL
+`rmd web --port 8765 --no-open`, then `bun run dev`; open the development URL
 with the printed `#token=...` fragment. The Vite proxy routes local API requests
 to port 8765.
