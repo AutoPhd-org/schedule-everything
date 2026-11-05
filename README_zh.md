@@ -258,12 +258,12 @@ uv venv .venv && source .venv/bin/activate
 uv pip install -e .
 uv run pytest -q        # Python 测试
 
-npm ci
-npm test                # 浏览器工作区测试
-npm run build           # 重新构建内置的浏览器资源
+bun install
+bun run test            # 浏览器工作区测试（Vitest；直接运行 `bun test` 会调用 Bun 自带的测试器）
+bun run build           # 重新构建内置的浏览器资源
 ```
 
-浏览器前端位于 `web/`，`npm run build` 会把打包结果写入 `src/schedule_management/web/static/`，并随 Python 包一起发布。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
+JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。浏览器前端位于 `web/`，`bun run build` 会把打包结果写入 `src/schedule_management/web/static/`，并随 Python 包一起发布。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
 
 ## 许可证
 

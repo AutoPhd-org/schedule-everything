@@ -283,12 +283,14 @@ uv venv .venv && source .venv/bin/activate
 uv pip install -e .
 uv run pytest -q        # Python tests
 
-npm ci
-npm test                # browser workspace tests
-npm run build           # rebuild the bundled browser assets
+bun install
+bun run test            # browser workspace tests (Vitest; plain `bun test` is Bun's own runner)
+bun run build           # rebuild the bundled browser assets
 ```
 
-The browser frontend lives in `web/`, and `npm run build` writes the bundle
+JavaScript dependencies are managed with [Bun](https://bun.sh) (`bun.lock`);
+the tools themselves run on Node.js 20 or newer. The browser frontend lives in
+`web/`, and `bun run build` writes the bundle
 into `src/schedule_management/web/static/`, which ships with the Python
 package. The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
 

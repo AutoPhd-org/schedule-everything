@@ -20,7 +20,9 @@ config/settings.toml
 config/tasks.json
 config/habits.toml
 
-# pnpm (since the project officially uses npm/package-lock.json)
+# JavaScript dependencies are managed with Bun (bun.lock); ignore other managers' lockfiles.
+package-lock.json
+yarn.lock
 pnpm-lock.yaml
 pnpm-workspace.yaml
 
