@@ -6,11 +6,12 @@ import { addDays, e, empty, formatDate, formatHours, icons, parseLocal, sw, type
 
 export type HistoryStatus = "all" | "completed" | "cancelled" | "dropped";
 export type HistorySort = "newest" | "oldest" | "priority" | "longest";
+export type HistoryLayout = "tree" | "gallery";
 export type GalleryFilter = {status: HistoryStatus; type: string | null; query: string; day: string | null; sort: HistorySort};
 export const defaultGalleryFilter = (): GalleryFilter => ({status: "all", type: null, query: "", day: null, sort: "newest"});
 
-const STATUS_LABEL = {completed: "Completed", cancelled: "Cancelled", dropped: "Dropped"} as const;
-const STATUS_ICON = {completed: icons.check, cancelled: icons.ban, dropped: icons.dropped} as const;
+export const STATUS_LABEL = {completed: "Completed", cancelled: "Cancelled", dropped: "Dropped"} as const;
+export const STATUS_ICON = {completed: icons.check, cancelled: icons.ban, dropped: icons.dropped} as const;
 const OUTCOME_TONE = {completed: "sw-aqua", cancelled: "sw-yellow", dropped: "sw-magenta"} as const;
 type Outcome = keyof typeof STATUS_LABEL;
 
@@ -100,22 +101,26 @@ export function weekEntry(overview: WeeklyOverview | null): string {
     <span class="we-cta">Open your week ${icons.arrow}</span><span class="we-blob" aria-hidden="true"></span></button>`;
 }
 
-export function galleryView(options: {items: HistoryItem[] | null; overview: WeeklyOverview | null; filter: GalleryFilter; limit: number; today: string; taskTypes: Record<string, string>}): string {
-  const {items, overview, filter, today, taskTypes} = options;
+/** The history page: weekly entry and rhythm on top, then filters and the history itself, drawn as a tree or a gallery.
+ *  `region` is the rendered history (see galleryGroups and tree.ts's treeView). */
+export function galleryView(options: {items: HistoryItem[] | null; overview: WeeklyOverview | null; filter: GalleryFilter; layout: HistoryLayout; region: string; today: string; taskTypes: Record<string, string>}): string {
+  const {items, overview, filter, layout, today, taskTypes} = options;
   if (!items) return `<section class="activity-top">${weekEntry(overview)}<article class="card rhythm-card loading-shimmer" aria-busy="true"><h2>Your rhythm</h2><p class="muted">Loading your history…</p></article></section>`;
   const counts = {all: items.length, completed: 0, cancelled: 0, dropped: 0};
   for (const item of items) counts[statusOf(item)]++;
   const usedTypes = [...new Set(items.map(item => item.type).filter((type): type is string => !!type))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
   const typeName = (id: string) => taskTypes[id] ?? items.find(item => item.type === id)?.typeName ?? id;
-  return `<section class="activity-top">${weekEntry(overview)}<article class="card rhythm-card"><div class="section-heading compact"><div><h2>Your rhythm</h2><p class="muted">Each square is a day. Pick one to see what you finished.</p></div></div>${rhythm(items, today, filter.day)}</article></section>
+  const tree = layout === "tree";
+  return `<section class="activity-top">${weekEntry(overview)}<article class="card rhythm-card"><div class="section-heading compact"><div><h2>Your rhythm</h2><p class="muted">${tree ? "Each square is a day. Pick one to jump there in the tree." : "Each square is a day. Pick one to see what you finished."}</p></div></div>${rhythm(items, today, filter.day)}</article></section>
     <div class="gallery-filters" role="toolbar" aria-label="Filter task history">
+      <div class="layout-switch" role="group" aria-label="History layout">${([["tree", "Tree", icons.tree], ["gallery", "Gallery", icons.gallery]] as const).map(([id, label, image]) => `<button type="button" data-layout="${id}" aria-pressed="${layout === id}">${image}<span>${label}</span></button>`).join("")}</div>
       <div class="chip-row" role="group" aria-label="Outcome">${(["all", "completed", "cancelled", "dropped"] as const).map(status => `<button type="button" class="chip ${status === "all" ? "" : OUTCOME_TONE[status]}" data-filter-status="${status}" aria-pressed="${filter.status === status}">${status === "all" ? icons.gallery : STATUS_ICON[status]}${status === "all" ? "Everything" : STATUS_LABEL[status]}<b>${counts[status]}</b></button>`).join("")}</div>
       ${usedTypes.length > 1 ? `<div class="chip-row" role="group" aria-label="Task type">${usedTypes.map(type => `<button type="button" class="chip type-chip ${sw(typeSwatch(taskTypes, type))}" data-filter-type="${e(type)}" aria-pressed="${filter.type === type}"><i></i>${e(typeName(type))}</button>`).join("")}</div>` : ""}
       <label class="search-pill">${icons.search}<span class="sr-only">Search history</span><input name="gallerySearch" placeholder="Search your wins…" value="${e(filter.query)}"></label>
-      <label class="sort-pill"><span class="sr-only">Sort</span><select name="gallerySort">${([["newest", "Newest first"], ["oldest", "Oldest first"], ["priority", "Most important"], ["longest", "Longest journey"]] as const).map(([value, label]) => `<option value="${value}" ${filter.sort === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      ${tree ? "" : `<label class="sort-pill"><span class="sr-only">Sort</span><select name="gallerySort">${([["newest", "Newest first"], ["oldest", "Oldest first"], ["priority", "Most important"], ["longest", "Longest journey"]] as const).map(([value, label]) => `<option value="${value}" ${filter.sort === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
       ${filter.day ? `<button type="button" class="chip active-day" data-action="clear-day">${icons.schedule}${e(formatDate(filter.day, {weekday: "short", month: "short", day: "numeric"}))}${icons.close}</button>` : ""}
     </div>
-    <section id="gallery" class="gallery-region" aria-live="polite">${galleryGroups(items, filter, options.limit, today, taskTypes)}</section>`;
+    <section id="history" class="gallery-region ${tree ? "tree-region" : ""}" aria-live="${tree ? "off" : "polite"}">${options.region}</section>`;
 }
 
 export function galleryGroups(items: HistoryItem[], filter: GalleryFilter, limit: number, today: string, taskTypes: Record<string, string>): string {

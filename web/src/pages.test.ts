@@ -1,6 +1,7 @@
 // Tests for P/J overview layouts, the activity gallery and weekly overview, and the year calendar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
+import { axisTones, layoutTree, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
 import type { BridgeClient, ConferencePayload, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
@@ -112,6 +113,8 @@ describe("planning modes", () => {
 });
 
 describe("activity gallery", () => {
+  beforeEach(() => window.localStorage.setItem("schedule-everything-history-layout", "gallery"));
+  afterEach(() => window.localStorage.clear());
   async function openActivity() {
     await renderApp(root, client);
     click('[data-page="activity"]');
@@ -176,6 +179,98 @@ describe("activity gallery", () => {
     expect(send).toHaveBeenCalledWith("weekly_overview", {date: "2026-09-28"});
     click('[data-action="close-week"]'); await flush();
     expect(root.querySelector(".gallery")).not.toBeNull();
+  });
+});
+
+describe("activity tree", () => {
+  beforeEach(() => window.localStorage.clear());
+  async function openActivity() {
+    await renderApp(root, client);
+    click('[data-page="activity"]');
+    await flush(); await flush();
+  }
+  const titles = () => [...root.querySelectorAll(".tree-node strong")].map(el => el.textContent);
+
+  it("is the default layout: one node per event, newest first, in type lanes on both sides of the trunk", async () => {
+    await openActivity();
+    expect(root.querySelector('[data-layout="tree"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".gallery-card")).toBeNull();
+    expect(root.querySelector('[name="gallerySort"]')).toBeNull();
+    expect(titles()).toEqual(["Ship release", "Wrong task", "Draft essay", "<img src=x onerror=alert(1)>"]);
+    expect(root.querySelector(".tree-node img")).toBeNull();
+    const nodes = [...root.querySelectorAll<HTMLElement>(".tree-node")];
+    expect(nodes.map(node => node.className.match(/side-[lr]/)![0])).toEqual(["side-l", "side-l", "side-r", "side-l"]);
+    expect(nodes.map(node => node.style.getPropertyValue("--depth"))).toEqual(["1", "1", "1", "2"]);
+    expect(nodes[0].className).toContain("sw-blue");
+    expect(nodes[1].className).toContain("status-cancelled");
+    const ys = nodes.map(node => Number(node.dataset.y));
+    expect(ys).toEqual([...ys].sort((a, b) => a - b));
+    expect([...root.querySelectorAll(".tree-lane-head")].map(el => el.textContent)).toEqual(["Coding", "Writing", "Reading"]);
+    expect([...root.querySelectorAll(".tree-mark")].map(el => el.textContent)).toEqual(["October 2026", "Today", "3 quiet days", "Thu, Oct 1", "8 quiet days", "September 2026", "Tue, Sep 22", "20 quiet days", "Tue, Sep 1"]);
+    expect(root.querySelector<HTMLElement>(".tree-trunk")?.getAttribute("style")).toContain("var(--c-blue)");
+    expect(root.querySelectorAll(".tm-ticks line")).toHaveLength(4);
+  });
+
+  it("opens events in newest-first order and keeps filters and search", async () => {
+    await openActivity();
+    click('.tree-node [data-history="2"]');
+    const dialog = root.querySelector<HTMLDialogElement>("dialog.lightbox")!;
+    expect(dialog.querySelector("h2")?.textContent).toBe("Wrong task");
+    expect(dialog.textContent).toContain("2 of 4");
+    dialog.querySelector<HTMLButtonElement>('[data-lightbox="next"]')!.click();
+    expect(dialog.querySelector("h2")?.textContent).toBe("Draft essay");
+    dialog.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
+    click('[data-filter-status="completed"]');
+    expect(titles()).toEqual(["Ship release", "Draft essay"]);
+    const search = root.querySelector<HTMLInputElement>('[name="gallerySearch"]')!;
+    search.value = "essay"; search.dispatchEvent(new Event("input"));
+    expect(titles()).toEqual(["Draft essay"]);
+    expect(root.querySelector('[name="gallerySearch"]')).toBe(search);
+    expect(root.querySelector(".tree.single")).not.toBeNull();
+  });
+
+  it("jumps to a rhythm day instead of filtering, and remembers the layout", async () => {
+    await openActivity();
+    click('[data-heat-day="2026-10-01"]');
+    expect(root.querySelector('[data-action="clear-day"]')).toBeNull();
+    expect(titles()).toHaveLength(4);
+    expect(root.querySelector('.tree-node[data-day="2026-10-01"]')?.classList.contains("flash")).toBe(true);
+    click('[data-layout="gallery"]');
+    expect(root.querySelectorAll(".gallery-card")).toHaveLength(4);
+    expect(window.localStorage.getItem("schedule-everything-history-layout")).toBe("gallery");
+    click('[data-layout="tree"]');
+    expect(root.querySelectorAll(".tree-node")).toHaveLength(4);
+  });
+
+  it("highlights the events at the center of the view as the tree scrolls", async () => {
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {configurable: true, get() { return this.hasAttribute("data-tree-viewport") ? 400 : 0; }});
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 1; });
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({matches: query.includes("reduced-motion"), addEventListener: vi.fn()})));
+    try {
+      await openActivity();
+      const viewport = root.querySelector<HTMLElement>("[data-tree-viewport]")!;
+      const nodes = [...root.querySelectorAll<HTMLElement>(".tree-node")];
+      expect(root.querySelector<HTMLElement>(".tree-canvas")?.style.getPropertyValue("--pad")).toBe("200px");
+      expect(nodes[0].classList.contains("is-focus")).toBe(true);
+      expect(root.querySelector("[data-tree-range]")?.textContent).toContain("Oct");
+      expect(root.querySelector('[data-heat-day="2026-10-05"]')?.classList.contains("in-view")).toBe(true);
+      let top = Number(nodes[2].dataset.y);
+      Object.defineProperty(viewport, "scrollTop", {configurable: true, get: () => top, set: value => { top = value; }});
+      viewport.dispatchEvent(new Event("scroll"));
+      expect(nodes[0].classList.contains("is-focus")).toBe(false);
+      expect(nodes[2].classList.contains("is-focus")).toBe(true);
+      expect(nodes[2].style.getPropertyValue("--f")).toBe("1.000");
+      expect(root.querySelector("[data-tree-summary]")?.textContent).toMatch(/Writing/);
+      expect(root.querySelector<HTMLElement>(".tree")?.style.getPropertyValue("--view-c")).toBe("var(--c-orange)");
+      expect(root.querySelector('[data-heat-day="2026-09-22"]')?.classList.contains("in-view")).toBe(true);
+      expect(root.querySelector('[data-heat-day="2026-10-05"]')?.classList.contains("in-view")).toBe(false);
+      expect(root.querySelector<HTMLElement>("[data-tree-window]")?.style.height).not.toBe("");
+      nodes[2].querySelector<HTMLElement>(".tn-card")!.dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowDown", bubbles: true}));
+      expect(document.activeElement).toBe(nodes[3].querySelector(".tn-card"));
+      expect(top).toBe(Number(nodes[3].dataset.y));
+    } finally {
+      delete (HTMLElement.prototype as {clientHeight?: number}).clientHeight;
+    }
   });
 });
 
@@ -391,6 +486,27 @@ describe("page helpers", () => {
     expect(deadlineSwatch(snapshot.deadlines[1], snapshot.taskTypes)).toBe("red");
     expect(deadlineSwatch(snapshot.deadlines[0], snapshot.taskTypes)).toBe("orange");
     expect(deadlineSwatch({...snapshot.deadlines[0], type: null, color: "url(x)"}, snapshot.taskTypes)).toBe("violet");
+  });
+
+  it("colors the trunk by the type that dominates nearby events", () => {
+    const at = (type: string, day: number) => ({...history[0], type, endedAt: `2026-10-${String(day).padStart(2, "0")}T10:00:00`});
+    const run = [at("1", 9), at("1", 8), at("2", 7), at("1", 6), at("1", 5)];
+    const tones = axisTones(run, snapshot.taskTypes);
+    expect(tones[2].type).toBe("1");
+    expect(tones[2].share).toBeGreaterThan(0.5);
+    expect(tones[0]).toMatchObject({type: "1", tone: "blue"});
+    // A tie goes to the event's own type.
+    expect(axisTones([at("1", 9), at("2", 9)], snapshot.taskTypes, 1).map(tone => tone.type)).toEqual(["1", "2"]);
+  });
+
+  it("gives every type its own lane, alternating sides of the trunk", () => {
+    const lanes = treeLanes(history, snapshot.taskTypes);
+    expect(lanes.map(lane => [lane.name, lane.side, lane.depth])).toEqual([["Coding", -1, 1], ["Writing", 1, 1], ["Reading", -1, 2]]);
+    expect(treeLanes([history[1]], snapshot.taskTypes)[0]).toMatchObject({side: 1, depth: 1});
+    const layout = layoutTree(filterHistory(history, defaultGalleryFilter()), snapshot.taskTypes, "2026-10-05");
+    expect(layout.height).toBe(layout.nodes[3].y);
+    expect(layout.top).toBeLessThan(layout.nodes[0].marks[0].y);
+    for (let i = 1; i < layout.nodes.length; i++) expect(layout.nodes[i].y - layout.nodes[i - 1].y).toBeGreaterThanOrEqual(64);
   });
 
   it("sorts and groups history by recency", () => {

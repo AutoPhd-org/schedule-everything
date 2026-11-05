@@ -1,6 +1,6 @@
 ---
 sidebar_position: 5
-description: The local browser workspace opened by rmd web — overview, schedule, year calendar, activity gallery, weekly overview, and settings.
+description: The local browser workspace opened by rmd web — overview, schedule, year calendar, activity tree and gallery, weekly overview, and settings.
 ---
 
 # Browser workspace
@@ -33,7 +33,7 @@ files can be repaired in the browser.
 | Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add, edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
-| Activity | Browse a gallery of completed, cancelled, and dropped tasks with filters, search, and a daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
+| Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; open any task for its full story; open the weekly overview to compare a week with earlier weeks |
 | Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
 ## J mode and P mode
@@ -116,7 +116,22 @@ inside your config root (`~/.schedule_management/config/` by default; about
 15 KB), so the calendar works offline with the last copy. Set
 `REMINDER_CONFERENCE_CACHE_PATH` to keep the cache somewhere else.
 
-## Activity gallery and weekly overview
+## Activity tree, gallery, and weekly overview
+
+The Activity page opens on a tree: a vertical time axis with your newest task
+at the top. Scroll it to travel back in time. Each task is a node on a branch
+off the trunk, and each task type keeps its own lane and color on either side.
+Bigger dots are more important tasks; hollow dots are cancelled, and dashed
+ones were dropped. The trunk takes the color of whichever type dominates the
+tasks around it, so long stretches of one kind of work stand out at a glance.
+
+A band across the middle of the tree marks where you are looking. Tasks inside
+it light up, and the header names the dates in view and which type leads them.
+The map beside the tree shows your whole history with a window over the current
+view: press or drag on it to jump. The days in view are outlined on the rhythm
+grid, and clicking a day there brings the tree to it. With a task selected,
+press the up and down arrow keys to step between tasks. Your choice of tree or
+gallery is remembered in this browser.
 
 The gallery shows every finished task as a card with generated artwork in its
 type's color. More important completed tasks get larger cards; cancelled and

@@ -1,10 +1,11 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
-import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, weeklyView, type GalleryFilter, type HistoryStatus, type HistorySort } from "./activity";
+import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { bindTilt, burst } from "./effects";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
+import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, hash, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
 
@@ -13,7 +14,7 @@ export { escapeHtml };
 type Page = "today" | "schedule" | "routines" | "activity" | "settings";
 type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
-type ActivityState = {view: "gallery" | "week"; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; loading: boolean};
+type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; treeLimit: number; loading: boolean};
 type AgentTab = "claude" | "codex" | "antigravity";
 type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView};
 
@@ -29,9 +30,18 @@ function loadConferencePrefs(): Pick<ConferenceView, "enabled" | "selected"> {
 function saveConferencePrefs(view: ConferenceView): void {
   try { window.localStorage.setItem(CONFERENCE_PREFS, JSON.stringify({enabled: view.enabled, selected: view.selected})); } catch { /* Keep working without storage. */ }
 }
+const HISTORY_LAYOUT = "schedule-everything-history-layout";
+/** Tree or gallery for the activity history is also a per-browser preference; the tree is the default. */
+function loadHistoryLayout(): HistoryLayout {
+  try { return window.localStorage.getItem(HISTORY_LAYOUT) === "gallery" ? "gallery" : "tree"; } catch { return "tree"; }
+}
+function saveHistoryLayout(layout: HistoryLayout): void {
+  try { window.localStorage.setItem(HISTORY_LAYOUT, layout); } catch { /* Keep working without storage. */ }
+}
 
 const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
 const GALLERY_PAGE = 60;
+const TREE_PAGE = 300;
 const REPOSITORY = "AutoPhd-org/schedule-everything";
 const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string}> = {
   claude: {name: "Claude Code", steps: [`claude plugin marketplace add ${REPOSITORY}`, "claude plugin install schedule-everything@schedule-everything"], note: "Inside a Claude Code session you can run the same steps as /plugin marketplace add and /plugin install."},
@@ -62,7 +72,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   applyTheme(appearance);
   const state: State = {
     page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", config: null,
-    activity: {view: "gallery", items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, loading: false},
+    activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false}
   };
@@ -326,7 +336,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function activity(s: Snapshot) {
     const a = state.activity;
     if (a.view === "week" && a.week) return `<div class="page-heading"><div><p class="eyebrow">${icons.spark} WEEKLY OVERVIEW</p><h1>Your week in color<span class="accent-dot">.</span></h1><p class="muted">Compared with last week and the weeks before it.</p></div></div>${weeklyView(a.week)}`;
-    return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">A gallery of everything you finished, cancelled, or let go. Open any piece to see its story.</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, limit: a.limit, today: s.today.date, taskTypes: s.taskTypes})}`;
+    const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Open any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Open any piece to see its story.";
+    return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
   }
   function settings(s: Snapshot) {
     const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
@@ -335,22 +346,58 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   // ----- Activity bindings ---------------------------------------------------
 
+  /** History in display order: the tree always runs newest first, the gallery follows the chosen sort. */
+  function visibleHistory(): HistoryItem[] {
+    const a = state.activity;
+    return filterHistory(a.items ?? [], a.layout === "tree" ? {...a.filter, sort: "newest"} : a.filter);
+  }
+  function historyRegion(s: Snapshot): string {
+    const a = state.activity;
+    const items = a.items ?? [];
+    if (a.layout === "gallery") return galleryGroups(items, a.filter, a.limit, s.today.date, s.taskTypes);
+    const visible = visibleHistory();
+    if (!visible.length) return empty(items.length ? "Nothing matches these filters. Try another outcome or type." : "Your first small win will appear here.");
+    const position = new Map(items.map((item, i) => [item, i]));
+    return treeView({items: visible.slice(0, a.treeLimit), total: visible.length, indexOf: item => position.get(item) ?? -1, taskTypes: s.taskTypes, today: s.today.date, step: TREE_PAGE});
+  }
+  function redrawRegion(s: Snapshot, keepScroll = false) {
+    const region = root.querySelector<HTMLElement>("#history");
+    if (!region) return;
+    const top = root.querySelector<HTMLElement>("[data-tree-viewport]")?.scrollTop ?? 0;
+    region.innerHTML = historyRegion(s);
+    bindRegion(s);
+    const viewport = root.querySelector<HTMLElement>("[data-tree-viewport]");
+    if (viewport && keepScroll) viewport.scrollTop = top;
+  }
   function redrawGallery() {
     draw();
-    root.querySelector("#gallery")?.classList.add("reflow");
+    root.querySelector("#history")?.classList.add("reflow");
   }
   function bindActivity(s: Snapshot) {
     const a = state.activity;
-    root.querySelectorAll<HTMLButtonElement>("[data-filter-status]").forEach(btn => btn.onclick = () => { a.filter.status = btn.dataset.filterStatus as HistoryStatus; a.limit = GALLERY_PAGE; redrawGallery(); });
-    root.querySelectorAll<HTMLButtonElement>("[data-filter-type]").forEach(btn => btn.onclick = () => { a.filter.type = a.filter.type === btn.dataset.filterType ? null : btn.dataset.filterType!; a.limit = GALLERY_PAGE; redrawGallery(); });
-    root.querySelectorAll<HTMLButtonElement>("[data-heat-day]").forEach(btn => btn.onclick = () => { a.filter.day = a.filter.day === btn.dataset.heatDay ? null : btn.dataset.heatDay!; a.limit = GALLERY_PAGE; redrawGallery(); });
+    const resetPaging = () => { a.limit = GALLERY_PAGE; a.treeLimit = TREE_PAGE; };
+    root.querySelectorAll<HTMLButtonElement>("[data-filter-status]").forEach(btn => btn.onclick = () => { a.filter.status = btn.dataset.filterStatus as HistoryStatus; resetPaging(); redrawGallery(); });
+    root.querySelectorAll<HTMLButtonElement>("[data-filter-type]").forEach(btn => btn.onclick = () => { a.filter.type = a.filter.type === btn.dataset.filterType ? null : btn.dataset.filterType!; resetPaging(); redrawGallery(); });
+    root.querySelectorAll<HTMLButtonElement>("[data-layout]").forEach(btn => btn.onclick = () => {
+      const layout = btn.dataset.layout as HistoryLayout;
+      if (layout === a.layout) return;
+      a.layout = layout;
+      saveHistoryLayout(layout);
+      redrawGallery();
+      root.querySelector<HTMLElement>(`[data-layout="${layout}"]`)?.focus();
+    });
+    // In the tree a day is a place to travel to; in the gallery it filters the cards.
+    root.querySelectorAll<HTMLButtonElement>("[data-heat-day]").forEach(btn => btn.onclick = () => {
+      if (a.layout === "tree" && !a.filter.day) { scrollTreeTo(root, btn.dataset.heatDay!); return; }
+      a.filter.day = a.filter.day === btn.dataset.heatDay ? null : btn.dataset.heatDay!;
+      a.limit = GALLERY_PAGE;
+      redrawGallery();
+    });
     root.querySelector<HTMLSelectElement>('[name="gallerySort"]')?.addEventListener("change", event => { a.filter.sort = (event.target as HTMLSelectElement).value as HistorySort; redrawGallery(); });
     root.querySelector<HTMLInputElement>('[name="gallerySearch"]')?.addEventListener("input", event => {
       a.filter.query = (event.target as HTMLInputElement).value;
-      a.limit = GALLERY_PAGE;
-      const region = root.querySelector<HTMLElement>("#gallery")!;
-      region.innerHTML = galleryGroups(a.items ?? [], a.filter, a.limit, s.today.date, s.taskTypes);
-      bindGallery(s);
+      resetPaging();
+      redrawRegion(s);
     });
     root.querySelectorAll<HTMLButtonElement>("[data-week]").forEach(btn => btn.onclick = () => void action(async () => {
       if (btn.dataset.week === "today" || !a.week) a.week = a.summary;
@@ -360,28 +407,28 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       }
       draw(true);
     }));
-    bindGallery(s);
+    bindRegion(s);
     const rhythm = root.querySelector<HTMLElement>(".rhythm");
     if (rhythm) rhythm.scrollLeft = rhythm.scrollWidth;
   }
-  function bindGallery(s: Snapshot) {
+  function bindRegion(s: Snapshot) {
     const a = state.activity;
     root.querySelectorAll<HTMLElement>("[data-history]").forEach(card => {
       card.onclick = () => openLightbox(Number(card.dataset.history), s);
-      card.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openLightbox(Number(card.dataset.history), s); } };
+      if (card.tagName !== "BUTTON") card.onkeydown = event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openLightbox(Number(card.dataset.history), s); } };
     });
     const more = root.querySelector<HTMLButtonElement>("[data-gallery-more]");
-    if (more) more.onclick = () => {
-      a.limit += GALLERY_PAGE;
-      const region = root.querySelector<HTMLElement>("#gallery")!;
-      region.innerHTML = galleryGroups(a.items ?? [], a.filter, a.limit, s.today.date, s.taskTypes);
-      bindGallery(s);
-    };
-    bindTilt(root, ".gallery-card");
+    if (more) more.onclick = () => { a.limit += GALLERY_PAGE; redrawRegion(s); };
+    const grow = root.querySelector<HTMLButtonElement>("[data-tree-more]");
+    if (grow) grow.onclick = () => { a.treeLimit += TREE_PAGE; redrawRegion(s, true); };
+    if (a.layout === "gallery") { bindTilt(root, ".gallery-card"); return; }
+    // Days on the rhythm grid that are in the tree's view light up as you scroll.
+    const cells = [...root.querySelectorAll<HTMLElement>(".heat-cell[data-heat-day]")];
+    bindTree(root, range => cells.forEach(cell => cell.classList.toggle("in-view", !!range && cell.dataset.heatDay! >= range.from && cell.dataset.heatDay! <= range.to)));
   }
   function openLightbox(index: number, s: Snapshot) {
     const items = state.activity.items ?? [];
-    const visible = filterHistory(items, state.activity.filter);
+    const visible = visibleHistory();
     let position = visible.indexOf(items[index]);
     if (position < 0) return;
     root.querySelector("dialog.lightbox")?.remove();
