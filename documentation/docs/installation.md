@@ -43,7 +43,7 @@ The script:
 *   downloads the repository to a temporary directory when run through `curl`;
 *   installs the app and a Python environment (managed by `uv`) in `~/SCHEDULE_MANAGEMENT`, including the `rmd` wrapper, logs, and a copy of the agent plugin;
 *   creates your config root in `~/.schedule_management/config` with a first `user_config_0` version (an existing config is kept);
-*   prompts for missing required config values one by one;
+*   prompts for missing required config values one by one (time blocks, reminders, and task types are your own lists, so entries you removed are not asked for again; their examples are offered only when a whole section is missing);
 *   registers the background service (LaunchAgent on macOS, systemd user service on Linux).
 
 Then start the service:

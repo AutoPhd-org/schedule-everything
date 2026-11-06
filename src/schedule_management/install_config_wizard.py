@@ -33,6 +33,11 @@ REQUIRED_CONFIG_FILES = OrderedDict(
     ]
 )
 
+# Sections whose keys you choose yourself: time block names, reminder names, and
+# task type IDs. The template's entries there are only examples, so an entry you
+# removed is not missing; the examples are offered only when the whole section is.
+USER_DEFINED_SECTIONS = frozenset({"time_blocks", "time_points", "task_types"})
+
 
 @dataclass(frozen=True)
 class SettingEntry:
@@ -148,6 +153,8 @@ def _collect_missing_settings(
         current_section_data = current_data.get(section, {})
         if not isinstance(current_section_data, dict):
             current_section_data = {}
+        if section in USER_DEFINED_SECTIONS and current_section_data:
+            continue
 
         for key, default_value in template_section_data.items():
             if key not in current_section_data:
