@@ -15,19 +15,26 @@ export const CONFERENCE_GROUPS: [ConferenceGroup, string, Swatch][] = [["ml", "M
 const groupSwatch = (group: ConferenceGroup): Swatch => CONFERENCE_GROUPS.find(([id]) => id === group)?.[2] ?? "violet";
 export const conferenceSwatch = (event: ConferenceEvent) => groupSwatch(event.group);
 
-/** Conference events by day for the selected conferences; a conference spans every day it runs. */
+/** Conference events by day for the selected conferences; conferences and rebuttal periods span every day they run. */
 export function conferencesByDay(view: ConferenceView | undefined): Map<string, ConferenceEvent[]> {
   const days = new Map<string, ConferenceEvent[]>();
   if (!view?.enabled || !view.data) return days;
   const add = (day: string, event: ConferenceEvent) => { if (!days.has(day)) days.set(day, []); days.get(day)!.push(event); };
   for (const event of view.data.events) {
     if (view.selected && !view.selected.includes(event.conference)) continue;
-    if (event.kind !== "conference" || !event.endDate) { add(event.date, event); continue; }
+    if (!event.endDate) { add(event.date, event); continue; }
     for (let day = event.date, guard = 0; day <= event.endDate && guard < 40; day = addDays(day, 1), guard++) add(day, event);
   }
   return days;
 }
-const conferenceTitle = (event: ConferenceEvent) => event.kind === "conference" ? `${event.name} ${event.edition}${event.place ? ` · ${event.place}` : ""}` : `${event.name} ${event.edition} ${event.label.toLowerCase()}${event.time ? ` (${event.time})` : ""}`;
+/** Abstract and paper deadlines get the flag and the "My deadlines" button; rebuttals and conference days do not. */
+const isDeadline = (event: ConferenceEvent) => event.kind === "abstract" || event.kind === "submission";
+const shortDate = (day: string) => formatDate(day, {month: "short", day: "numeric"});
+const dateSpan = (event: ConferenceEvent) => `${shortDate(event.date)} – ${shortDate(event.endDate ?? event.date)}`;
+/** Lowercase a label for a sentence but keep acronyms: "Author + Reviewer + AC Discussion Period" → "author + reviewer + AC discussion period". */
+const phrase = (label: string) => label.replace(/\b[A-Z][a-z]+\b/g, word => word.toLowerCase());
+const conferenceTitle = (event: ConferenceEvent) => event.kind === "conference" ? `${event.name} ${event.edition}${event.place ? ` · ${event.place}` : ""}`
+  : `${event.name} ${event.edition} ${phrase(event.label)}${event.endDate ? `, ${dateSpan(event)}` : ""}${event.time ? ` (${event.endDate ? "ends " : ""}${event.time})` : ""}`;
 
 function conferenceControl(view: ConferenceView | undefined): string {
   if (!view) return "";
@@ -41,16 +48,16 @@ function conferenceControl(view: ConferenceView | undefined): string {
         return members.length ? `<fieldset class="conf-group sw-${swatch}"><legend><i></i>${label}</legend>${members.map(conference => `<label class="conf-pick"><input type="checkbox" data-conf-pick="${e(conference.id)}" ${!view.selected || view.selected.includes(conference.id) ? "checked" : ""}><span>${e(conference.name)}</span></label>`).join("")}</fieldset>` : "";
       }).join("") : `<p class="muted">${view.loading ? "Loading the conference list…" : "No conference data yet."}</p>`}
       <div class="conf-menu-foot"><small class="${view.data?.error ? "conf-error" : "muted"}" role="status">${e(status)}</small><button type="button" class="button small" data-conf-refresh ${view.loading ? "disabled" : ""}>${icons.refresh}<span>Refresh</span></button></div>
-      <small class="muted">Dates from <a href="${e(webLink(view.data?.source) ?? SOURCE)}" target="_blank" rel="noopener noreferrer">Hugging Face AI Deadlines</a>. Deadlines are shown in your time zone.</small>
+      <small class="muted">Dates from <a href="${e(webLink(view.data?.source) ?? SOURCE)}" target="_blank" rel="noopener noreferrer">Hugging Face AI Deadlines</a>. Deadlines and rebuttal dates are shown in your time zone.</small>
     </div>` : "";
-  return `<div class="conf-control"><button type="button" class="conf-toggle ${view.loading ? "is-loading" : ""}" data-conf-toggle aria-pressed="${view.enabled}" title="Show AI conference submission deadlines and conference dates">${icons.spark}<span>AI conferences</span>${view.enabled ? `<b>${count}</b>` : ""}</button>${view.enabled ? `<button type="button" class="icon-button" data-conf-menu aria-expanded="${view.menuOpen}" aria-label="Choose AI conferences">${icons.settings}</button>` : ""}${menu}</div>`;
+  return `<div class="conf-control"><button type="button" class="conf-toggle ${view.loading ? "is-loading" : ""}" data-conf-toggle aria-pressed="${view.enabled}" title="Show AI conference submission deadlines, rebuttal periods, and conference dates">${icons.spark}<span>AI conferences</span>${view.enabled ? `<b>${count}</b>` : ""}</button>${view.enabled ? `<button type="button" class="icon-button" data-conf-menu aria-expanded="${view.menuOpen}" aria-label="Choose AI conferences">${icons.settings}</button>` : ""}${menu}</div>`;
 }
 
 function conferenceSide(byConference: Map<string, ConferenceEvent[]>, view: ConferenceView | undefined, today: string, year: number): string {
   if (!view?.enabled) return "";
   const seen = new Set<string>();
   const events = [...byConference.values()].flat().filter(event => !seen.has(event.id) && seen.add(event.id)).filter(event => (event.endDate ?? event.date) >= today || year > Number(today.slice(0, 4))).sort((a, b) => a.date.localeCompare(b.date));
-  const body = view.loading && !view.data ? `<p class="muted">Fetching conference dates…</p>` : view.data?.error && !view.data.events.length ? `<p class="conf-error">${e(view.data.error)}</p>` : events.length ? `<ul class="conf-list">${events.slice(0, 8).map(event => `<li><button type="button" class="conf-item sw-${conferenceSwatch(event)}" data-conf-day="${event.date}"><i class="conf-kind-${event.kind}"></i><span><strong>${e(event.name)} ${event.edition}</strong><small>${e(event.kind === "conference" ? `${formatDate(event.date, {month: "short", day: "numeric"})} – ${formatDate(event.endDate ?? event.date, {month: "short", day: "numeric"})}${event.place ? ` · ${event.place}` : ""}` : `${event.label} · ${formatDate(event.date, {month: "short", day: "numeric"})}`)}</small></span></button></li>`).join("")}</ul>${events.length > 8 ? `<p class="muted">+${events.length - 8} more on the calendar</p>` : ""}` : `<p class="muted">No dates for the selected conferences in ${year}.</p>`;
+  const body = view.loading && !view.data ? `<p class="muted">Fetching conference dates…</p>` : view.data?.error && !view.data.events.length ? `<p class="conf-error">${e(view.data.error)}</p>` : events.length ? `<ul class="conf-list">${events.slice(0, 8).map(event => `<li><button type="button" class="conf-item sw-${conferenceSwatch(event)}" data-conf-day="${event.date}"><i class="conf-kind-${event.kind}"></i><span><strong>${e(event.name)} ${event.edition}</strong><small>${e(event.kind === "conference" ? [dateSpan(event), event.place].filter(Boolean).join(" · ") : event.endDate ? `${dateSpan(event)} · ${event.label}` : `${event.label} · ${shortDate(event.date)}`)}</small></span></button></li>`).join("")}</ul>${events.length > 8 ? `<p class="muted">+${events.length - 8} more on the calendar</p>` : ""}` : `<p class="muted">No dates for the selected conferences in ${year}.</p>`;
   return `<h3 class="conf-side-title">${icons.spark} AI conferences</h3>${body}`;
 }
 
@@ -143,10 +150,14 @@ export function yearCalendar(options: {deadlines: DeadlineItem[]; taskTypes: Rec
 function dayCell(day: string, weekend: boolean, items: Indexed[], today: string, state: CalendarState, byConference: Map<string, ConferenceEvent[]>): string {
   const onlyRepeats = items.length > 0 && items.every(item => item.occurrence);
   const conferenceEvents = byConference.get(day) ?? [];
-  const deadlinesHere = conferenceEvents.filter(event => event.kind !== "conference");
+  // A flag marks deadlines, a bar under the day marks conference days, and a dashed bar over it marks rebuttal dates.
+  const deadlinesHere = conferenceEvents.filter(isDeadline);
   const running = conferenceEvents.find(event => event.kind === "conference");
-  const confClasses = [deadlinesHere.length ? "conf-deadline" : "", running ? `conf-range${running.date === day ? " conf-start" : ""}${running.endDate === day ? " conf-end" : ""}` : ""].filter(Boolean).join(" ");
-  const confStyle = conferenceEvents.length ? ` style="--conf-c: var(--c-${conferenceSwatch(deadlinesHere[0] ?? running!)}); --conf-bar: var(--c-${running ? conferenceSwatch(running) : "violet"})"` : "";
+  const rebuttal = conferenceEvents.find(event => event.kind === "rebuttal");
+  const confClasses = [deadlinesHere.length ? "conf-deadline" : "", running ? `conf-range${running.date === day ? " conf-start" : ""}${running.endDate === day ? " conf-end" : ""}` : "",
+    rebuttal ? `conf-rebuttal${rebuttal.date === day ? " rebuttal-start" : ""}${(rebuttal.endDate ?? rebuttal.date) === day ? " rebuttal-end" : ""}` : ""].filter(Boolean).join(" ");
+  const confColors = [deadlinesHere.length ? `--conf-c: var(--c-${conferenceSwatch(deadlinesHere[0])})` : "", running ? `--conf-bar: var(--c-${conferenceSwatch(running)})` : "", rebuttal ? `--rebuttal-c: var(--c-${conferenceSwatch(rebuttal)})` : ""].filter(Boolean);
+  const confStyle = confColors.length ? ` style="${confColors.join("; ")}"` : "";
   const tips = [...items.map(item => item.deadline.event + (isRepeat(item.deadline.repeat) ? " ↻" : "")), ...conferenceEvents.map(conferenceTitle)];
   const classes = ["day", weekend ? "weekend" : "", day < today ? "past" : "", day === today ? "is-today" : "", items.length ? `has-ddl ${sw(items[0].swatch)}` : "", onlyRepeats ? "occurrence" : "", items.some(item => isRepeat(item.deadline.repeat)) ? "repeats" : "", day === state.day ? "selected" : "", day === state.flash ? "flash" : "", state.filter && items.some(item => item.swatch === state.filter) ? "match" : "", confClasses].filter(Boolean).join(" ");
   const label = `${formatDate(day, {weekday: "long", month: "long", day: "numeric"})}${day === today ? " (today)" : ""}${items.length ? `: ${items.map(item => item.deadline.event + (isRepeat(item.deadline.repeat) ? ` (repeats ${repeatLabel(item.deadline.repeat).toLowerCase()})` : "")).join(", ")}` : ""}${conferenceEvents.length ? `${items.length ? "; " : ": "}${conferenceEvents.map(conferenceTitle).join(", ")}` : ""}`;
@@ -156,7 +167,10 @@ function dayCell(day: string, weekend: boolean, items: Indexed[], today: string,
 
 function conferenceList(events: ConferenceEvent[], day: string, today: string): string {
   if (!events.length) return "";
-  return `<ul class="pop-conf">${events.map(event => `<li class="sw-${conferenceSwatch(event)}"><i class="conf-kind-${event.kind}" aria-hidden="true"></i><div class="pop-copy"><strong>${e(event.kind === "conference" ? `${event.name} ${event.edition}` : `${event.name} ${event.edition} · ${event.label}`)}</strong><small>${e(event.kind === "conference" ? [`${formatDate(event.date, {month: "short", day: "numeric"})} – ${formatDate(event.endDate ?? event.date, {month: "short", day: "numeric"})}`, event.place].filter(Boolean).join(" · ") : `${event.time ?? ""} your time · ${event.sourceTime ?? ""}`)}</small>${webLink(event.link) ? `<a class="conf-link" href="${e(webLink(event.link)!)}" target="_blank" rel="noopener noreferrer">${e(event.fullName || "Conference website")} ↗</a>` : ""}</div>${event.kind !== "conference" && day >= today ? `<button type="button" class="button small" data-conf-add="${e(event.id)}" title="Copy this date into your deadlines">${icons.plus}<span>My deadlines</span></button>` : ""}</li>`).join("")}</ul>`;
+  // Conference days show their dates and place; deadlines and rebuttals show your local time and the original one.
+  const when = (event: ConferenceEvent) => event.kind === "conference" ? [dateSpan(event), event.place]
+    : [event.endDate ? dateSpan(event) : "", event.time ? `${event.endDate ? "ends " : ""}${event.time} your time` : "", event.sourceTime];
+  return `<ul class="pop-conf">${events.map(event => `<li class="sw-${conferenceSwatch(event)}"><i class="conf-kind-${event.kind}" aria-hidden="true"></i><div class="pop-copy"><strong>${e(event.kind === "conference" ? `${event.name} ${event.edition}` : `${event.name} ${event.edition} · ${event.label}`)}</strong><small>${e(when(event).filter(Boolean).join(" · "))}</small>${webLink(event.link) ? `<a class="conf-link" href="${e(webLink(event.link)!)}" target="_blank" rel="noopener noreferrer">${e(event.fullName || "Conference website")} ↗</a>` : ""}</div>${isDeadline(event) && day >= today ? `<button type="button" class="button small" data-conf-add="${e(event.id)}" title="Copy this date into your deadlines">${icons.plus}<span>My deadlines</span></button>` : ""}</li>`).join("")}</ul>`;
 }
 
 function dayPopover(day: string, items: Indexed[], taskTypes: Record<string, string>, today: string, conferenceEvents: ConferenceEvent[] = []): string {

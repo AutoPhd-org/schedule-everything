@@ -49,8 +49,10 @@ const conferencePayload: ConferencePayload = {
   conferences: [{id: "neurips", name: "NeurIPS", group: "ml"}, {id: "cvpr", name: "CVPR", group: "vision"}, {id: "icra", name: "ICRA", group: "robotics"}],
   events: [
     {id: "neurips2026-submission-1", conference: "neurips", name: "NeurIPS", group: "ml", edition: 2026, fullName: "Conference on Neural Information Processing Systems", link: "https://neurips.cc/", place: "Sydney, Australia", kind: "submission", label: "Paper submission deadline", date: "2026-10-12", endDate: null, time: "03:59", sourceTime: "Oct 11, 23:59 AoE"},
+    {id: "cvpr2026-rebuttal-0", conference: "cvpr", name: "CVPR", group: "vision", edition: 2026, link: "javascript:alert(1)", place: "Denver, USA", kind: "rebuttal", label: "Rebuttal Period", date: "2026-10-14", endDate: "2026-10-16", time: "03:59", sourceTime: "Oct 13, 23:59 – Oct 15, 23:59 AoE"},
     {id: "cvpr2026-conference", conference: "cvpr", name: "CVPR", group: "vision", edition: 2026, link: "javascript:alert(1)", place: "Denver, USA", kind: "conference", label: "CVPR 2026", date: "2026-10-20", endDate: "2026-10-23", time: null, sourceTime: "October 20-23, 2026"},
-    {id: "icra2027-abstract-0", conference: "icra", name: "ICRA", group: "robotics", edition: 2027, link: null, place: "", kind: "abstract", label: "Abstract deadline", date: "2026-11-02", endDate: null, time: "23:59", sourceTime: "Nov 2, 23:59 PST"}
+    {id: "icra2027-abstract-0", conference: "icra", name: "ICRA", group: "robotics", edition: 2027, link: null, place: "", kind: "abstract", label: "Abstract deadline", date: "2026-11-02", endDate: null, time: "23:59", sourceTime: "Nov 2, 23:59 PST"},
+    {id: "icra2027-rebuttal-0", conference: "icra", name: "ICRA", group: "robotics", edition: 2027, link: null, place: "", kind: "rebuttal", label: "Author + Reviewer + AC Discussion End", date: "2026-11-09", endDate: null, time: "04:59", sourceTime: "Nov 8, 23:59 AoE"}
   ]
 };
 
@@ -450,10 +452,42 @@ describe("AI conferences", () => {
     expect(root.querySelector('[data-day="2026-10-21"]')?.className).toContain("conf-range");
     expect(root.querySelector('[data-day="2026-10-23"]')?.className).toContain("conf-end");
     expect(root.querySelector('[data-day="2026-10-24"]')?.className).not.toContain("conf-range");
-    expect([...root.querySelectorAll(".conf-item strong")].map(el => el.textContent)).toEqual(["NeurIPS 2026", "CVPR 2026", "ICRA 2027"]);
+    expect([...root.querySelectorAll(".conf-item strong")].map(el => el.textContent)).toEqual(["NeurIPS 2026", "CVPR 2026", "CVPR 2026", "ICRA 2027", "ICRA 2027"]);
     expect(JSON.parse(window.localStorage.getItem("schedule-everything-conferences")!)).toEqual({enabled: true, selected: null});
     // Month counts stay about your own deadlines.
     expect(root.querySelector(".month-count")?.textContent).toBe("2");
+  });
+
+  it("marks rebuttal periods apart from deadlines and conference days", async () => {
+    window.localStorage.setItem("schedule-everything-conferences", JSON.stringify({enabled: true, selected: null}));
+    await openRoutines();
+    const first = root.querySelector('[data-day="2026-10-14"]')!;
+    expect(first.className).toContain("conf-rebuttal rebuttal-start");
+    expect(first.className).not.toMatch(/conf-deadline|conf-range|rebuttal-end/);
+    expect(first.querySelector(".conf-flag")).toBeNull();
+    expect(first.getAttribute("style")).toBe("--rebuttal-c: var(--c-blue)");
+    const middle = root.querySelector('[data-day="2026-10-15"]')!;
+    expect(middle.className).not.toMatch(/rebuttal-(start|end)/);
+    for (const text of [middle.getAttribute("aria-label"), middle.getAttribute("data-tip")]) expect(text).toContain("CVPR 2026 rebuttal period, Oct 14 – Oct 16 (ends 03:59)");
+    expect(root.querySelector('[data-day="2026-10-16"]')?.className).toContain("conf-rebuttal rebuttal-end");
+    expect(root.querySelector('[data-day="2026-10-17"]')?.className).not.toContain("conf-rebuttal");
+    // When only the last day is published, that day gets a short mark of its own; acronyms stay capitalized.
+    const single = root.querySelector('[data-day="2026-11-09"]')!;
+    expect(single.className).toContain("conf-rebuttal rebuttal-start rebuttal-end");
+    expect(single.getAttribute("aria-label")).toContain("ICRA 2027 author + reviewer + AC discussion end (04:59)");
+    const items = [...root.querySelectorAll(".conf-item")].filter(item => item.querySelector(".conf-kind-rebuttal"));
+    expect(items.map(item => item.querySelector("small")?.textContent)).toEqual(["Oct 14 – Oct 16 · Rebuttal Period", "Author + Reviewer + AC Discussion End · Nov 9"]);
+    click('[data-day="2026-10-15"]');
+    const card = root.querySelector(".day-popover .pop-conf")!;
+    expect(card.querySelector("i")?.className).toBe("conf-kind-rebuttal");
+    expect(card.querySelector("strong")?.textContent).toBe("CVPR 2026 · Rebuttal Period");
+    expect(card.querySelector("small")?.textContent).toBe("Oct 14 – Oct 16 · ends 03:59 your time · Oct 13, 23:59 – Oct 15, 23:59 AoE");
+    expect(card.querySelector("[data-conf-add]")).toBeNull();
+    // Unselecting a conference hides its rebuttal dates too.
+    click("[data-conf-menu]");
+    const cvpr = root.querySelector<HTMLInputElement>('[data-conf-pick="cvpr"]')!;
+    cvpr.checked = false; cvpr.dispatchEvent(new Event("change"));
+    expect(root.querySelector('[data-day="2026-10-15"]')?.className).not.toContain("conf-rebuttal");
   });
 
   it("filters conferences, remembers the choice, and refreshes on request", async () => {

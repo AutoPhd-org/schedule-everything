@@ -96,16 +96,21 @@ IROS, RSS, and CoRL alongside your own deadlines. It is off until you turn it on
 - A day with an abstract or paper submission deadline gets a small flag in the
   conference's color. The days a conference takes place get a colored bar along
   the bottom of each day.
+- Rebuttal (author response) periods get a dashed bar along the top of each day
+  they cover, for conferences that publish them. Some conferences publish only
+  the last day to respond; that day gets a short dash of its own.
 - Colors follow the field: violet for machine learning, blue for vision, aqua for
   language, orange for general AI, and magenta for robotics.
 - Use the arrow beside the button to choose which conferences to show. **All**
   and **None** select or clear every conference. Your choice is remembered in
   this browser.
-- Deadlines are converted to your time zone, so a 23:59 AoE deadline can land on
-  the next day. A day's card shows both your local time and the original time,
-  links to the conference website, and has a **My deadlines** button that copies
-  an upcoming submission deadline into your own deadlines.
-- The side panel lists the next conference dates; click one to jump to that day.
+- Deadlines and rebuttal dates are converted to your time zone, so a 23:59 AoE
+  deadline can land on the next day. A day's card shows both your local time and
+  the original time (for a rebuttal period, when it ends), links to the
+  conference website, and has a **My deadlines** button that copies an upcoming
+  submission deadline into your own deadlines.
+- The side panel lists the next deadlines, rebuttal periods, and conference
+  dates; click one to jump to that day.
 
 The dates come from the community-maintained
 [Hugging Face AI Deadlines](https://github.com/huggingface/ai-deadlines) list

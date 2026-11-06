@@ -1,8 +1,8 @@
 """
 AI conference dates for the browser's year calendar.
 
-Submission deadlines and conference dates for 15 major AI conferences come from
-the community-maintained Hugging Face AI Deadlines data
+Submission deadlines, rebuttal periods, and conference dates for 15 major AI
+conferences come from the community-maintained Hugging Face AI Deadlines data
 (https://github.com/huggingface/ai-deadlines). Data is fetched only when the
 user turns the conference layer on, then kept in a small normalized cache file
 that is refreshed at most once a week or on request; nothing stays in memory.
@@ -27,7 +27,7 @@ from schedule_management.config_layout import resolve_config_root_dir
 SOURCE_URL = "https://github.com/huggingface/ai-deadlines"
 RAW_URL = "https://raw.githubusercontent.com/huggingface/ai-deadlines/main/src/data/conferences/{id}.yml"
 CACHE_TTL = timedelta(days=7)
-CACHE_VERSION = 1  # bump when normalize_editions changes, since the cache stores its output
+CACHE_VERSION = 2  # bump when normalize_editions changes, since the cache stores its output
 FETCH_TIMEOUT = 10
 
 # (id, display name, group); groups drive the calendar colors.
@@ -45,7 +45,13 @@ _ABSTRACT_TYPES = {"abstract", "registration"}
 _SUBMISSION_TYPES = {"paper", "submission", "full_paper"}
 # The generic types also cover side tracks (e.g. "Workshop Proposal Submission", "Paper video submission deadline").
 _SIDE_TRACK = re.compile(r"\b(workshops?|tutorials?|proposals?|art|videos?|demos?|demonstrations?|supplement\w*|challenges?|"
-                         r"competitions?|doctoral|industry|camera|rebuttal|journal|posters?|late[- ]breaking)\b", re.IGNORECASE)
+                         r"competitions?|doctoral|industry|camera|journal|posters?|late[- ]breaking)\b", re.IGNORECASE)
+# Rebuttal dates are mostly "rebuttal_start" / "rebuttal_end"; a few use "author_response", "rebuttal", or
+# "rebuttal_and_revision" with "begins" or "ends" in the label. Older editions use flat rebuttal_period_* fields.
+_REBUTTAL_TYPE = re.compile(r"rebuttal|author[_ -]?response")
+_REBUTTAL_WORD = re.compile(r"\brebuttal", re.IGNORECASE)
+_START_WORD = re.compile(r"\b(starts?|begins?|beginning|opens?|opening)\b", re.IGNORECASE)
+_PERIOD_EDGE = re.compile(r"\b(?:starts?|begins?|opens?|ends?|closes?)\b(?:\s+of(?:\s+the)?\b)?", re.IGNORECASE)
 _FIXED_ZONES = {"aoe": -12, "utc": 0, "gmt": 0, "z": 0, "pst": -8, "pdt": -7, "mst": -7, "mdt": -6, "cst": -6, "cdt": -5,
                 "est": -5, "edt": -4, "cet": 1, "cest": 2, "bst": 1, "ist": 5.5, "jst": 9, "kst": 9, "sgt": 8, "aest": 10}
 _MONTHS = {name: index for index, name in enumerate(
@@ -128,8 +134,58 @@ def _safe_link(value: Any) -> str | None:
     return link if link.startswith(("https://", "http://")) else None
 
 
+def _stamp(moment: datetime, zone_name: Any) -> str:
+    """'May 6, 23:59' in a deadline's own time zone."""
+    source = moment.astimezone(_zone(zone_name))
+    return f"{source:%b} {source.day}, {source:%H:%M}"
+
+
+def _rebuttal_role(kind: str, label: str) -> str | None:
+    """'start' or 'end' for a rebuttal (author response) date; None for any other deadline type."""
+    if not _REBUTTAL_TYPE.search(kind):
+        return None
+    if re.search(r"start|begin|open", kind):
+        return "start"
+    if re.search(r"end|close", kind):
+        return "end"
+    return "start" if _START_WORD.search(label) else "end"
+
+
+def _period_name(start_label: str, end_label: str) -> str:
+    """Name a period after its labels (e.g. "Rebuttal Period Starts" / "Ends"); labels that disagree get a generic name."""
+    names = [re.sub(r"\s+", " ", _PERIOD_EDGE.sub("", label, count=1)).strip(" -–:,") for label in (start_label, end_label)]
+    if names[0] and names[0].lower() == names[1].lower():
+        return names[0][0].upper() + names[0][1:]
+    return "Rebuttal period"
+
+
+def _rebuttal_periods(points: list[tuple[datetime, str, str, str]]) -> list[dict[str, Any]]:
+    """Pair each rebuttal start with the next end in time order; a date without a partner stays on its own."""
+    periods: list[dict[str, Any]] = []
+    pending: tuple[datetime, str, str, str] | None = None
+
+    def single(moment: datetime, role: str, label: str, zone: str) -> dict[str, Any]:
+        return {"label": (label or ("Rebuttal period starts" if role == "start" else "Rebuttal deadline"))[:120],
+                "start": moment.isoformat() if role == "start" else None, "end": moment.isoformat() if role == "end" else None, "timezone": zone}
+
+    for point in sorted(points, key=lambda point: point[0]):
+        moment, role, label, zone = point
+        if role == "start":
+            if pending:
+                periods.append(single(*pending))
+            pending = point
+        elif pending:
+            periods.append({"label": _period_name(pending[2], label)[:120], "start": pending[0].isoformat(), "end": moment.isoformat(), "timezone": zone})
+            pending = None
+        else:
+            periods.append(single(*point))
+    if pending:
+        periods.append(single(*pending))
+    return periods
+
+
 def normalize_editions(text: str) -> list[dict[str, Any]]:
-    """Turn one conference's YAML file into compact editions with UTC deadline instants."""
+    """Turn one conference's YAML file into compact editions with UTC deadline and rebuttal instants."""
     data = yaml.safe_load(text) or []
     if not isinstance(data, list):
         raise ValueError("conference data must be a list of editions")
@@ -143,12 +199,19 @@ def normalize_editions(text: str) -> list[dict[str, Any]]:
             raw_deadlines = [{"type": "abstract", "label": "Abstract deadline", "date": entry.get("abstract_deadline"), "timezone": entry.get("timezone")},
                              {"type": "paper", "label": "Paper deadline", "date": entry.get("deadline"), "timezone": entry.get("timezone")}]
         deadlines = []
+        rebuttal_points: list[tuple[datetime, str, str, str]] = []  # (instant, "start" or "end", label, time zone)
         for item in raw_deadlines:
             if not isinstance(item, dict) or item.get("date") in (None, ""):
                 continue
             kind = str(item.get("type") or "").lower()
             label = str(item.get("label") or "")
-            if kind not in _ABSTRACT_TYPES | _SUBMISSION_TYPES or _SIDE_TRACK.search(label):
+            role = _rebuttal_role(kind, label)
+            if role:
+                moment = None if _SIDE_TRACK.search(label) else _instant(item.get("date"), item.get("timezone"))
+                if moment is not None:
+                    rebuttal_points.append((moment, role, label, str(item.get("timezone") or "AoE")[:40]))
+                continue
+            if kind not in _ABSTRACT_TYPES | _SUBMISSION_TYPES or _SIDE_TRACK.search(label) or _REBUTTAL_WORD.search(label):
                 continue
             # "Registration" can also mean attendee registration; only paper or abstract registration counts.
             if kind == "registration" and not re.search(r"\b(paper|abstract)\b", label, re.IGNORECASE):
@@ -162,6 +225,12 @@ def normalize_editions(text: str) -> list[dict[str, Any]]:
                 "utc": moment.isoformat(),
                 "timezone": str(item.get("timezone") or "AoE")[:40],
             })
+        if not rebuttal_points:
+            # Older editions keep the rebuttal period in flat fields that share the edition's time zone.
+            for role, field in (("start", "rebuttal_period_start"), ("end", "rebuttal_period_end")):
+                moment = _instant(entry.get(field), entry.get("timezone")) if entry.get(field) else None
+                if moment is not None:
+                    rebuttal_points.append((moment, role, f"Rebuttal period {role}", str(entry.get("timezone") or "AoE")[:40]))
         start, end = _iso_date(entry.get("start")), _iso_date(entry.get("end"))
         if not start or not end:
             start, end = _range_from_text(entry.get("date"), entry.get("year"))
@@ -175,6 +244,7 @@ def normalize_editions(text: str) -> list[dict[str, Any]]:
             "start": start,
             "end": end,
             "deadlines": deadlines,
+            "rebuttals": _rebuttal_periods(rebuttal_points),
         })
     return editions
 
@@ -237,7 +307,7 @@ def load_conference_data(refresh: bool = False, now: datetime | None = None) -> 
 
 
 def calendar_events(cache: dict[str, Any], year: int, local_zone: tzinfo | None = None) -> list[dict[str, Any]]:
-    """Deadlines and conference dates that fall in `year`, with deadlines in local time."""
+    """Deadlines, rebuttal periods, and conference dates that fall in `year`; deadlines and rebuttals are in local time."""
     zone = local_zone if local_zone is not None else _local_timezone()
     names = {conference_id: (name, group) for conference_id, name, group in CONFERENCES}
     events: list[dict[str, Any]] = []
@@ -249,13 +319,24 @@ def calendar_events(cache: dict[str, Any], year: int, local_zone: tzinfo | None 
             common = {"conference": conference_id, "name": name, "group": group, "edition": edition["year"],
                       "fullName": edition.get("fullName"), "link": edition.get("link"), "place": edition.get("place")}
             for index, deadline in enumerate(edition.get("deadlines", [])):
-                local = datetime.fromisoformat(deadline["utc"]).astimezone(zone)
+                moment = datetime.fromisoformat(deadline["utc"])
+                local = moment.astimezone(zone)
                 if local.year != year:
                     continue
-                source = datetime.fromisoformat(deadline["utc"]).astimezone(_zone(deadline["timezone"]))
                 events.append({**common, "id": f"{conference_id}{edition['year']}-{deadline['kind']}-{index}", "kind": deadline["kind"],
                                "label": deadline["label"], "date": local.date().isoformat(), "endDate": None,
-                               "time": local.strftime("%H:%M"), "sourceTime": f"{source:%b} {source.day}, {source:%H:%M} {deadline['timezone']}"})
+                               "time": local.strftime("%H:%M"), "sourceTime": f"{_stamp(moment, deadline['timezone'])} {deadline['timezone']}"})
+            for index, rebuttal in enumerate(edition.get("rebuttals", [])):
+                # A period spans its days in local time and keeps its closing time; a lone start or end is one day.
+                moments = [datetime.fromisoformat(value) for value in (rebuttal.get("start"), rebuttal.get("end")) if value]
+                local_moments = [moment.astimezone(zone) for moment in moments]
+                if not local_moments or not local_moments[0].year <= year <= local_moments[-1].year:
+                    continue
+                first, last = local_moments[0], local_moments[-1]
+                events.append({**common, "id": f"{conference_id}{edition['year']}-rebuttal-{index}", "kind": "rebuttal",
+                               "label": rebuttal["label"], "date": first.date().isoformat(),
+                               "endDate": last.date().isoformat() if len(moments) == 2 else None, "time": last.strftime("%H:%M"),
+                               "sourceTime": f"{' – '.join(_stamp(moment, rebuttal['timezone']) for moment in moments)} {rebuttal['timezone']}"})
             start, end = edition.get("start"), edition.get("end")
             if start and end and start[:4] <= str(year) <= end[:4]:
                 events.append({**common, "id": f"{conference_id}{edition['year']}-conference", "kind": "conference",
