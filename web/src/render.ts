@@ -1,5 +1,6 @@
 // Browser workspace shell: application state, page layouts, and event binding.
-// J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
+// J mode shows the full structured overview; P mode keeps only the tasks-by-type board. In both, timers for
+// today's timed tasks and for deadlines in their last 24 hours run above the board.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
 import { foldSwitch, groupTasks, masonry, taskBoard, typeShelf, type BoardView, type Composer } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
@@ -7,6 +8,7 @@ import { ring } from "./charts";
 import { bindTilt, burst, reducedMotion } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
+import { clockText, pruneClosed, timerStrip } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
@@ -30,7 +32,8 @@ type AgentTab = "claude" | "codex" | "antigravity";
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState};
+/** Deadline timers the user closed, by deadline name and date (see timerKey). */
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -59,6 +62,18 @@ function loadBoardView(): BoardView {
 }
 function saveBoardView(view: BoardView): void {
   try { window.localStorage.setItem(BOARD_VIEW, view); } catch { /* Keep working without storage. */ }
+}
+const CLOSED_TIMERS = "schedule-everything-closed-timers";
+/** Closing a deadline's timer only hides the timer, in this browser; the deadline itself is left alone. */
+function loadClosedTimers(): Set<string> {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(CLOSED_TIMERS) ?? "[]");
+    if (Array.isArray(saved)) return new Set(saved.filter((key: unknown): key is string => typeof key === "string"));
+  } catch { /* Fall back to showing every timer when storage is unavailable. */ }
+  return new Set();
+}
+function saveClosedTimers(closed: Set<string>, today: string): void {
+  try { window.localStorage.setItem(CLOSED_TIMERS, JSON.stringify(pruneClosed(closed, today))); } catch { /* Keep working without storage. */ }
 }
 
 const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
@@ -110,10 +125,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
-    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null}
+    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null},
+    closedTimers: loadClosedTimers()
   };
   bindTooltips(signal);
   let drawn: {page: Page; mode: Mode} | null = null;
+  /** Progress set on this page that the server has not confirmed yet, by task. */
+  const progressPending = new Map<string, number>();
   root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>Opening your workspace…</p></div>`;
   const request = async <T>(command: string, payload: Record<string, unknown> = {}): Promise<T> => client.send<T>(command, payload);
   const modeOf = (): Mode => state.workspace?.mode === "p" ? "p" : "j";
@@ -122,6 +140,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
    *  `then` runs right after the redraw. */
   async function reload(options: {morph?: boolean; then?: () => void} = {}) {
     state.snapshot = await request<Snapshot>("status_snapshot");
+    // Progress that is still on its way to the server wins over what the server had a moment ago.
+    for (const [description, progress] of progressPending) {
+      const task = state.snapshot.tasks.find(item => item.description === description);
+      if (task) task.progress = progress;
+    }
     state.workspace = await request<Workspace>("workspace_info");
     setTypeColors(state.snapshot.taskTypeColors);
     if (!drawn) state.calendar.year = Number(state.snapshot.today.date.slice(0, 4)) || state.calendar.year;
@@ -254,6 +277,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.onclick = undo;
     const area = root.querySelector<HTMLElement>("#board-area");
     if (area) bindBoard(area, s);
+    const timers = root.querySelector<HTMLElement>("#timer-strip");
+    if (timers) bindTimers(timers, s);
     root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
     root.querySelectorAll<HTMLButtonElement>("[data-deadline]").forEach(btn => btn.onclick = () => {
       const deadline = s.deadlines[Number(btn.dataset.deadline)];
@@ -311,9 +336,18 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   const scrollTop = () => { if (document.scrollingElement) document.scrollingElement.scrollTop = 0; };
 
   function bindTasks(scope: ParentNode, s: Snapshot) {
-    scope.querySelectorAll<HTMLButtonElement>("[data-task]").forEach(btn => btn.onclick = () => {
+    scope.querySelectorAll<HTMLButtonElement>("button[data-task]").forEach(btn => btn.onclick = () => {
       const task = s.tasks[Number(btn.dataset.task)];
       if (btn.dataset.operation === "edit") { taskDialog(task); return; }
+      if (btn.dataset.operation === "timer") { taskDialog(task, {timed: true}); return; }
+      if (btn.dataset.operation === "untime") {
+        void action(async () => {
+          await request("task_update", {originalDescription: task.description, description: task.description, priority: task.priority, type: task.type, due: ""});
+          await reload();
+          state.notice = `“${task.description}” is a normal task again.`;
+        });
+        return;
+      }
       void action(async () => {
         const kind = btn.dataset.operation!;
         if (kind !== "deleted" && !window.confirm(`${kind === "cancelled" ? "Cancel" : "Drop"} “${task.description}”?`)) return;
@@ -337,11 +371,126 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     await reload();
     state.notice = `“${description}” is back on your list.`;
   }
+  // ----- Progress and timers ----------------------------------------------------
+
+  /** Progress saves wait for the slider to settle, so a run of key presses writes once. */
+  const progressSaves = new Map<string, number>();
+  /** Show a progress value on every copy of a task's slider, on its card and in its timer. */
+  function showProgress(index: number, value: number) {
+    root.querySelectorAll<HTMLInputElement>(`input[data-progress="${index}"]`).forEach(input => {
+      if (input.value !== String(value)) input.value = String(value);
+      input.style.setProperty("--p", (value / 100).toFixed(2));
+      input.setAttribute("aria-valuetext", `${value}%`);
+      const label = input.closest(".progress-control");
+      label?.classList.toggle("is-full", value === 100);
+      const shown = label?.querySelector("b");
+      if (shown) shown.textContent = `${value}%`;
+    });
+  }
+  function bindProgress(scope: ParentNode, s: Snapshot) {
+    scope.querySelectorAll<HTMLInputElement>("input[data-progress]").forEach(input => {
+      const index = Number(input.dataset.progress);
+      const task = s.tasks[index];
+      if (!task) return;
+      input.addEventListener("input", () => showProgress(index, Number(input.value)));
+      input.addEventListener("change", () => setProgress(s, index, Number(input.value), input));
+    });
+  }
+  /** Save a task's progress, then redraw what sums it up (today's bar, a folded group), keeping the slider in hand. */
+  function setProgress(s: Snapshot, index: number, value: number, input: HTMLInputElement) {
+    const task = s.tasks[index];
+    if (!task || (task.progress ?? 0) === value) return;
+    task.progress = value;
+    const inTimers = !!input.closest("#timer-strip");
+    const focused = document.activeElement === input;
+    redrawTimers(s);
+    redrawBoard(s);
+    if (focused) root.querySelector<HTMLInputElement>(`${inTimers ? "#timer-strip" : "#board-area"} input[data-progress="${index}"]`)?.focus({preventScroll: true});
+    const {description} = task;
+    progressPending.set(description, value);
+    window.clearTimeout(progressSaves.get(description));
+    progressSaves.set(description, window.setTimeout(() => {
+      progressSaves.delete(description);
+      const settle = () => { if (progressPending.get(description) === value) progressPending.delete(description); };
+      request("task_progress", {description, progress: value}).then(settle, (error: unknown) => {
+        settle();
+        state.notice = error instanceof Error ? error.message : String(error);
+        status();
+        void reload().catch(() => {});
+      });
+    }, 250));
+  }
+  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers});
+  const timerArea = (s: Snapshot) => `<div id="timer-strip" class="timer-strip">${timerStrip(timerOptions(s))}</div>`;
+  /** Redraw only the timers, keeping the row where it was scrolled. */
+  function redrawTimers(s: Snapshot) {
+    const area = root.querySelector<HTMLElement>("#timer-strip");
+    if (!area) return;
+    const scrolled = area.querySelector<HTMLElement>(".timer-row")?.scrollLeft ?? 0;
+    area.innerHTML = timerStrip(timerOptions(s));
+    const row = area.querySelector<HTMLElement>(".timer-row");
+    if (row) row.scrollLeft = scrolled;
+    bindTimers(area, s);
+  }
+  function bindTimers(scope: HTMLElement, s: Snapshot) {
+    bindProgress(scope, s);
+    scope.querySelectorAll<HTMLButtonElement>("[data-timer-close]").forEach(btn => btn.onclick = () => {
+      const key = btn.dataset.timerClose!;
+      const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? "this deadline";
+      const today = s.today.date;
+      const close = () => {
+        state.closedTimers.add(key);
+        saveClosedTimers(state.closedTimers, today);
+        redrawTimers(s);
+        offerUndo(`Closed the timer for “${name}”. The deadline itself is unchanged.`, async () => {
+          state.closedTimers.delete(key);
+          saveClosedTimers(state.closedTimers, today);
+          redrawTimers(state.snapshot ?? s);
+          state.notice = `The timer for “${name}” is back.`;
+        });
+        status();
+      };
+      const card = btn.closest<HTMLElement>(".timer");
+      if (!card || reducedMotion()) { close(); return; }
+      card.classList.add("is-leaving");
+      let done = false;
+      const finish = () => { if (!done) { done = true; close(); } };
+      card.addEventListener("animationend", finish, {once: true});
+      window.setTimeout(finish, 360);
+    });
+  }
+  /** Advance every running clock once a second. A deadline that ends, a task that turns overdue, or a new day
+   *  redraws the timers, since what they show changes. */
+  let tickDay = "";
+  function tick() {
+    const s = state.snapshot;
+    if (!s || state.page !== "today" || !root.querySelector("#timer-strip")) return;
+    const now = Date.now();
+    const day = new Date(now).toDateString();
+    let changed = tickDay !== "" && tickDay !== day;
+    tickDay = day;
+    root.querySelectorAll<HTMLElement>("[data-at]").forEach(item => {
+      const at = Number(item.dataset.at);
+      if (item.dataset.kind === "deadline" && at <= now) changed = true;
+      if (item.dataset.kind === "task" && at <= now && !item.classList.contains("is-overdue")) {
+        item.classList.add("is-overdue");
+        if (item.closest("#timer-strip")) changed = true;
+      }
+      item.querySelectorAll<HTMLElement>("[data-clock]").forEach(el => {
+        const text = clockText(el.dataset.clock, at, now);
+        if (el.textContent !== text) el.textContent = text;
+      });
+    });
+    if (changed) redrawTimers(s);
+  }
+  const ticker = window.setInterval(() => { if (root.isConnected) tick(); else window.clearInterval(ticker); }, 1000);
+  signal.addEventListener("abort", () => window.clearInterval(ticker));
+
   // ----- Task board: folding and inline add -----------------------------------
 
   const boardOptions = (s: Snapshot, opening: string | null = null) => {
     const board = state.board;
-    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet};
+    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet, now: Date.now()};
   };
   /** The board, and below it the shelf of types without tasks, in one area that redraws and binds together. */
   const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area"><section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
@@ -366,6 +515,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const board = scope.querySelector<HTMLElement>("#task-board");
     if (board) masonry(board, fresh);
     bindTasks(scope, s);
+    bindProgress(scope, s);
     scope.querySelectorAll<HTMLButtonElement>("[data-group-toggle]").forEach(btn => btn.onclick = () => {
       const id = btn.dataset.groupToggle!;
       if (!state.board.flipped.delete(id)) state.board.flipped.add(id);
@@ -641,10 +791,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
     return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
-      ${boardArea(s, true)}`;
+      ${timerArea(s)}${boardArea(s, true)}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div>${boardArea(s, false)}`;
+    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -990,9 +1140,36 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     el.querySelectorAll<HTMLButtonElement>('button[type="button"]').forEach(btn => btn.onclick = () => { el.close(); el.remove(); });
     el.querySelector("form")!.onsubmit = event => { event.preventDefault(); const btn = el.querySelector<HTMLButtonElement>('[type="submit"]')!; btn.disabled = true; void submit(new FormData(event.target as HTMLFormElement)).then(() => { el.close(); el.remove(); }).catch(error => { el.querySelector(".dialog-error")!.textContent = error instanceof Error ? error.message : String(error); btn.disabled = false; }); };
   }
-  function taskDialog(task?: TaskItem) {
-    const days = task?.alarmFrom ? Math.max(0, Math.round((Date.parse(task.alarmFrom) - Date.parse(state.snapshot!.today.date)) / 86400000)) : 0;
-    dialog(task ? "Edit task" : "A new thing to work on", `${field("description", "Task", "text", task?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(task?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, task?.type)}</select></label>${field("postpone", "Start reminders in (days)", "number", String(days), 'required min="0" max="3650"')}`, async data => { await request(task ? "task_update" : "task_add", {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), postpone: Number(data.get("postpone")), originalDescription: task?.description}); await reload(); });
+  /** The task form. A timed task has a finish-by time: due by tonight, it gets a timer above the board.
+   *  `timed` opens the form with the timer on and its time in focus. */
+  function taskDialog(task?: TaskItem, options: {timed?: boolean} = {}) {
+    const timed = options.timed ?? !!task?.due;
+    const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">Timer</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}Timed task</strong><small>Set when it should be finished. Due by tonight, it gets a timer above the board.</small></span></label><label class="timed-due">Finish by<input type="datetime-local" name="due" value="${e(task?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
+    dialog(task ? "Edit task" : "A new thing to work on", `${field("description", "Task", "text", task?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(task?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, task?.type)}</select></label>${timer}`, async data => {
+      const due = data.get("timed") ? String(data.get("due") ?? "") : "";
+      await request(task ? "task_update" : "task_add", {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due, originalDescription: task?.description});
+      await reload();
+      if (due && due !== task?.due) { state.notice = `“${data.get("description")}” is timed: finish by ${formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}.`; status(); }
+    });
+    const form = root.querySelector<HTMLElement>("dialog.editor-dialog .timed-field");
+    const toggle = form?.querySelector<HTMLInputElement>('[name="timed"]');
+    const input = form?.querySelector<HTMLInputElement>('[name="due"]');
+    if (!form || !toggle || !input) return;
+    toggle.onchange = () => {
+      form.classList.toggle("is-on", toggle.checked);
+      input.disabled = !toggle.checked;
+      input.required = toggle.checked;
+      if (toggle.checked) input.focus();
+    };
+    if (options.timed) input.focus();
+  }
+  /** A finish time to start from: two hours ahead, on the hour, and no later than the end of today. */
+  function defaultDue(): string {
+    const now = new Date();
+    const due = new Date(now);
+    due.setHours(now.getHours() + 2, 0, 0, 0);
+    if (isoDay(due) !== isoDay(now)) { due.setTime(now.getTime()); due.setHours(23, 59, 0, 0); }
+    return `${isoDay(due)}T${String(due.getHours()).padStart(2, "0")}:${String(due.getMinutes()).padStart(2, "0")}`;
   }
   function deadlineDialog(deadline?: DeadlineItem) {
     const selected = deadline?.type ?? "";

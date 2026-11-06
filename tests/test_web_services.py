@@ -362,6 +362,82 @@ def test_task_update_rejects_duplicate_description(tmp_path, monkeypatch):
     ]
 
 
+def test_timed_tasks_keep_their_finish_time_and_progress(tmp_path, monkeypatch):
+    from schedule_management.web.services import WebError, _sorted_tasks, task_add, task_progress, task_update
+
+    read = _task_storage(tmp_path, monkeypatch, [{"description": "Read notes", "priority": 4, "type": "1"}])
+
+    task_add({"description": "Ship slides", "priority": 7, "type": "1", "due": "2026-11-05T18:30"})
+    assert read["tasks"]()[-1] == {"description": "Ship slides", "priority": 7, "type": "1", "due": "2026-11-05T18:30"}
+    assert task_progress({"description": "Ship slides", "progress": 40}) == {"description": "Ship slides", "progress": 40}
+    # Progress moves often, so it is saved without a history entry.
+    assert [entry["action"] for entry in read["log"]()] == ["added"]
+
+    rows = {row["description"]: row for row in _sorted_tasks()}
+    assert rows["Ship slides"]["due"] == "2026-11-05T18:30"
+    assert rows["Ship slides"]["progress"] == 40
+    assert rows["Read notes"]["due"] is None
+    assert rows["Read notes"]["progress"] == 0
+
+    # Editing keeps the progress; an empty finish time makes it a normal task again.
+    task_update({"originalDescription": "Ship slides", "description": "Ship slides", "priority": 7, "due": "2026-11-06T09:00"})
+    assert read["tasks"]()[-1]["due"] == "2026-11-06T09:00"
+    task_update({"originalDescription": "Ship slides", "description": "Ship slides", "priority": 7, "due": ""})
+    assert read["tasks"]()[-1] == {"description": "Ship slides", "priority": 7, "type": "1", "progress": 40}
+    # Editing without a due field leaves the timer alone.
+    task_update({"originalDescription": "Read notes", "description": "Read notes", "priority": 4, "due": "2026-11-05T08:00"})
+    task_update({"originalDescription": "Read notes", "description": "Read notes", "priority": 5})
+    assert read["tasks"]()[0]["due"] == "2026-11-05T08:00"
+
+    task_progress({"description": "Ship slides", "progress": "0"})
+    assert "progress" not in read["tasks"]()[-1]
+    task_progress({"description": "Ship slides", "progress": 100.0})
+    assert read["tasks"]()[-1]["progress"] == 100
+
+    for payload in ({"progress": -1}, {"progress": 101}, {"progress": 12.5}, {"progress": True}, {"progress": "half"}, {"progress": None}):
+        with pytest.raises(WebError) as exc_info:
+            task_progress({"description": "Ship slides", **payload})
+        assert exc_info.value.code == "invalid_input"
+    with pytest.raises(WebError) as exc_info:
+        task_progress({"description": "Missing", "progress": 10})
+    assert exc_info.value.code == "not_found"
+    with pytest.raises(WebError) as exc_info:
+        task_add({"description": "Bad time", "priority": 5, "due": "tonight"})
+    assert exc_info.value.code == "invalid_input"
+
+
+def test_timed_tasks_completed_today_still_count_toward_today(tmp_path, monkeypatch):
+    from datetime import UTC, timedelta
+
+    from schedule_management.web import services
+
+    def stamp(moment):
+        return moment.astimezone(UTC).isoformat()
+
+    today = date(2026, 11, 5)
+    monkeypatch.setattr(services, "_today", lambda: today)
+    read = _task_storage(tmp_path, monkeypatch, [{"description": "Open again", "priority": 5}])
+    now = datetime(2026, 11, 5, 15, 0).astimezone()
+    log = [
+        {"timestamp": stamp(now), "action": "deleted", "task": {"description": "Ship slides", "priority": 7, "type": "2", "due": "2026-11-05T18:00"}},
+        {"timestamp": stamp(now), "action": "deleted", "task": {"description": "Overdue essay", "priority": 6, "due": "2026-11-03T12:00"}},
+        # Not today's: due tomorrow, finished yesterday, cancelled, not timed, or open again.
+        {"timestamp": stamp(now), "action": "deleted", "task": {"description": "Tomorrow", "priority": 5, "due": "2026-11-06T09:00"}},
+        {"timestamp": stamp(now - timedelta(days=1)), "action": "deleted", "task": {"description": "Yesterday", "priority": 5, "due": "2026-11-04T09:00"}},
+        {"timestamp": stamp(now), "action": "cancelled", "task": {"description": "Cancelled", "priority": 5, "due": "2026-11-05T09:00"}},
+        {"timestamp": stamp(now), "action": "deleted", "task": {"description": "Untimed", "priority": 5}},
+        {"timestamp": stamp(now), "action": "deleted", "task": {"description": "Open again", "priority": 5, "due": "2026-11-05T10:00"}},
+    ]
+    (tmp_path / "tasks.log").write_text(json.dumps(log), encoding="utf-8")
+    assert read["tasks"]()
+
+    done = services._timed_done_today(today)
+
+    assert [item["description"] for item in done] == ["Ship slides", "Overdue essay"]
+    assert done[0] == {"description": "Ship slides", "type": "2", "due": "2026-11-05T18:00", "endedAt": "2026-11-05T15:00:00"}
+    assert done[1]["type"] is None
+
+
 def test_deadline_update_rejects_duplicate_event(tmp_path, monkeypatch):
     from schedule_management.web.services import WebError, deadline_update
 

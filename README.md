@@ -149,7 +149,9 @@ pause and the overview keeps only your tasks, grouped by type, as a loose
 collage. Flip the **J / P** switch in the header, or run `rmd mode j|p`. In
 both modes, groups with more important work come first, you can add a task
 right inside its group, and **Fold** turns each group into a summary of its
-importance and size.
+importance, progress, and size. Every task has a progress slider, and above the
+board, timers count down to today's timed tasks (overdue ones turn red) and to
+deadlines in their last 24 hours, under one bar for today's timed work.
 
 ### Plan with your agent
 

@@ -30,7 +30,7 @@ files can be repaired in the browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add a task right inside its group or from **New task**; add, rename, or delete task types; fold the groups into summaries; edit, postpone, complete, cancel, or drop tasks |
+| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, follow timers for today's timed tasks and for deadlines in their last 24 hours, with today's timed work as one progress bar; search all tasks grouped by type; add a task right inside its group or from **New task**; add, rename, or delete task types; fold the groups into summaries; set each task's progress; make a task timed; edit, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
@@ -188,8 +188,8 @@ monthly PDF reports.
 ## Reading your day
 
 In J mode, the overview puts overdue deadlines, deadlines due today, available tasks with
-importance 8–10, and habit completion at the top. Postponed tasks do not count as
-available until their reminder date. Red identifies overdue or invalid deadlines,
+importance 8–10, and habit completion at the top. Tasks postponed with `rmd add`
+do not count as available until their reminder date. Red identifies overdue or invalid deadlines,
 amber identifies deadlines due today or within three days, and the accent color highlights
 high-importance tasks. Each status also has a text label. The current and next
 schedule blocks appear beside the three nearest deadlines; open **Routines &
@@ -217,8 +217,8 @@ an icon rail and cards stack.
   <Figure src="img/screens/mobile-activity.webp" alt="The Activity page at phone width" caption="Activity" />
 </FigureRow>
 
-Tasks preserve their importance (1–10), type, postponed reminder date, and
-procrastination status. The board groups the same tasks returned by `rmd ls`
+Tasks preserve their importance (1–10), type, progress, finish-by time (for timed
+tasks), postponed reminder date (set with `rmd add`), and procrastination status. The board groups the same tasks returned by `rmd ls`
 without imposing a display limit. Groups with more important work come first:
 they are ordered by the average importance of their tasks, then by how many
 tasks they hold. Types without tasks stay off the board, on a quieter shelf
@@ -232,19 +232,50 @@ cancel and drop remain distinct from completion in history and reports.
 Clicked complete by mistake? The notice at the top of the page names the task
 and has an **Undo** button (or press **⌘Z** / **Ctrl+Z** when you are not typing
 in a field). Undo puts the task back where it was, with its importance, type,
-postponed date, and deferral, and takes the completion out of your history and
+progress, finish-by time, postponed date, and deferral, and takes the completion out of your history and
 reports. Cancel and drop can be undone the same way. You can undo until the
 notice is dismissed or replaced by your next action.
 
 To add a task to a group, click **Add a task** at the bottom of the group, type
 it, set its importance, and press **Enter**. The form stays open for the next
-task; **Esc** closes it. **New task** in the heading still opens the full form
-with a postponed start.
+task; **Esc** closes it. **New task** in the heading still opens the full form,
+where you can also make the task timed.
+
+### Progress and timers
+
+Every task has a **Progress** slider from 0 to 100%. Drag it, or focus it and use
+the arrow keys, whenever the work moves on; it saves as you let go.
+
+A **timed task** has a time it should be finished by. Turn on **Timed task** in
+the task form (**New task** or **Edit**), or choose **Make it a timed task…**
+under a task's **More options**, and pick the finish time. The task's card then
+shows when it is due and how long is left. **Stop timing** under **More options**
+makes it a normal task again; normal tasks never affect the timers.
+
+Above the board, a row of timers runs, soonest first:
+
+- **Task timers** (solid cards in the task's type color, with its progress
+  slider) count down to the finish time of every unfinished timed task due by
+  tonight. At midnight the row starts over with the next day's timed tasks.
+- **Overdue tasks** turn red: the timer counts up from the finish time, the
+  card on the board gets a red edge, and the group's summary counts it as
+  overdue. An overdue task keeps its timer until you finish it or change its
+  time.
+- **Deadline timers** (striped tickets with a dashed edge) count down to the
+  end of the day of each deadline in its last 24 hours, and disappear once it
+  passes. Close one with its **×** to hide just that timer in this browser. The
+  deadline itself, the deadlines list, the calendar, and your activity are left
+  as they are, and **Undo** in the notice brings the timer back.
+
+On top, **Today's timed work** is one bar for the day: each timed task due by
+tonight is a segment filled as far as it has come, finished ones in green and
+overdue ones in red. The percentage is their average progress. Tasks you finish
+today count as 100%, so completing one never lowers the bar.
 
 **Fold** in the board's heading turns each group into a summary: its average
-importance as a ring, every task as a dot on a 1–10 scale, its share of your
-open tasks, and how many tasks are important (8 or more), waiting for a later
-day, or deferred. **Expand** brings back every task, and the arrow in a group's
+importance as a ring, every task as a dot on a 1–10 scale, its average progress
+(and how many of its tasks are at 100%), its share of your open tasks, and how
+many tasks are important (8 or more), overdue, timed, or deferred. **Expand** brings back every task, and the arrow in a group's
 header folds or opens just that group. Your choice is remembered in this
 browser; a search always lists the matching tasks.
 
