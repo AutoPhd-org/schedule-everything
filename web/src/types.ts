@@ -39,7 +39,8 @@ export type DeadlineItem = {
 
 export type RepeatRule = "weekly" | "biweekly" | "monthly";
 
-export type ConferenceKind = "abstract" | "submission" | "conference";
+/** A rebuttal with an `endDate` is a period that spans its days; without one it is a single date (often only the end is published). */
+export type ConferenceKind = "abstract" | "submission" | "rebuttal" | "conference";
 export type ConferenceGroup = "ml" | "vision" | "language" | "ai" | "robotics";
 export type ConferenceEvent = {
   id: string;

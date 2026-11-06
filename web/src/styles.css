@@ -659,7 +659,7 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .year-grid.filtering .day.match { transform: scale(1.18); box-shadow: inset 0 0 0 2px var(--c), 0 6px 14px -6px var(--c); }
 .is-dragging .day:not(.past):not(.pad) { box-shadow: inset 0 0 0 1.5px var(--line-strong); }
 .day.drop-hover { transform: scale(1.35) !important; background: var(--grad) !important; color: var(--on-grad) !important; z-index: 4; }
-/* AI conference layer: a diamond on submission days and a bar under conference days. */
+/* AI conference layer: a diamond on submission days, a dashed bar over rebuttal days, and a bar under conference days. */
 .conf-control { position: relative; display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .conf-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-solid); color: var(--text); font: 700 12.5px/1 var(--display); transition: transform .3s var(--spring), background .2s, box-shadow .3s; }
 .conf-toggle svg { width: 16px; height: 16px; color: var(--accent); }
@@ -683,11 +683,14 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .conf-menu-foot .button { flex: none; }
 .conf-menu a, .conf-link { color: var(--accent-ink); font-weight: 600; }
 .conf-error { color: var(--critical-ink); font-size: 12px; }
-.day .conf-flag { position: absolute; top: 1px; right: 1px; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); background: var(--conf-c); box-shadow: 0 0 0 1.5px var(--surface-solid); }
+.day .conf-flag { position: absolute; z-index: 1; top: 1px; right: 1px; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); background: var(--conf-c); box-shadow: 0 0 0 1.5px var(--surface-solid); }
 .day.conf-range::before { content: ""; position: absolute; left: -1px; right: -1px; bottom: 0; height: 3px; background: var(--conf-bar); opacity: .85; }
 .day.conf-range.conf-start::before { left: 18%; border-radius: 3px 0 0 3px; }
 .day.conf-range.conf-end::before { right: 18%; border-radius: 0 3px 3px 0; }
 .day.conf-range .marks { bottom: 5px; }
+.day.conf-rebuttal::after { content: ""; position: absolute; left: -1px; right: -1px; top: 0; height: 3px; background: repeating-linear-gradient(90deg, var(--rebuttal-c) 0 4px, transparent 4px 7px); }
+.day.conf-rebuttal.rebuttal-start::after { left: 18%; }
+.day.conf-rebuttal.rebuttal-end::after { right: 18%; }
 .conf-side-title { display: flex; align-items: center; gap: 6px; margin: 18px 0 10px; padding-top: 14px; border-top: 1px dashed var(--line-strong); }
 .conf-side-title svg { width: 16px; height: 16px; color: var(--accent); }
 .conf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -696,9 +699,10 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .conf-item span { display: flex; flex-direction: column; min-width: 0; }
 .conf-item strong { font-size: 12.5px; }
 .conf-item small { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conf-kind-abstract, .conf-kind-submission, .conf-kind-conference { flex-shrink: 0; width: 10px; height: 10px; background: var(--c); }
+.conf-kind-abstract, .conf-kind-submission, .conf-kind-rebuttal, .conf-kind-conference { flex-shrink: 0; width: 10px; height: 10px; background: var(--c); }
 .conf-kind-abstract, .conf-kind-submission { border-radius: 2px; transform: rotate(45deg); }
 .conf-kind-abstract { background: transparent; box-shadow: inset 0 0 0 2px var(--c); }
+.conf-kind-rebuttal { width: 14px; height: 4px; background: repeating-linear-gradient(90deg, var(--c) 0 3px, transparent 3px 5.5px); }
 .conf-kind-conference { width: 14px; height: 5px; border-radius: 3px; }
 .pop-conf { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
 .pop-conf li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 18px; background: color-mix(in oklab, var(--c) 10%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 28%, transparent); }
