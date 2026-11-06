@@ -2,7 +2,7 @@
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
   ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, Clock3,
-  Copy, CornerDownLeft, Feather, Repeat, Flag, Flame, GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon,
+  Copy, CornerDownLeft, Ellipsis, Feather, Repeat, Flag, Flame, GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon,
   Palette, Pencil, Plus, RefreshCw, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
   Trophy, X, Zap
 } from "lucide";
@@ -27,7 +27,8 @@ export const icons = {
   ban: icon(Ban), dropped: icon(ArrowDownRight), trophy: icon(Trophy), search: icon(Search), gallery: icon(GalleryHorizontalEnd),
   grip: icon(GripVertical), hourglass: icon(Hourglass), palette: icon(Palette), edit: icon(Pencil), trash: icon(Trash2),
   flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy), repeat: icon(Repeat),
-  tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft)
+  tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft),
+  more: icon(Ellipsis)
 };
 
 /** Categorical hues in a fixed, colorblind-validated order (see styles.css for light and dark steps). */
@@ -38,9 +39,17 @@ export const swatchLabel = (swatch: Swatch) => swatch[0].toUpperCase() + swatch.
 
 const typeOrder = (taskTypes: Record<string, string>) => Object.keys(taskTypes).sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
 
-/** Color follows the type ID, in configured order; unknown IDs get a stable hashed hue. */
+let savedColors: Record<string, Swatch> = {};
+/** Use the type colors saved in the settings (the snapshot's taskTypeColors) for every later lookup. */
+export function setTypeColors(colors: Record<string, string> | null | undefined): void {
+  savedColors = Object.fromEntries(Object.entries(colors ?? {}).filter((entry): entry is [string, Swatch] => isSwatch(entry[1])));
+}
+
+/** A type's saved color; otherwise the color of its place among the configured types, which is how colors were
+ *  given before they were saved. Unknown IDs get a stable hashed hue. */
 export function typeSwatch(taskTypes: Record<string, string>, id: string | null | undefined): Swatch | null {
   if (!id) return null;
+  if (savedColors[id]) return savedColors[id];
   const index = typeOrder(taskTypes).indexOf(id);
   return PALETTE[(index >= 0 ? index : [...id].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % PALETTE.length];
 }

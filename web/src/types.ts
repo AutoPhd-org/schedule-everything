@@ -161,6 +161,8 @@ export type Snapshot = {
   deadlines: DeadlineItem[];
   habits: HabitItem[];
   taskTypes: Record<string, string>;
+  /** Saved type colors; a type without one is colored by its place among the types. */
+  taskTypeColors?: Record<string, string>;
   history: HistoryItem[];
 };
 

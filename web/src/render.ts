@@ -10,7 +10,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
-import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, sw, swatchPicker, typeSwatch } from "./ui";
+import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 
 export { escapeHtml, groupTasks };
 
@@ -19,8 +19,13 @@ type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
 type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; treeLimit: number; loading: boolean};
 /** The task board: expanded or folded, groups toggled away from that view, the inline new-task form, the task
- *  to greet after it was added, and whether to put the cursor back in the form after the next draw. */
-type BoardState = {view: BoardView; flipped: Set<string>; composer: Composer | null; added: string | null; focus: boolean};
+ *  to greet after it was added, and whether to put the cursor back in the form after the next draw. Types are
+ *  managed here too: the open type menu, the type being renamed or deleted, the new-type form, and the group
+ *  to greet after its type was added or renamed. */
+type BoardState = {
+  view: BoardView; flipped: Set<string>; composer: Composer | null; added: string | null; focus: boolean;
+  menu: string | null; renaming: string | null; deleting: {id: string; moveTo: string} | null; newType: {draft: string} | null; greet: string | null;
+};
 type AgentTab = "claude" | "codex" | "antigravity";
 type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState};
 
@@ -101,7 +106,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
-    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false}
+    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null}
   };
   bindTooltips(signal);
   let drawn: {page: Page; mode: Mode} | null = null;
@@ -109,12 +114,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   const request = async <T>(command: string, payload: Record<string, unknown> = {}): Promise<T> => client.send<T>(command, payload);
   const modeOf = (): Mode => state.workspace?.mode === "p" ? "p" : "j";
 
-  async function reload() {
+  /** Fetch and redraw. `morph` animates the change, so groups glide into place when a type comes or goes;
+   *  `then` runs right after the redraw. */
+  async function reload(options: {morph?: boolean; then?: () => void} = {}) {
     state.snapshot = await request<Snapshot>("status_snapshot");
     state.workspace = await request<Workspace>("workspace_info");
+    setTypeColors(state.snapshot.taskTypeColors);
     if (!drawn) state.calendar.year = Number(state.snapshot.today.date.slice(0, 4)) || state.calendar.year;
     if (state.page === "activity") await loadActivity();
-    draw();
+    const update = () => { draw(); options.then?.(); };
+    if (options.morph) morph(update); else update();
   }
   async function loadActivity() {
     const [history, summary] = await Promise.all([
@@ -170,7 +179,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function navigate(page: Page) {
     state.page = page;
-    state.board.composer = null;
+    Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null});
     state.calendar.day = null;
     if (page === "activity") state.activity.view = "gallery";
     draw();
@@ -195,6 +204,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindShell(s);
     status();
     state.board.added = null;
+    state.board.greet = null;
     if (state.board.focus) {
       state.board.focus = false;
       root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus();
@@ -244,7 +254,6 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       state.config = await request<ConfigFile>("config_read", {file: (event.target as HTMLSelectElement).value});
       draw();
     }));
-    bindTypeRows();
     root.querySelectorAll<HTMLButtonElement>("[data-agent-tab]").forEach(btn => btn.onclick = () => { state.agentTab = btn.dataset.agentTab as AgentTab; draw(); root.querySelector<HTMLElement>(`#agent-tab-${state.agentTab}`)?.focus(); });
     root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach(btn => btn.onclick = () => void copyText(btn.dataset.copy!));
     if (state.page === "activity") bindActivity(s);
@@ -261,8 +270,6 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       const content = root.querySelector<HTMLTextAreaElement>('[name="configContent"]')!.value;
       const result = await request<ConfigFile & {message: string}>("config_save", {...state.config, content}); state.config = result; await reload(); state.notice = result.message;
     }
-    if (id === "types-save") { const taskTypes = Object.fromEntries([...root.querySelectorAll<HTMLElement>("[data-type-row]")].map(row => [row.querySelector<HTMLInputElement>('[name="typeId"]')!.value, row.querySelector<HTMLInputElement>('[name="typeName"]')!.value])); await request("settings_set_task_types", {taskTypes}); await reload(); state.notice = "Task and deadline types saved."; }
-    if (id === "types-add") { const ids = [...root.querySelectorAll<HTMLInputElement>('[name="typeId"]')].map(input => Number(input.value)).filter(Number.isFinite); const next = String(Math.max(0, ...ids) + 1); root.querySelector("#type-rows")!.insertAdjacentHTML("beforeend", typeRow(next, "")); bindTypeRows(); }
     if (id === "shutdown") { if (!window.confirm("Stop the local browser service? You can relaunch it whenever you need.")) return; await request("server_shutdown"); root.dispatchEvent(new Event("workspace-closed")); root.innerHTML = '<div class="loading"><h1>See you next time.</h1><p>Your local data is saved. Relaunch the browser workspace to return.</p></div>'; }
     if (id === "mode") { await request("service_action", {action: "mode", mode: modeOf() === "p" ? "j" : "p"}); await reload(); }
     if (["update", "stop", "switch"].includes(id)) {
@@ -302,7 +309,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   // ----- Task board: folding and inline add -----------------------------------
 
-  const boardHtml = (s: Snapshot, opening: string | null = null) => taskBoard({snapshot: s, query: state.search, isFolded: id => (state.board.view === "folded") !== state.board.flipped.has(id), composer: state.board.composer, added: state.board.added, opening});
+  const boardHtml = (s: Snapshot, opening: string | null = null) => {
+    const board = state.board;
+    return taskBoard({snapshot: s, query: state.search, isFolded: id => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet});
+  };
   /** Every group folded: the summaries line up in plain rows instead of the masonry. */
   const uniformBoard = () => state.board.view === "folded" && !state.board.flipped.size && !state.search;
   /** Redraw only the board, leaving the page around it as it is. `reveal` animates the contents of every
@@ -335,6 +345,152 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       scope.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus();
     });
     scope.querySelectorAll<HTMLFormElement>("form.composer").forEach(form => bindComposer(form, s));
+    bindTypes(scope, s);
+  }
+
+  // ----- Task board: managing types ------------------------------------------
+
+  const findIn = (scope: ParentNode, selector: string, attribute: string, value: string) =>
+    [...scope.querySelectorAll<HTMLElement>(selector)].find(el => el.getAttribute(attribute) === value);
+  const typeName = (s: Snapshot, id: string) => s.taskTypes[id] ?? groupTasks(s).find(group => group.id === id)?.name ?? id;
+  /** Close the type menu, the rename field, the delete question, and the new-type form, then redraw the board. */
+  function settleTypes(s: Snapshot, change: Partial<BoardState> = {}) {
+    Object.assign(state.board, {menu: null, renaming: null, deleting: null, ...change});
+    redrawBoard(s);
+  }
+  function bindTypes(scope: HTMLElement, s: Snapshot) {
+    const badge = scope.querySelector<HTMLElement>(".group-badge.is-open");
+    if (badge) {
+      badge.addEventListener("focusout", event => { if (!badge.contains(event.relatedTarget as Node | null)) closeTypeMenu(); });
+      badge.addEventListener("keydown", event => {
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        const items = [...badge.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)")];
+        if (!items.length) return;
+        event.preventDefault();
+        const at = items.indexOf(document.activeElement as HTMLButtonElement);
+        items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+      });
+    }
+    scope.querySelectorAll<HTMLButtonElement>("[data-type-menu]").forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.typeMenu!;
+      const opening = state.board.menu !== id;
+      settleTypes(s, {menu: opening ? id : null});
+      if (opening) scope.querySelector<HTMLElement>(".type-menu [role='menuitem']:not(:disabled)")?.focus();
+      else findIn(scope, "[data-type-menu]", "data-type-menu", id)?.focus();
+    });
+    const rename = (id: string) => {
+      settleTypes(s, {renaming: id});
+      const input = scope.querySelector<HTMLInputElement>("[data-type-name-input]");
+      input?.focus();
+      input?.select();
+    };
+    scope.querySelectorAll<HTMLButtonElement>("[data-type-rename]").forEach(btn => btn.onclick = () => rename(btn.dataset.typeRename!));
+    scope.querySelectorAll<HTMLElement>("[data-type-title]").forEach(title => title.ondblclick = () => rename(title.dataset.typeTitle!));
+    const nameInput = scope.querySelector<HTMLInputElement>("[data-type-name-input]");
+    if (nameInput) bindRename(nameInput, s);
+
+    scope.querySelectorAll<HTMLButtonElement>("[data-type-delete]").forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.typeDelete!;
+      settleTypes(s, {deleting: {id, moveTo: ""}});
+      const panel = findIn(scope, "[data-group]", "data-group", id);
+      (panel?.querySelector<HTMLElement>("[data-type-move]") ?? panel?.querySelector<HTMLElement>("[data-type-delete-confirm]"))?.focus();
+    });
+    const panel = scope.querySelector<HTMLElement>(".type-delete");
+    if (panel && state.board.deleting) {
+      const {id} = state.board.deleting;
+      const cancel = () => {
+        settleTypes(s);
+        findIn(scope, "[data-type-menu]", "data-type-menu", id)?.focus({preventScroll: true});
+      };
+      const select = panel.querySelector<HTMLSelectElement>("[data-type-move]");
+      if (select) select.onchange = () => { if (state.board.deleting) state.board.deleting.moveTo = select.value; };
+      panel.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); cancel(); } });
+      panel.querySelector<HTMLButtonElement>("[data-type-delete-cancel]")!.onclick = cancel;
+      panel.querySelector<HTMLButtonElement>("[data-type-delete-confirm]")!.onclick = () => void action(async () => {
+        const name = typeName(s, id);
+        const moveTo = select?.value ?? "";
+        const result = await request<{movedTasks: number; movedDeadlines: number}>("task_type_delete", moveTo ? {id, moveTo} : {id});
+        state.board.deleting = null;
+        state.board.flipped.delete(id);
+        await reload({morph: true, then: () => root.querySelector<HTMLElement>("[data-type-new]")?.focus({preventScroll: true})});
+        const moved = [result.movedTasks ? `${result.movedTasks} ${result.movedTasks === 1 ? "task" : "tasks"}` : "", result.movedDeadlines ? `${result.movedDeadlines} ${result.movedDeadlines === 1 ? "deadline" : "deadlines"}` : ""].filter(Boolean).join(" and ");
+        state.notice = `Deleted the type “${name}”.${moved ? ` ${moved} moved to “${moveTo ? typeName(s, moveTo) : "no type"}”.` : ""}`;
+      });
+    }
+
+    scope.querySelectorAll<HTMLButtonElement>("[data-type-new]").forEach(btn => btn.onclick = () => {
+      settleTypes(s, {newType: {draft: ""}});
+      scope.querySelector<HTMLInputElement>('[name="newTypeName"]')?.focus();
+    });
+    const form = scope.querySelector<HTMLFormElement>(".new-type-form");
+    if (form) {
+      const input = form.querySelector<HTMLInputElement>('[name="newTypeName"]')!;
+      const close = () => {
+        settleTypes(s, {newType: null});
+        scope.querySelector<HTMLElement>("[data-type-new]")?.focus({preventScroll: true});
+      };
+      input.addEventListener("input", () => { if (state.board.newType) state.board.newType.draft = input.value; });
+      form.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); close(); } });
+      form.querySelector<HTMLButtonElement>("[data-type-new-cancel]")!.onclick = close;
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        if (state.busy) return;
+        const name = input.value.trim();
+        if (!name) {
+          form.classList.remove("shake");
+          void form.offsetWidth;
+          form.classList.add("shake");
+          input.focus();
+          return;
+        }
+        void action(async () => {
+          const created = await request<{id: string; name: string}>("task_type_save", {name});
+          state.board.newType = null;
+          state.board.greet = created.id;
+          // The new group is ready for its first task.
+          await reload({morph: true, then: () => findIn(root, "[data-compose]", "data-compose", created.id)?.focus()});
+          state.notice = `Added the type “${created.name}”.`;
+        });
+      });
+    }
+  }
+  function bindRename(input: HTMLInputElement, s: Snapshot) {
+    const id = input.dataset.typeNameInput!;
+    const original = typeName(s, id);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      const name = input.value.trim();
+      const back = () => findIn(root, "[data-type-menu]", "data-type-menu", id)?.focus({preventScroll: true});
+      if (!save || !name || name === original) { settleTypes(s); back(); return; }
+      void action(async () => {
+        try { await request("task_type_save", {id, name}); }
+        catch (error) { done = false; throw error; }
+        state.board.renaming = null;
+        state.board.greet = id;
+        await reload({then: back});
+        state.notice = `Renamed “${original}” to “${name}”.`;
+      });
+    };
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); finish(true); }
+      if (event.key === "Escape") { event.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => { if (input.isConnected) finish(true); });
+  }
+  /** Close the type menu in place, without redrawing the board. */
+  function closeTypeMenu(focusButton = false) {
+    const id = state.board.menu;
+    if (!id) return;
+    state.board.menu = null;
+    root.querySelectorAll(".task-group.menu-open").forEach(group => group.classList.remove("menu-open"));
+    root.querySelectorAll<HTMLElement>(".group-badge.is-open").forEach(badge => {
+      badge.classList.remove("is-open");
+      badge.querySelector(".type-menu")?.remove();
+      badge.querySelector("[data-type-menu]")?.setAttribute("aria-expanded", "false");
+    });
+    if (focusButton) findIn(root, "[data-type-menu]", "data-type-menu", id)?.focus();
   }
   function setBoardView(view: BoardView, s: Snapshot) {
     if (view === state.board.view && !state.board.flipped.size) return;
@@ -418,8 +574,6 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   async function removeDeadline(deadline: DeadlineItem) {
     await action(async () => { if (!window.confirm(`Remove “${deadline.event}”?`)) return; await request("deadline_delete", {event: deadline.event}); await reload(); });
   }
-  function bindTypeRows() { root.querySelectorAll<HTMLButtonElement>("[data-type-remove]").forEach(btn => btn.onclick = () => btn.closest("[data-type-row]")!.remove()); }
-  function typeRow(id: string, name: string) { return `<div class="type-row" data-type-row><label>Type ID<input name="typeId" value="${e(id)}" readonly></label><label>Name<input name="typeName" value="${e(name)}" placeholder="Task type name" required></label><button class="icon-button danger" type="button" data-type-remove aria-label="Remove type ${e(id)}">${icons.close}</button></div>`; }
   function themeControls() {
     return `<div class="theme-controls" role="group" aria-label="Color theme">${(["light", "dark", "system"] as ThemePreference[]).map(mode => `<button type="button" data-theme-choice="${mode}" aria-label="${mode === "system" ? "Use system theme" : `Use ${mode} theme`}" aria-pressed="${appearance === mode}" title="${mode === "system" ? "Follow system" : `${mode === "light" ? "Light" : "Dark"} theme`}">${icons[mode]}</button>`).join("")}</div>`;
   }
@@ -498,7 +652,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
-    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Shared categories for tasks and deadlines. Keep IDs stable so existing items retain their type and color.</p><div id="type-rows">${Object.entries(s.taskTypes).map(([id, name]) => typeRow(id, name)).join("")}</div><div class="button-row">${button("types-save", "Save types", icons.check)}${button("types-add", "Add type", icons.plus, "button ghost")}</div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with the New type tile at the end of the board, and rename or delete one from the menu in its group's header. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -814,8 +968,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = "Your existing workspace is ready."; status(); }, {signal});
+  root.addEventListener("pointerdown", event => {
+    if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();
+  }, {signal, capture: true});
   root.addEventListener("click", event => {
     if (state.conferences.menuOpen && event.target instanceof Element && event.target.isConnected && !event.target.closest(".conf-control")) {
       state.conferences.menuOpen = false;
@@ -831,6 +988,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   // so Escape often reaches <body> rather than the workspace root.
   document.addEventListener("keydown", event => {
     if (!root.isConnected || event.defaultPrevented) return;
+    if (event.key === "Escape" && state.board.menu) {
+      closeTypeMenu(true);
+      return;
+    }
     if (event.key === "Escape" && state.conferences.menuOpen) {
       state.conferences.menuOpen = false;
       drawCalendar();

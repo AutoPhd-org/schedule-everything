@@ -134,10 +134,29 @@ auto_cleanup_days = 30          # Auto-cleanup completed tasks after N days
 show_completed = false          # Show completed tasks in list
 ```
 
+## Task Types Section
+
+Task types are shared by tasks and deadlines. Each key is a type ID and each
+value its name; the browser adds, renames, and deletes them on the task board.
+Once you change a type there, every type's color is saved in
+`[task_type_colors]`, so deleting a type never recolors the others. A type
+without a saved color takes the palette color of its place in the list.
+
+```toml
+[task_types]
+1 = "Coursework"
+2 = "Research"
+
+[task_type_colors]
+1 = "blue"      # blue, orange, aqua, yellow, magenta, green, violet, or red
+2 = "orange"
+```
+
 ## Browser Settings
 
-Launch `rmd web`, then open **Settings** to edit task types, reminders, settings,
-odd/even week schedules, habits, deadlines, or your profile. The configuration editor
+Launch `rmd web`, then open **Settings** to edit reminders, settings, odd/even
+week schedules, habits, deadlines, or your profile. Task types are added,
+renamed, and deleted on the task board in the overview. The configuration editor
 validates TOML and refuses to overwrite a file that changed since it was loaded.
 The browser uses the same active configuration as the CLI.
 

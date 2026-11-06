@@ -40,6 +40,7 @@ SECTION_LABELS: dict[str, str] = {
     "tasks": "📋  Task Scheduling",
     "paths": "📁  File Paths",
     "task_types": "🏷️  Task Types",
+    "task_type_colors": "🎨  Task Type Colors",
 }
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
@@ -112,6 +113,7 @@ SECTION_FALLBACKS: dict[str, FieldMeta] = {
     "time_points": FieldMeta(EditorType.TEXT, "Notification message"),
     "paths": FieldMeta(EditorType.TEXT, "File or directory path"),
     "task_types": FieldMeta(EditorType.TEXT, "Task type name"),
+    "task_type_colors": FieldMeta(EditorType.TEXT, "Color: blue, orange, aqua, yellow, magenta, green, violet, or red"),
 }
 
 DEFAULT_TASK_TYPES: dict[str, str] = {

@@ -1,6 +1,7 @@
 // Tasks-by-type board: one group per configured task type, ordered so groups with more important work come
 // first. Each group either lists its tasks or folds into a summary of its metrics, and takes new tasks inline.
-// Rendering is pure (state in, HTML out); render.ts owns the board state and event binding.
+// The board is also where task types are managed: a tile at the end adds one, and each group's menu renames
+// or deletes its type. Rendering is pure (state in, HTML out); render.ts owns the board state and binding.
 import { ring } from "./charts";
 import type { Snapshot, TaskItem } from "./types";
 import { e, empty, hash, icons, sw, typeSwatch } from "./ui";
@@ -18,6 +19,16 @@ export type BoardOptions = {
   added: string | null;
   /** Group whose inline form just opened, to animate it in. */
   opening?: string | null;
+  /** Group whose type menu (rename, delete) is open. */
+  menu?: string | null;
+  /** Group whose name is being edited. */
+  renaming?: string | null;
+  /** Group asking to confirm its deletion, and where its tasks and deadlines would go. */
+  deleting?: {id: string; moveTo: string} | null;
+  /** The form for a new type, when open. */
+  newType?: {draft: string} | null;
+  /** Group to greet after its type was added or renamed. */
+  greet?: string | null;
 };
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true});
@@ -54,25 +65,71 @@ export function taskBoard(options: BoardOptions): string {
   const all = groupTasks(snapshot);
   // A search shows only the groups with matches, listing them so the matching tasks can be seen.
   const groups = needle ? all.map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(needle))})).filter(group => group.tasks.length) : all;
-  if (!groups.length) return empty(needle ? "No tasks match your search." : "Add a task type in Settings to start your board.");
-  return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("");
+  if (needle && !groups.length) return empty("No tasks match your search.");
+  // Searching is about tasks, so types can only be changed on the full board.
+  return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("") + (needle ? "" : newTypeTile(options.newType ?? null));
 }
 
 function groupCard(group: TaskGroup, order: number, options: BoardOptions, folded: boolean, searching: boolean): string {
   const {snapshot: s} = options;
   const count = group.tasks.length;
   const name = e(group.name);
+  const id = e(group.id);
   const greeted = !!options.added && group.tasks.some(task => task.description === options.added);
-  const toggle = searching ? "" : `<button type="button" class="group-toggle" data-group-toggle="${e(group.id)}" aria-expanded="${!folded}" aria-label="${folded ? "Show the tasks in" : "Fold"} ${name}" title="${folded ? "Show tasks" : "Fold into a summary"}">${icons.chevron}</button>`;
-  const body = folded ? groupSummary(group, s.tasks.length)
+  const deleting = !searching && options.deleting?.id === group.id ? options.deleting : null;
+  const toggle = searching ? "" : `<button type="button" class="group-toggle" data-group-toggle="${id}" aria-expanded="${!folded}" aria-label="${folded ? "Show the tasks in" : "Fold"} ${name}" title="${folded ? "Show tasks" : "Fold into a summary"}">${icons.chevron}</button>`;
+  const title = !searching && options.renaming === group.id
+    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="Name of this type" enterkeyhint="done">`
+    : `<h3 data-type-title="${id}" ${searching ? "" : 'title="Double-click to rename"'}>${name}</h3>`;
+  const body = deleting ? deletePanel(group, s, deleting.moveTo)
+    : folded ? groupSummary(group, s.tasks.length)
     : count ? `<div class="task-cards">${group.tasks.map((task, position) => taskCard(task, s.tasks.indexOf(task), position, s.today.date, task.description === options.added)).join("")}</div>`
     : `<p class="group-empty">Nothing here yet.</p>`;
-  const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded ? "is-folded" : "", count ? "" : "is-empty", greeted && folded ? "just-added" : ""].filter(Boolean).join(" ");
-  return `<article class="${classes}" data-group="${e(group.id)}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}; --vt:${groupTransitionName(group.id)}; --g:${order}">
-    <header class="group-heading"><span class="group-icon">${icons.tasks}</span><h3>${name}</h3><span class="group-count" title="${plural(count, "task")}">${count}</span>${toggle}</header>
+  const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded ? "is-folded" : "", count ? "" : "is-empty", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
+  return `<article class="${classes}" data-group="${id}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}; --vt:${groupTransitionName(group.id)}; --g:${order}">
+    <header class="group-heading"><span class="group-icon">${icons.tasks}</span>${title}${searching ? countBadge(count) : typeMenu(group, s, count, options.menu === group.id)}${toggle}</header>
     ${body}
-    <div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, options.composer?.type === group.id ? options.composer : null)}</div>
+    ${deleting ? "" : `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, options.composer?.type === group.id ? options.composer : null)}</div>`}
   </article>`;
+}
+
+const countBadge = (count: number) => `<span class="group-count" title="${plural(count, "task")}">${count}</span>`;
+
+/** The task count, which gives way to a menu button on hover or focus: rename or delete the type. */
+function typeMenu(group: TaskGroup, s: Snapshot, count: number, open: boolean): string {
+  const id = e(group.id);
+  const name = e(group.name);
+  // Deleting needs another type to remain for the tasks and deadlines.
+  const lastType = group.id in s.taskTypes && Object.keys(s.taskTypes).length <= 1;
+  return `<span class="group-badge ${open ? "is-open" : ""}">${countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="Options for the type ${name}" title="Rename or delete this type">${icons.more}</button>
+    ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>Rename</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? 'disabled title="Keep at least one task type"' : ""}>${icons.trash}<span>Delete type</span></button></span>` : ""}</span>`;
+}
+
+/** Asks before deleting a type, and where its open tasks (required) and deadlines (optional) should go. */
+function deletePanel(group: TaskGroup, s: Snapshot, moveTo: string): string {
+  const name = e(group.name);
+  const tasks = s.tasks.filter(task => task.type === group.id).length;
+  const deadlines = s.deadlines.filter(item => item.type === group.id).length;
+  const targets = Object.keys(s.taskTypes).filter(id => id !== group.id).sort(byId);
+  const choice = targets.includes(moveTo) ? moveTo : tasks ? targets[0] : "";
+  const what = [tasks ? plural(tasks, "task") : "", deadlines ? plural(deadlines, "deadline") : ""].filter(Boolean).join(" and ");
+  const move = what ? `<label class="type-move"><span>Its ${what} ${tasks + deadlines === 1 ? "moves" : "move"} to</span><select name="moveTo" data-type-move>${tasks ? "" : `<option value="">No type</option>`}${targets.map(id => `<option value="${e(id)}" ${id === choice ? "selected" : ""}>${e(s.taskTypes[id])}</option>`).join("")}</select></label>`
+    : `<p class="type-delete-note">No tasks or deadlines use it.</p>`;
+  return `<div class="type-delete" role="group" aria-label="Delete the type ${name}">
+      <p class="type-delete-title">Delete “${name}”?</p>
+      ${move}
+      <div class="type-delete-actions"><button type="button" class="button small delete-type" data-type-delete-confirm="${e(group.id)}">${icons.trash}<span>Delete type</span></button><button type="button" class="button small ghost" data-type-delete-cancel>Keep it</button></div>
+    </div>`;
+}
+
+/** The last tile on the board: a button that becomes a form for naming a new type. */
+function newTypeTile(open: {draft: string} | null): string {
+  if (!open) return `<div class="new-type" data-slot="new-type"><button type="button" class="new-type-button" data-type-new><span class="new-type-icon">${icons.plus}</span><span>New type</span></button></div>`;
+  return `<div class="new-type is-open" data-slot="new-type"><form class="new-type-form" autocomplete="off">
+      <span class="new-type-icon">${icons.tasks}</span>
+      <input name="newTypeName" aria-label="Name of the new type" placeholder="Name a new type…" maxlength="60" value="${e(open.draft)}" enterkeyhint="done">
+      <div class="new-type-actions"><button type="submit" class="composer-add">${icons.enter}<span>Add type</span></button><button type="button" class="composer-close" data-type-new-cancel aria-label="Close the new type form" title="Close (Esc)">${icons.close}</button></div>
+    </form></div>`;
 }
 
 function taskCard(task: TaskItem, index: number, position: number, today: string, added: boolean): string {
@@ -139,7 +196,7 @@ export function masonry(board: HTMLElement, fresh = false): void {
   // Folded summaries are all about the same height, so they sit in plain rows (see .is-uniform).
   if (board.classList.contains("is-uniform")) { reset(); return; }
   const kind = board.classList.contains("flow-board") ? "flow" : "grid";
-  const ids = items.map((item, i) => item.dataset.group ?? `#${i}`);
+  const ids = items.map((item, i) => item.dataset.group ?? item.dataset.slot ?? `#${i}`);
   const order = ids.join("\n");
   const place = (reuse: boolean) => {
     const style = getComputedStyle(board);
@@ -152,8 +209,8 @@ export function masonry(board: HTMLElement, fresh = false): void {
     const spans = items.map(item => Math.max(1, Math.ceil((item.offsetHeight + (parseFloat(getComputedStyle(item).marginBottom) || 0)) / unit)));
     const heights = new Array<number>(columns).fill(0);
     items.forEach((item, i) => {
-      if (!item.dataset.group) {
-        // Anything else, such as an empty-search message, spans the whole board.
+      if (item.classList.contains("empty")) {
+        // A message, such as for a search without matches, spans the whole board.
         const top = Math.max(...heights);
         item.style.gridColumn = "1 / -1";
         item.style.gridRow = `${top + 1} / span ${spans[i]}`;
