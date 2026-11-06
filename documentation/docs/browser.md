@@ -219,10 +219,10 @@ an icon rail and cards stack.
 
 Tasks preserve their importance (1–10), type, postponed reminder date, and
 procrastination status. The board groups the same tasks returned by `rmd ls`
-without imposing a display limit, and shows a group for every task type, even
-before it has tasks. Groups with
-more important work come first: they are ordered by the average importance of
-their tasks, then by how many tasks they hold, and empty groups come last.
+without imposing a display limit. Groups with more important work come first:
+they are ordered by the average importance of their tasks, then by how many
+tasks they hold. Types without tasks stay off the board, on a quieter shelf
+below it; add a task to one with its **+** button and it moves up to the board.
 Inside each group, the existing ordering is preserved: procrastinated tasks,
 available tasks, then postponed tasks, with importance descending within each
 section. The overview refreshes every 30 seconds when you are not editing.
@@ -250,11 +250,12 @@ browser; a search always lists the matching tasks.
 
 Task types, which deadlines share, are managed on the board too:
 
-- **Add** a type with the **New type** tile at the end of the board. Its group
-  appears, ready for its first task.
+- **Add** a type with **New type** at the end of the shelf. It waits on the
+  shelf until it gets its first task.
 - **Rename** a type from the **⋯** menu in its group's header (the task count
-  turns into **⋯** when you point at a group), or double-click its name. Press
-  **Enter** to save or **Esc** to keep the old name.
+  turns into **⋯** when you point at a group; on the shelf, **⋯** sits beside the
+  type's name), or double-click its name. Press **Enter** to save or **Esc** to
+  keep the old name.
 - **Delete** a type from the same menu. The group asks where its open tasks
   should go, and its deadlines go with them; deadlines of a type without tasks
   can instead lose their type. At least one type always remains. Finished tasks

@@ -1,7 +1,7 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
-import { foldSwitch, groupTasks, masonry, taskBoard, type BoardView, type Composer } from "./board";
+import { foldSwitch, groupTasks, masonry, taskBoard, typeShelf, type BoardView, type Composer } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { bindTilt, burst, reducedMotion } from "./effects";
@@ -252,8 +252,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(btn => btn.onclick = () => void action(() => runAction(btn.dataset.action!)));
     root.querySelector<HTMLButtonElement>("[data-notice-close]")!.onclick = dismissNotice;
     root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.onclick = undo;
-    const board = root.querySelector<HTMLElement>("#task-board");
-    if (board) bindBoard(board, s);
+    const area = root.querySelector<HTMLElement>("#board-area");
+    if (area) bindBoard(area, s);
     root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
     root.querySelectorAll<HTMLButtonElement>("[data-deadline]").forEach(btn => btn.onclick = () => {
       const deadline = s.deadlines[Number(btn.dataset.deadline)];
@@ -339,25 +339,32 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   // ----- Task board: folding and inline add -----------------------------------
 
-  const boardHtml = (s: Snapshot, opening: string | null = null) => {
+  const boardOptions = (s: Snapshot, opening: string | null = null) => {
     const board = state.board;
-    return taskBoard({snapshot: s, query: state.search, isFolded: id => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet});
+    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet};
   };
+  /** The board, and below it the shelf of types without tasks, in one area that redraws and binds together. */
+  const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area"><section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
   /** Every group folded: the summaries line up in plain rows instead of the masonry. */
   const uniformBoard = () => state.board.view === "folded" && !state.board.flipped.size && !state.search;
   /** Redraw only the board, leaving the page around it as it is. `reveal` animates the contents of every
    *  group, or of one group by ID, as they appear after folding or expanding. */
   function redrawBoard(s: Snapshot, options: {opening?: string; reveal?: true | string; fresh?: boolean} = {}) {
-    const board = root.querySelector<HTMLElement>("#task-board");
-    if (!board) return;
+    const area = root.querySelector<HTMLElement>("#board-area");
+    const board = area?.querySelector<HTMLElement>("#task-board");
+    const shelf = area?.querySelector<HTMLElement>("#task-shelf");
+    if (!area || !board || !shelf) return;
     root.querySelector(".content")?.classList.remove("enter");
     board.classList.toggle("is-uniform", uniformBoard());
-    board.innerHTML = boardHtml(s, options.opening ?? null);
+    board.innerHTML = taskBoard(boardOptions(s, options.opening ?? null));
+    shelf.innerHTML = typeShelf(boardOptions(s, options.opening ?? null));
     if (options.reveal) board.querySelectorAll<HTMLElement>(".task-group").forEach(group => group.classList.toggle("reveal", options.reveal === true || group.dataset.group === options.reveal));
-    bindBoard(board, s, options.fresh);
+    bindBoard(area, s, options.fresh);
   }
+  /** Bind the board area: the board's groups and the shelf's types. */
   function bindBoard(scope: HTMLElement, s: Snapshot, fresh = false) {
-    masonry(scope, fresh);
+    const board = scope.querySelector<HTMLElement>("#task-board");
+    if (board) masonry(board, fresh);
     bindTasks(scope, s);
     scope.querySelectorAll<HTMLButtonElement>("[data-group-toggle]").forEach(btn => btn.onclick = () => {
       const id = btn.dataset.groupToggle!;
@@ -514,7 +521,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const id = state.board.menu;
     if (!id) return;
     state.board.menu = null;
-    root.querySelectorAll(".task-group.menu-open").forEach(group => group.classList.remove("menu-open"));
+    root.querySelectorAll(".menu-open").forEach(group => group.classList.remove("menu-open"));
     root.querySelectorAll<HTMLElement>(".group-badge.is-open").forEach(badge => {
       badge.classList.remove("is-open");
       badge.querySelector(".type-menu")?.remove();
@@ -595,7 +602,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         }
         state.board.added = description;
         state.board.focus = true;
-        await reload();
+        await reload({morph: !s.tasks.some(task => task.type === type)});
         state.notice = `Added “${description}” to ${name}.`;
       });
     });
@@ -634,10 +641,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
     return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
-      <section id="task-board" class="task-board flow-board ${uniformBoard() ? "is-uniform" : ""}">${boardHtml(s)}</section>`;
+      ${boardArea(s, true)}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div><section id="task-board" class="task-board ${uniformBoard() ? "is-uniform" : ""}">${boardHtml(s)}</section>`;
+    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div>${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -682,7 +689,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
-    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with the New type tile at the end of the board, and rename or delete one from the menu in its group's header. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
