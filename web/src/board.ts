@@ -1,15 +1,19 @@
 // Tasks-by-type board: one group per configured task type, ordered so groups with more important work come
 // first. Each group either lists its tasks or folds into a summary of its metrics, and takes new tasks inline.
 // The board is also where task types are managed: a tile at the end adds one, and each group's menu renames
-// or deletes its type. Rendering is pure (state in, HTML out); render.ts owns the board state and binding.
+// or deletes its type. Each task has a progress slider, and a timed task shows when it is due (or how long it
+// has been overdue). Rendering is pure (state in, HTML out); render.ts owns the board state and binding.
 import { ring } from "./charts";
+import { dueAt, dueLabel, clockText, isOverdue, progressControl, progressOf } from "./timers";
 import type { Snapshot, TaskItem } from "./types";
 import { e, empty, hash, icons, sw, typeSwatch } from "./ui";
 
 export type BoardView = "expanded" | "folded";
 /** The inline form for a new task: which group it is open in, the chosen importance, and any unsent text. */
 export type Composer = {type: string; priority: number; draft: string};
-export type TaskGroup = {id: string; name: string; tasks: TaskItem[]; average: number | null; high: number; later: number; deferred: number};
+/** A type's tasks and the metrics its folded summary shows: average importance, average progress (0–100),
+ *  and how many tasks are important, timed, overdue, or deferred. */
+export type TaskGroup = {id: string; name: string; tasks: TaskItem[]; average: number | null; progress: number | null; high: number; timed: number; overdue: number; deferred: number};
 export type BoardOptions = {
   snapshot: Snapshot;
   query: string;
@@ -29,22 +33,22 @@ export type BoardOptions = {
   newType?: {draft: string} | null;
   /** Group to greet after its type was added or renamed. */
   greet?: string | null;
+  /** The time to measure timed tasks against; now by default. */
+  now?: number;
 };
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true});
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
-/** Reminders for a postponed task start on a later day. */
-export const isLater = (task: TaskItem, today: string) => !!task.alarmFrom && task.alarmFrom > today;
 /** The name used for a view transition, stable for a group across redraws. */
 export const groupTransitionName = (id: string) => `tg-${hash(id).toString(36)}`;
 
 /** One group per configured type, even without tasks, plus any type that only existing tasks still use.
  *  Groups are ordered by average importance (to one decimal, as shown), then by how many tasks they hold;
  *  groups without tasks come last in configured order. Tasks keep the server's order inside each group. */
-export function groupTasks(snapshot: Snapshot): TaskGroup[] {
+export function groupTasks(snapshot: Snapshot, now = Date.now()): TaskGroup[] {
   const groups = new Map<string, TaskGroup>();
   const group = (id: string, name: string) => {
-    if (!groups.has(id)) groups.set(id, {id, name, tasks: [], average: null, high: 0, later: 0, deferred: 0});
+    if (!groups.has(id)) groups.set(id, {id, name, tasks: [], average: null, progress: null, high: 0, timed: 0, overdue: 0, deferred: 0});
     return groups.get(id)!;
   };
   for (const id of Object.keys(snapshot.taskTypes).sort(byId)) group(id, snapshot.taskTypes[id]);
@@ -52,8 +56,10 @@ export function groupTasks(snapshot: Snapshot): TaskGroup[] {
   for (const item of groups.values()) {
     if (!item.tasks.length) continue;
     item.average = Math.round(item.tasks.reduce((sum, task) => sum + task.priority, 0) / item.tasks.length * 10) / 10;
+    item.progress = Math.round(item.tasks.reduce((sum, task) => sum + progressOf(task), 0) / item.tasks.length);
     item.high = item.tasks.filter(task => task.priority >= 8).length;
-    item.later = item.tasks.filter(task => isLater(task, snapshot.today.date)).length;
+    item.timed = item.tasks.filter(task => dueAt(task) !== null).length;
+    item.overdue = item.tasks.filter(task => isOverdue(task, now)).length;
     item.deferred = item.tasks.filter(task => task.procrastinated).length;
   }
   return [...groups.values()].sort((a, b) => (b.average ?? -1) - (a.average ?? -1) || b.tasks.length - a.tasks.length || byId(a.id, b.id));
@@ -62,7 +68,7 @@ export function groupTasks(snapshot: Snapshot): TaskGroup[] {
 export function taskBoard(options: BoardOptions): string {
   const {snapshot, query} = options;
   const needle = query.toLowerCase();
-  const all = groupTasks(snapshot);
+  const all = groupTasks(snapshot, options.now);
   // A search shows only the groups with matches, listing them so the matching tasks can be seen.
   // Types without tasks wait on the shelf below the board (see typeShelf).
   const groups = needle ? all.map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(needle))})).filter(group => group.tasks.length) : all.filter(group => group.tasks.length);
@@ -74,7 +80,7 @@ export function taskBoard(options: BoardOptions): string {
  *  moves it up to the board), be renamed, or be deleted. The shelf also adds new types. Hidden while searching. */
 export function typeShelf(options: BoardOptions): string {
   if (options.query) return "";
-  const waiting = groupTasks(options.snapshot).filter(group => !group.tasks.length);
+  const waiting = groupTasks(options.snapshot, options.now).filter(group => !group.tasks.length);
   const heading = waiting.length
     ? `<header class="shelf-heading"><h3>Types without tasks <span class="count">${waiting.length}</span></h3><p>Add a task to one and it moves up to the board.</p></header>`
     : "";
@@ -111,7 +117,7 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
     : `<h3 data-type-title="${id}" ${searching ? "" : 'title="Double-click to rename"'}>${name}</h3>`;
   const body = deleting ? deletePanel(group, s, deleting.moveTo)
     : folded ? groupSummary(group, s.tasks.length)
-    : count ? `<div class="task-cards">${group.tasks.map((task, position) => taskCard(task, s.tasks.indexOf(task), position, s.today.date, task.description === options.added)).join("")}</div>`
+    : count ? `<div class="task-cards">${group.tasks.map((task, position) => taskCard(task, s.tasks.indexOf(task), position, options.now ?? Date.now(), task.description === options.added)).join("")}</div>`
     : `<p class="group-empty">Nothing here yet.</p>`;
   const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded ? "is-folded" : "", count ? "" : "is-empty", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
   return `<article class="${classes}" data-group="${id}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}; --vt:${groupTransitionName(group.id)}; --g:${order}">
@@ -160,16 +166,26 @@ function newTypeTile(open: {draft: string} | null): string {
     </form></div>`;
 }
 
-function taskCard(task: TaskItem, index: number, position: number, today: string, added: boolean): string {
-  const days = task.alarmFrom ? Math.round((Date.parse(task.alarmFrom) - Date.parse(today)) / 86400000) : 0;
-  const detail = days > 0 ? `Reminders ${days === 1 ? "tomorrow" : `in ${days} days`} · ${task.alarmFrom}` : task.procrastinated ? `Deferred${task.procrastinateDays === null ? "" : ` · ${task.procrastinateDays} days`}` : "";
+function taskCard(task: TaskItem, index: number, position: number, now: number, added: boolean): string {
+  const at = dueAt(task);
+  const overdue = at !== null && at <= now;
+  const progress = progressOf(task);
+  const name = e(task.description);
   const level = task.priority >= 8 ? "high" : task.priority >= 5 ? "medium" : "low";
-  const classes = ["task-card", task.procrastinated ? "deferred" : "", days > 0 ? "postponed" : task.priority >= 8 ? "high-priority" : "", added ? "just-added" : ""].filter(Boolean).join(" ");
-  return `<div class="${classes}" style="--i:${position}"><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="Complete ${e(task.description)}" title="Complete task">${icons.check}</button><h4>${e(task.description)}</h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="Edit ${e(task.description)}">Edit</button></div>${detail ? `<p class="task-detail">${icons.clock}${e(detail)}</p>` : ""}<details class="task-more"><summary>More options</summary><button type="button" data-task="${index}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${index}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
+  const classes = ["task-card", task.procrastinated ? "deferred" : "", task.priority >= 8 ? "high-priority" : "", at !== null ? "is-timed" : "", overdue ? "is-overdue" : "", progress === 100 ? "is-full" : "", added ? "just-added" : ""].filter(Boolean).join(" ");
+  // A timed task shows when it is due and how long is left, or how long it has been overdue; render.ts ticks it.
+  const timer = at !== null
+    ? `<p class="task-detail task-timer">${icons.clock}<span><span data-clock="due">${clockText("due", at, now)}</span> ${e(dueLabel(task.due!, now))} · <span data-clock="short">${clockText("short", at, now)}</span> <span data-clock="word">${clockText("word", at, now)}</span></span></p>`
+    : "";
+  const deferred = task.procrastinated ? `<p class="task-detail">${icons.hourglass}${e(`Deferred${task.procrastinateDays === null ? "" : ` · ${task.procrastinateDays} days`}`)}</p>` : "";
+  const timing = at !== null
+    ? `<button type="button" class="neutral" data-task="${index}" data-operation="timer">Change the finish time…</button><button type="button" class="neutral" data-task="${index}" data-operation="untime">Stop timing · make it a normal task</button>`
+    : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">Make it a timed task…</button>`;
+  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}" title="Complete task">${icons.check}</button><h4>${name}</h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="Edit ${name}">Edit</button></div>${timer}${deferred}${progressControl(index, progress, task.description, "task-progress")}<details class="task-more"><summary>More options</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${index}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
 }
 
-/** A folded group: average importance as a ring, every task as a dot on a 1–10 strip, its share of the list,
- *  and how many tasks are important, waiting for a later day, or deferred. No task details. */
+/** A folded group: average importance as a ring, every task as a dot on a 1–10 strip, how far along its tasks
+ *  are on average, its share of the list, and how many tasks are important, timed, overdue, or deferred. */
 function groupSummary(group: TaskGroup, total: number): string {
   if (!group.tasks.length) return `<div class="tg-summary is-empty"><p>No tasks yet.</p></div>`;
   const average = group.average ?? 0;
@@ -183,15 +199,19 @@ function groupSummary(group: TaskGroup, total: number): string {
   const share = total ? group.tasks.length / total : 0;
   const chips = [
     group.high ? `<span class="tg-chip high">${icons.flag}${group.high} important</span>` : "",
-    group.later ? `<span class="tg-chip">${icons.clock}${group.later} later</span>` : "",
+    group.overdue ? `<span class="tg-chip overdue">${icons.clock}${group.overdue} overdue</span>` : "",
+    group.timed > group.overdue ? `<span class="tg-chip">${icons.clock}${group.timed - group.overdue} timed</span>` : "",
     group.deferred ? `<span class="tg-chip deferred">${icons.hourglass}${group.deferred} deferred</span>` : ""
   ].join("");
+  const progress = group.progress ?? 0;
+  const finished = group.tasks.filter(task => progressOf(task) === 100).length;
   const spread = group.tasks.map(task => task.priority);
   return `<div class="tg-summary">
       ${ring({value: average / 10, size: 66, label: `Average importance ${average} out of 10`, center: average.toFixed(1), tone: ""})}
       <div class="tg-stats"><span class="tg-label">Average importance</span>
         <div class="tg-strip" role="img" aria-label="${e(`${plural(group.tasks.length, "task")} rated from ${Math.min(...spread)} to ${Math.max(...spread)} out of 10`)}">${dots}<b class="tg-avg" style="--x:${((Math.max(1, Math.min(10, average)) - 1) / 9).toFixed(3)}"></b></div>
         <span class="tg-scale" aria-hidden="true"><span>1</span><span>10</span></span></div>
+      <div class="tg-progress ${progress === 100 ? "is-full" : ""}" role="img" aria-label="${e(`Average progress ${progress}%${finished ? `, ${finished} of ${plural(group.tasks.length, "task")} at 100%` : ""}`)}"><span class="tg-label">Progress</span><span class="tg-progress-bar" style="--w:${(progress / 100).toFixed(3)}" aria-hidden="true"></span><b>${progress}%</b>${finished ? `<span class="tg-progress-note">${finished} at 100%</span>` : ""}</div>
       <div class="tg-meta"><span class="tg-share"><span class="tg-share-bar" style="--w:${share.toFixed(3)}" aria-hidden="true"></span>${Math.round(share * 100)}% of open tasks</span>${chips}</div>
     </div>`;
 }

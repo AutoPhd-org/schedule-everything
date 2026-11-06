@@ -13,8 +13,8 @@ const snapshot: Snapshot = {
   schedule: {isSkipped: false, current: null, next: null, timeToNext: null, events: [], hasSyncedOverlay: false},
   taskTypes: {"1": "Coding", "2": "Writing", "3": "Reading", "4": "Exercise"},
   tasks: [
-    task("Fix build", 6, "1"),
-    task("Refactor parser", 6, "1", {alarmFrom: "2026-10-09"}),
+    task("Fix build", 6, "1", {progress: 100}),
+    task("Refactor parser", 6, "1", {due: "2026-10-05T09:30", progress: 50}),
     task("Draft essay", 6, "2", {procrastinated: true, procrastinateDays: 3}),
     task("Read paper", 9, "3"),
     task("Old habit", 2, "9", {typeName: "Retired"})
@@ -62,8 +62,11 @@ beforeEach(() => {
   });
   client = {send};
   vi.spyOn(window, "confirm").mockReturnValue(true);
+  // Noon on the snapshot's day, so "Refactor parser" (due 9:30) is overdue.
+  vi.useFakeTimers({toFake: ["Date"]});
+  vi.setSystemTime(new Date(2026, 9, 5, 12, 0));
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.mode; });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.mode; });
 
 describe("task groups", () => {
   it("includes every configured type and orders groups by average importance, then size", () => {
@@ -72,9 +75,11 @@ describe("task groups", () => {
     // Exercise has no tasks and comes last.
     expect(groups.map(g => g.name)).toEqual(["Reading", "Coding", "Writing", "Retired", "Exercise"]);
     expect(groups.map(g => g.tasks.length)).toEqual([1, 2, 1, 1, 0]);
-    expect(groups.find(g => g.name === "Coding")).toMatchObject({average: 6, high: 0, later: 1, deferred: 0});
+    expect(groups.find(g => g.name === "Coding")).toMatchObject({average: 6, progress: 75, high: 0, timed: 1, overdue: 1, deferred: 0});
+    // Before its finish time a timed task is not overdue yet.
+    expect(groupTasks(snapshot, new Date(2026, 9, 5, 9, 0).getTime()).find(g => g.name === "Coding")).toMatchObject({timed: 1, overdue: 0});
     expect(groups.find(g => g.name === "Writing")).toMatchObject({deferred: 1});
-    expect(groups.find(g => g.name === "Exercise")).toMatchObject({average: null, tasks: []});
+    expect(groups.find(g => g.name === "Exercise")).toMatchObject({average: null, progress: null, tasks: []});
   });
 
   it("keeps types without tasks on a shelf below the board, each ready for a first task", async () => {
@@ -123,7 +128,10 @@ describe("folding", () => {
     expect(coding.querySelector(".ring figcaption")?.textContent).toBe("6.0");
     expect(coding.querySelectorAll(".tg-strip i")).toHaveLength(2);
     expect(coding.querySelector(".tg-share")?.textContent).toContain("40% of open tasks");
-    expect(coding.textContent).toContain("1 later");
+    expect(coding.textContent).toContain("1 overdue");
+    expect(coding.querySelector(".tg-progress b")?.textContent).toBe("75%");
+    expect(coding.querySelector(".tg-progress")?.getAttribute("aria-label")).toBe("Average progress 75%, 1 of 2 tasks at 100%");
+    expect(group("Reading").querySelector(".tg-progress b")?.textContent).toBe("0%");
     expect(group("Writing").textContent).toContain("1 deferred");
     expect(group("Reading").textContent).toContain("1 important");
     // The shelf of types without tasks looks the same either way.

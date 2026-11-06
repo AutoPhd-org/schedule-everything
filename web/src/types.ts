@@ -23,7 +23,14 @@ export type TaskItem = {
   alarmFrom: string | null;
   procrastinated: boolean;
   procrastinateDays: number | null;
+  /** A timed task's finish-by time, local `YYYY-MM-DDTHH:MM`; normal tasks have none. */
+  due?: string | null;
+  /** How far along the task is, 0–100. */
+  progress?: number;
 };
+
+/** A timed task completed today that was due by tonight; it counts as finished work in today's progress. */
+export type TimedDone = {description: string; type: string | null; due: string; endedAt: string};
 
 export type DeadlineItem = {
   event: string;
@@ -165,6 +172,7 @@ export type Snapshot = {
   /** Saved type colors; a type without one is colored by its place among the types. */
   taskTypeColors?: Record<string, string>;
   history: HistoryItem[];
+  timedDone?: TimedDone[];
 };
 
 export type BridgeClient = {

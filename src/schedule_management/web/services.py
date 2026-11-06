@@ -14,7 +14,11 @@ from typing import Any
 
 from schedule_management.commands import status as status_commands
 from schedule_management.commands.deadlines import refresh_deadlines
-from schedule_management.commands.history import _format_duration, _pair_task_activities
+from schedule_management.commands.history import (
+    _format_duration,
+    _pair_task_activities,
+    parse_log_timestamp,
+)
 from schedule_management.commands.settings import DEFAULT_TASK_TYPES
 from schedule_management.commands.status import (
     get_current_and_next_events,
@@ -137,6 +141,40 @@ def _require_priority(payload: dict[str, Any]) -> int:
     return priority
 
 
+_DUE_FORMATS = ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M")
+
+
+def _parse_due(value: Any) -> datetime | None:
+    """A timed task's finish-by time as a naive local datetime, or None when it has none or it is unreadable."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    for fmt in _DUE_FORMATS:
+        try:
+            return datetime.strptime(value.strip(), fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _require_due(payload: dict[str, Any]) -> str | None:
+    """Read ``due`` from a payload: a local ``YYYY-MM-DDTHH:MM`` makes the task timed; empty or null clears it."""
+    value = payload.get("due")
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    due = _parse_due(value)
+    if due is None:
+        raise WebError("invalid_input", "due must be a local date and time like 2026-11-05T18:00.")
+    return due.strftime("%Y-%m-%dT%H:%M")
+
+
+def _task_progress(task: dict[str, Any]) -> int:
+    try:
+        progress = int(task.get("progress", 0))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(100, progress))
+
+
 def _save_tasks_or_error(tasks: list[dict[str, Any]]) -> None:
     try:
         save_tasks(tasks)
@@ -252,6 +290,7 @@ def _sorted_tasks() -> list[dict[str, Any]]:
         else:
             section = 2
 
+        due = _parse_due(task.get("due"))
         normalized.append(
             {
                 "description": description.strip(),
@@ -261,6 +300,8 @@ def _sorted_tasks() -> list[dict[str, Any]]:
                 "alarmFrom": alarm_from_str,
                 "procrastinated": is_procrastinated,
                 "procrastinateDays": procrastinate_days,
+                "due": due.strftime("%Y-%m-%dT%H:%M") if due else None,
+                "progress": _task_progress(task),
                 "_section": section,
             }
         )
@@ -430,7 +471,44 @@ def status_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "taskTypes": _load_task_types(),
         "taskTypeColors": _load_task_type_colors(),
         "history": _history_rows(),
+        "timedDone": _timed_done_today(current_date),
     }
+
+
+def _timed_done_today(current_date: date) -> list[dict[str, Any]]:
+    """Timed tasks completed today that were due by tonight.
+
+    They still count, as finished work, toward today's progress, so completing a
+    timed task never lowers it. A task that is open again is left out.
+    """
+    try:
+        log_entries = load_task_log()
+    except Exception:
+        return []
+    open_descriptions = {
+        task.get("description") for task in load_tasks() if isinstance(task, dict)
+    }
+    done: dict[str, dict[str, Any]] = {}
+    for entry in log_entries:
+        if not isinstance(entry, dict) or entry.get("action") != "deleted":
+            continue
+        task = entry.get("task")
+        if not isinstance(task, dict):
+            continue
+        description = task.get("description")
+        due = _parse_due(task.get("due"))
+        ended = parse_log_timestamp(entry.get("timestamp", ""))
+        if not isinstance(description, str) or not description.strip() or due is None or ended is None:
+            continue
+        if ended.date() != current_date or due.date() > current_date or description in open_descriptions:
+            continue
+        done[description] = {
+            "description": description,
+            "type": str(task.get("type")) if task.get("type") is not None else None,
+            "due": due.strftime("%Y-%m-%dT%H:%M"),
+            "endedAt": ended.isoformat(),
+        }
+    return sorted(done.values(), key=lambda item: item["endedAt"])
 
 
 def task_add(payload: dict[str, Any]) -> dict[str, Any]:
@@ -458,6 +536,7 @@ def task_add(payload: dict[str, Any]) -> dict[str, Any]:
         if postpone_days > 0:
             from datetime import timedelta
             alarm_from = (_today() + timedelta(days=postpone_days)).isoformat()
+    due = _require_due(payload)
 
     tasks = load_tasks()
     new_task: dict[str, Any] = {
@@ -467,6 +546,8 @@ def task_add(payload: dict[str, Any]) -> dict[str, Any]:
     }
     if alarm_from:
         new_task["alarm_from"] = alarm_from
+    if due:
+        new_task["due"] = due
 
     existing_index = None
     for index, task in enumerate(tasks):
@@ -521,6 +602,12 @@ def task_update(payload: dict[str, Any]) -> dict[str, Any]:
                         updated.pop("alarm_from", None)
                 except (TypeError, ValueError, OverflowError):
                     raise WebError("invalid_input", "postpone must be a non-negative integer.") from None
+            if "due" in payload:
+                due = _require_due(payload)
+                if due:
+                    updated["due"] = due
+                else:
+                    updated.pop("due", None)
             old_task = dict(task)
             tasks[index] = updated
             _save_tasks_or_error(tasks)
@@ -540,6 +627,35 @@ def task_update(payload: dict[str, Any]) -> dict[str, Any]:
             return updated
 
     raise WebError("not_found", f"task not found: {original_description}")
+
+
+def task_progress(payload: dict[str, Any]) -> dict[str, Any]:
+    """Set how far along a task is, from 0 to 100 percent.
+
+    Progress moves often, so it is saved on the task without a history entry.
+    """
+    description = _require_text(payload, "description")
+    value = payload.get("progress")
+    invalid = WebError("invalid_input", "progress must be a whole number from 0 to 100.")
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise invalid
+    try:
+        number = float(value)
+    except ValueError:
+        raise invalid from None
+    if not number.is_integer() or not 0 <= number <= 100:
+        raise invalid
+    progress = int(number)
+    tasks = load_tasks()
+    for task in tasks:
+        if task.get("description") == description:
+            if progress:
+                task["progress"] = progress
+            else:
+                task.pop("progress", None)
+            _save_tasks_or_error(tasks)
+            return {"description": description, "progress": progress}
+    raise WebError("not_found", f"task not found: {description}")
 
 
 _CLOSING_ACTIONS = {"deleted", "cancelled", "dropped"}

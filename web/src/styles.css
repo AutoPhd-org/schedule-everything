@@ -383,7 +383,6 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-card:hover { transform: translateY(-3px) rotate(-.4deg); box-shadow: var(--shadow); }
 .task-card.high-priority { box-shadow: inset 4px 0 0 var(--c); }
 .task-card.deferred { box-shadow: inset 4px 0 0 var(--warning); }
-.task-card.postponed { border-style: dashed; background: color-mix(in oklab, var(--surface-solid) 70%, transparent); }
 .task-card.completing { animation: complete .8s var(--ease) forwards; }
 .task-main { display: flex; align-items: flex-start; gap: 10px; }
 .complete-button { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border: 2px solid color-mix(in oklab, var(--c) 60%, var(--muted)); border-radius: 50%; background: var(--surface-solid); margin-top: 1px; padding: 0; color: transparent; transition: transform .35s var(--spring), background .25s, color .2s, border-color .2s; }
@@ -402,6 +401,108 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-more { font-size: 11px; margin: 8px 0 0 32px; color: var(--muted); }
 .task-more summary { cursor: pointer; width: fit-content; }
 .task-more button { display: block; border: 0; background: transparent; text-align: left; padding: 9px 0 0; color: var(--critical-ink); font-size: 11px; }
+.task-more button.neutral { color: var(--text); }
+.task-more button:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Timed tasks: when they are due, and an unmistakable look once they are overdue. */
+.task-detail.task-timer { color: var(--muted); font-weight: 600; }
+.task-detail.task-timer svg { color: var(--c); }
+.task-timer [data-clock="short"] { color: var(--text); font-variant-numeric: tabular-nums; }
+.task-card.is-overdue { border-color: color-mix(in oklab, var(--critical) 45%, var(--line)); background: color-mix(in oklab, var(--critical) 6%, var(--surface-solid)); box-shadow: inset 4px 0 0 var(--critical); }
+.task-card.is-overdue .task-timer, .task-card.is-overdue .task-timer svg, .task-card.is-overdue .task-timer [data-clock="short"] { color: var(--critical-ink); }
+.task-card.is-overdue .task-timer svg { animation: overdue-wobble 2.4s var(--ease) infinite; }
+.task-card.is-full .complete-button { color: var(--good-strong); border-color: var(--good-strong); animation: count-pulse .9s var(--spring); }
+
+/* Progress: a slider on every task (and on each task timer), 0–100%. */
+.progress-control { flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 0 32px; font-size: 11px; font-weight: 650; color: var(--muted); cursor: pointer; }
+.progress-control b { min-width: 4.2ch; font: 760 12px/1 var(--display); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+.progress-range { -webkit-appearance: none; appearance: none; flex: 1; width: auto; min-width: 48px; height: 7px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 45%, var(--surface-solid)), var(--c)) 0 0 / calc(var(--p, 0) * 100%) 100% no-repeat, var(--surface-sunk); cursor: pointer; }
+.progress-range:focus { box-shadow: none; }
+.progress-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
+.progress-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-solid); border: 3px solid var(--c); box-shadow: 0 3px 8px -2px var(--c); transition: transform .3s var(--spring); }
+.progress-range::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-solid); border: 3px solid var(--c); box-shadow: 0 3px 8px -2px var(--c); }
+.progress-range:active::-webkit-slider-thumb, .progress-range:hover::-webkit-slider-thumb { transform: scale(1.18); }
+.progress-control.is-full { --c: var(--good-strong); }
+.progress-control.is-full b { color: var(--good-ink); }
+
+/* Timers above the board: today's timed work on top, then a row of timers, soonest first. Task timers are
+   solid cards in their type's color with a progress slider; deadline timers are striped tickets with a
+   dashed edge and a close button. Overdue task timers turn red and count up. */
+.timer-strip { margin: 0 0 22px; }
+.timers { padding: 16px 16px 14px; border-radius: 30px 30px 30px 12px; background: var(--glass); border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(14px); }
+.today-progress { padding: 0 4px 14px; }
+.today-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 9px; }
+.today-label { display: inline-flex; align-items: center; gap: 7px; font: 750 13.5px/1.2 var(--display); color: var(--text); }
+.today-label svg { width: 17px; height: 17px; color: var(--accent); }
+.today-meta { font-size: 12px; font-weight: 600; color: var(--muted); }
+.today-overdue { color: var(--critical-ink); }
+.today-value { margin-left: auto; font: 800 26px/1 var(--display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.today-value small { font-size: 15px; margin-left: 1px; }
+.today-progress.is-idle .today-value { background: none; color: var(--muted); }
+.today-progress.is-complete .today-value { background: none; color: var(--good-ink); }
+.today-bar { display: flex; gap: 3px; height: 12px; }
+.today-bar i { position: relative; flex: 1; min-width: 6px; overflow: hidden; border-radius: 3px; background: var(--surface-sunk); }
+.today-bar i:first-child { border-radius: 99px 3px 3px 99px; }
+.today-bar i:last-child { border-radius: 3px 99px 99px 3px; }
+.today-bar i:only-child { border-radius: 99px; }
+/* One bar for the day: each timed task is a segment filled as far as it has come; finished ones are green and
+   overdue ones red, so the colors read as the state of the work rather than its type. */
+.today-bar i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p) * 100%); background: var(--c-violet); transition: width .6s var(--spring); }
+.today-bar i.is-done::after { background: var(--good-strong); }
+.today-bar i.is-overdue { background: color-mix(in oklab, var(--critical) 16%, var(--surface-sunk)); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--critical) 55%, transparent); }
+.today-bar i.is-overdue::after { background: var(--critical); }
+.content.enter .today-bar i::after { animation: grow-x .9s var(--spring) .15s both; transform-origin: left; }
+.timer-row { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: 4px 2px 8px; margin: 0 -2px -6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.timer { position: relative; flex: 1 0 214px; max-width: 320px; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); scroll-snap-align: start; transition: transform .4s var(--spring), box-shadow .3s; }
+.timer:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+.content.enter .timer { animation: rise .5s var(--ease) both; animation-delay: calc(.15s + var(--i, 0) * 50ms); }
+.timer.is-leaving { animation: timer-leave .34s var(--ease) forwards; }
+.timer-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.timer-kind { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.timer-kind svg { width: 12px; height: 12px; }
+.timer-type { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; color: var(--muted); }
+.timer h4 { font: 700 13.5px/1.35 var(--display); color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.timer-clock { display: flex; flex-direction: column; gap: 1px; margin-top: auto; }
+.timer-clock time { font: 800 24px/1.1 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
+.timer-sub { font-size: 11px; font-weight: 600; color: var(--muted); }
+.timer-progress { margin: 4px 0 0; }
+.timer-task { background: color-mix(in oklab, var(--c) 7%, var(--surface-solid)); box-shadow: inset 4px 0 0 var(--c); }
+.timer-task:hover { box-shadow: inset 4px 0 0 var(--c), var(--shadow); }
+.timer-task .timer-kind { color: var(--text); background: color-mix(in oklab, var(--c) 20%, var(--surface-solid)); }
+.timer-task .timer-kind svg { color: var(--c); }
+.timer-task.is-overdue { --c: var(--critical); border-color: color-mix(in oklab, var(--critical) 50%, transparent); background: color-mix(in oklab, var(--critical) 10%, var(--surface-solid)); }
+.timer-task.is-overdue .timer-clock time, .timer-task.is-overdue .timer-sub { color: var(--critical-ink); }
+.timer-task.is-overdue .timer-kind { color: #fff; background: var(--critical); }
+.timer-task.is-overdue .timer-kind svg { color: #fff; animation: overdue-wobble 2.4s var(--ease) infinite; }
+.timer-task.is-overdue .timer-clock time::before { content: "+"; margin-right: 1px; }
+.timer-deadline { border: 1.5px dashed color-mix(in oklab, var(--c) 60%, var(--line-strong)); background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--c) 9%, var(--surface-solid)) 0 10px, var(--surface-solid) 10px 20px); }
+.timer-deadline .timer-kind { color: var(--on-grad); background: var(--c); }
+.timer-deadline .timer-type { margin-left: 0; }
+.timer-close { display: grid; place-items: center; width: 26px; height: 26px; margin: -3px -5px -3px auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
+.timer-close svg { width: 14px; height: 14px; }
+.timer-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
+.timer-empty { display: flex; align-items: center; gap: 9px; padding: 10px 6px 2px; border-top: 1px dashed var(--line-strong); font-size: 12px; color: var(--muted); }
+.timer-empty svg { flex-shrink: 0; width: 16px; height: 16px; }
+.timer-empty b { color: var(--text); font-weight: 650; }
+@keyframes timer-leave { to { opacity: 0; transform: scale(.9) translateY(-6px); } }
+@keyframes overdue-wobble { 0%, 70%, 100% { transform: none; } 78% { transform: rotate(-14deg); } 86% { transform: rotate(12deg); } 94% { transform: rotate(-6deg); } }
+
+/* The timed-task switch in the task form. */
+.timed-field { margin: 18px 0 6px; padding: 12px 14px 2px; border: 1px dashed var(--line-strong); border-radius: 20px; transition: background .25s, border-color .25s; }
+.timed-field.is-on { border-style: solid; border-color: color-mix(in oklab, var(--accent) 40%, var(--line)); background: color-mix(in oklab, var(--accent) 6%, transparent); }
+.timed-toggle { position: relative; flex-direction: row; align-items: flex-start; gap: 12px; margin: 0; cursor: pointer; }
+.timed-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.timed-switch { position: relative; flex-shrink: 0; width: 38px; height: 22px; margin-top: 1px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line-strong); transition: background .25s; }
+.timed-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-solid); box-shadow: 0 2px 5px rgba(0, 0, 0, .2); transition: transform .4s var(--spring); }
+.timed-toggle input:checked + .timed-switch { background: var(--grad); border-color: transparent; }
+.timed-toggle input:checked + .timed-switch::after { transform: translateX(16px); }
+.timed-toggle input:focus-visible + .timed-switch { outline: 3px solid var(--accent); outline-offset: 3px; }
+.timed-copy { display: grid; gap: 2px; }
+.timed-copy strong { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.timed-copy strong svg { width: 15px; height: 15px; color: var(--accent); }
+.timed-copy small { font-size: 11.5px; line-height: 1.45; }
+.timed-due { margin: 12px 0 12px; transition: opacity .25s; }
+.timed-field:not(.is-on) .timed-due { opacity: .5; }
 
 /* Board tools: expand every group or fold them all into summaries. */
 .board-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
@@ -566,11 +667,20 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .tg-chip svg { width: 12px; height: 12px; color: var(--c); }
 .tg-chip.high { color: var(--text); background: color-mix(in oklab, var(--c) 16%, var(--surface-solid)); border-color: color-mix(in oklab, var(--c) 40%, transparent); }
 .tg-chip.deferred svg { color: var(--warning-ink); }
+.tg-chip.overdue { color: var(--critical-ink); background: color-mix(in oklab, var(--critical) 12%, var(--surface-solid)); border-color: color-mix(in oklab, var(--critical) 40%, transparent); }
+.tg-chip.overdue svg { color: var(--critical-ink); }
+.tg-progress { grid-column: 1 / -1; display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-radius: 16px; background: color-mix(in oklab, var(--c) 7%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 18%, transparent); }
+.tg-progress .tg-label { flex-shrink: 0; }
+.tg-progress-bar { position: relative; flex: 1; min-width: 40px; height: 8px; border-radius: 99px; background: var(--surface-sunk); overflow: hidden; }
+.tg-progress-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--w) * 100%); border-radius: inherit; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 50%, var(--surface-solid)), var(--c)); transform-origin: left; }
+.tg-progress b { font: 800 15px/1 var(--display); color: var(--text); font-variant-numeric: tabular-nums; }
+.tg-progress-note { font-size: 11px; font-weight: 650; color: var(--good-ink); white-space: nowrap; }
+.tg-progress.is-full .tg-progress-bar::after { background: var(--good-strong); }
 .tg-summary.is-empty { display: block; padding: 0 8px; }
 .tg-summary.is-empty p { font-size: 12px; color: var(--muted); }
 .task-group.reveal .tg-strip i { animation: dot-drop .6s var(--spring) both; animation-delay: calc(.14s + var(--d, 0) * 35ms); }
 .task-group.reveal .tg-avg { animation: grow-y .5s var(--spring) .35s both; transform-origin: bottom; }
-.task-group.reveal .tg-share-bar::after { animation: grow-x .8s var(--spring) .2s both; }
+.task-group.reveal .tg-share-bar::after, .task-group.reveal .tg-progress-bar::after { animation: grow-x .8s var(--spring) .2s both; }
 .task-group.reveal .task-card { animation: rise .5s var(--ease) both; animation-delay: min(calc(.06s + var(--i, 0) * 30ms), .45s); }
 @keyframes dot-drop { from { opacity: 0; transform: translateY(-14px) scale(.4); } }
 

@@ -7,7 +7,7 @@ const snapshot: Snapshot = {
   today:{date:'2026-10-05',weekday:'monday',parity:'even'},
   schedule:{isSkipped:false,current:'Write proposal',next:'Break',timeToNext:'15m',events:[{time:'09:00',label:'Write proposal',block:'pomodoro',syncable:true}],hasSyncedOverlay:true},
   taskTypes:{'1':'Coding','2':'Writing','3':'Reading'},
-  tasks:[{description:'Write notes',priority:10,type:'2',typeName:'Writing',alarmFrom:null,procrastinated:false,procrastinateDays:null},...Array.from({length:12},(_,i)=>({description:`Task ${i}`,priority:9-i%5,type:'1',typeName:'Coding',alarmFrom:null,procrastinated:false,procrastinateDays:null})),{description:'Read paper',priority:5,type:'3',typeName:'Reading',alarmFrom:'2026-10-07',procrastinated:true,procrastinateDays:2}],
+  tasks:[{description:'Write notes',priority:10,type:'2',typeName:'Writing',alarmFrom:null,procrastinated:false,procrastinateDays:null},...Array.from({length:12},(_,i)=>({description:`Task ${i}`,priority:9-i%5,type:'1',typeName:'Coding',alarmFrom:null,procrastinated:false,procrastinateDays:null})),{description:'Read paper',priority:5,type:'3',typeName:'Reading',alarmFrom:null,procrastinated:true,procrastinateDays:2,due:'2026-10-05T18:00',progress:40}],
   deadlines:[{event:'Conference',deadline:'2026-10-06',daysLeft:1,status:'urgent',type:'2',typeName:'Writing'}],
   habits:[{id:'1',description:'Exercise',completed:false}],history:[]
 };
@@ -26,13 +26,14 @@ beforeEach(()=>{
   HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
   send=vi.fn(async(command:string)=>command==='status_snapshot'?structuredClone(snapshot):command==='workspace_info'?{configIds:[0,1],activeId:0,mode:'j',rootDir:'/local/config'}:{});
   client={send}; vi.spyOn(window,'confirm').mockReturnValue(true);
+  vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date(2026,9,5,12,0));
 });
-afterEach(()=>{vi.restoreAllMocks();vi.unstubAllGlobals();});
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('browser workspace',()=>{
   it('groups all tasks by type without truncating or changing importance order',async()=>{
     // Writing averages 10, Coding 7.3 over twelve tasks, Reading 5.
     const groups=groupTasks(snapshot);expect(groups.map(g=>g.name)).toEqual(['Writing','Coding','Reading']);expect(groups[1].tasks).toHaveLength(12);expect(groups[1].tasks[0].priority).toBe(9);expect(groups[1].average).toBe(7.3);
-    await renderApp(root,client);expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.textContent).toContain('Importance 10/10');expect(root.textContent).toContain('Reminders in 2 days');expect(root.textContent).toContain('2026-10-07');
+    await renderApp(root,client);expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.textContent).toContain('Importance 10/10');expect(root.textContent).not.toContain('Reminders');expect(root.querySelectorAll('.task-card input[data-progress]')).toHaveLength(14);const timed=root.querySelector('.task-card.is-timed')!;expect(timed.textContent).toContain('Read paper');expect(timed.querySelector('.task-timer')?.textContent).toContain('6h 00m left');
   });
   it('escapes user text',async()=>{
     const malicious=structuredClone(snapshot);malicious.tasks[0].description='<img src=x onerror=alert(1)>';
@@ -40,11 +41,18 @@ describe('browser workspace',()=>{
     await renderApp(root,client);expect(root.querySelector('img')).toBeNull();expect(root.textContent).toContain('<img src=x onerror=alert(1)>');
   });
   it('searches every task',async()=>{await renderApp(root,client);const input=root.querySelector<HTMLInputElement>('[name="search"]')!;input.value='Task 11';input.dispatchEvent(new Event('input'));expect(root.querySelectorAll('.task-card')).toHaveLength(1);});
-  it('adds a task with type, priority, and reminder delay',async()=>{
+  it('adds a timed task with type, priority, and a finish time',async()=>{
     await renderApp(root,client);click('[data-action="add-task"]');await flush();
-    root.querySelector<HTMLInputElement>('[name="description"]')!.value='Browser task';root.querySelector<HTMLInputElement>('[name="priority"]')!.value='8';root.querySelector<HTMLSelectElement>('[name="type"]')!.value='2';root.querySelector<HTMLInputElement>('[name="postpone"]')!.value='3';root.querySelector('dialog form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();expect(send).toHaveBeenCalledWith('task_add',expect.objectContaining({description:'Browser task',priority:8,type:'2',postpone:3}));
+    expect(root.querySelector('[name="postpone"]')).toBeNull();
+    const due=root.querySelector<HTMLInputElement>('[name="due"]')!;expect(due.disabled).toBe(true);
+    const timed=root.querySelector<HTMLInputElement>('[name="timed"]')!;timed.checked=true;timed.dispatchEvent(new Event('change'));expect(due.disabled).toBe(false);expect(due.required).toBe(true);
+    root.querySelector<HTMLInputElement>('[name="description"]')!.value='Browser task';root.querySelector<HTMLInputElement>('[name="priority"]')!.value='8';root.querySelector<HTMLSelectElement>('[name="type"]')!.value='2';due.value='2026-10-05T17:30';root.querySelector('dialog form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();expect(send).toHaveBeenCalledWith('task_add',expect.objectContaining({description:'Browser task',priority:8,type:'2',due:'2026-10-05T17:30'}));
   });
-  it('edits tasks without losing their type or postponement',async()=>{await renderApp(root,client);click('[data-task="13"][data-operation="edit"]');expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('3');expect(root.querySelector<HTMLInputElement>('[name="postpone"]')!.value).toBe('2');});
+  it('adds a normal task without a finish time',async()=>{
+    await renderApp(root,client);click('[data-action="add-task"]');await flush();
+    root.querySelector<HTMLInputElement>('[name="description"]')!.value='Plain task';root.querySelector('dialog form')!.dispatchEvent(new Event('submit',{cancelable:true}));await flush();expect(send).toHaveBeenCalledWith('task_add',expect.objectContaining({description:'Plain task',due:''}));
+  });
+  it('edits tasks without losing their type or timer',async()=>{await renderApp(root,client);click('[data-task="13"][data-operation="edit"]');expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('3');expect(root.querySelector<HTMLInputElement>('[name="timed"]')!.checked).toBe(true);expect(root.querySelector<HTMLInputElement>('[name="due"]')!.value).toBe('2026-10-05T18:00');});
   it('distinguishes completed, cancelled, and dropped tasks',async()=>{await renderApp(root,client);click('[data-task="0"][data-operation="cancelled"]');await flush();expect(send).toHaveBeenCalledWith('task_delete',{description:'Write notes',action:'cancelled'});click('[data-task="0"][data-operation="deleted"]');await flush();expect(send).toHaveBeenCalledWith('task_delete',{description:'Write notes',action:'deleted'});});
   it('records habits in the browser',async()=>{await renderApp(root,client);click('[data-page="routines"]');const check=root.querySelector<HTMLInputElement>('[data-habit]')!;check.checked=true;check.dispatchEvent(new Event('change'));await flush();expect(send).toHaveBeenCalledWith('habit_mark',{habitIds:['1']});});
   it('keeps the interface usable after an operation fails',async()=>{await renderApp(root,client);send.mockRejectedValueOnce(new Error('Storage is busy'));click('[data-task="0"][data-operation="deleted"]');await flush();expect(root.querySelector('#notice .notice-text')?.textContent).toBe('Storage is busy');expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.querySelector<HTMLButtonElement>('[data-action="add-task"]')!.disabled).toBe(false);});
