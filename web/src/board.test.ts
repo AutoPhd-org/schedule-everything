@@ -43,6 +43,19 @@ beforeEach(() => {
     if (command === "status_snapshot") return structuredClone(data);
     if (command === "workspace_info") return {configIds: [0], activeId: 0, mode: "p", rootDir: "/local/config"};
     if (command === "task_add") data.tasks.push(task(String(payload.description), Number(payload.priority), String(payload.type)));
+    if (command === "task_type_save") {
+      const id = payload.id ? String(payload.id) : String(Math.max(...Object.keys(data.taskTypes).map(Number)) + 1);
+      data.taskTypes[id] = String(payload.name);
+      return {id, name: String(payload.name), taskTypes: data.taskTypes};
+    }
+    if (command === "task_type_delete") {
+      const id = String(payload.id);
+      const moveTo = payload.moveTo ? String(payload.moveTo) : "";
+      delete data.taskTypes[id];
+      const owned = data.tasks.filter(item => item.type === id);
+      owned.forEach(item => { item.type = moveTo; });
+      return {taskTypes: data.taskTypes, movedTasks: owned.length, movedDeadlines: 0};
+    }
     return {};
   });
   client = {send};
@@ -215,5 +228,160 @@ describe("adding a task inline", () => {
     expect(group("Writing").classList.contains("is-folded")).toBe(true);
     expect(group("Writing").querySelectorAll(".tg-strip i")).toHaveLength(2);
     expect(group("Writing").classList.contains("just-added")).toBe(true);
+  });
+});
+
+describe("managing types on the board", () => {
+  const menu = (id: string) => click(`[data-type-menu="${id}"]`);
+  const notice = () => root.querySelector("#notice")?.textContent;
+
+  it("renames a type from its menu, or by double-clicking its name", async () => {
+    await renderApp(root, client);
+    menu("1");
+    expect([...root.querySelectorAll(".type-menu [role='menuitem']")].map(el => el.textContent)).toEqual(["Rename", "Delete type"]);
+    expect(document.activeElement?.getAttribute("data-type-rename")).toBe("1");
+    click('[data-type-rename="1"]');
+    const input = root.querySelector<HTMLInputElement>('[data-type-name-input="1"]')!;
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("Coding");
+    expect(root.querySelector(".type-menu")).toBeNull();
+    input.value = "Programming";
+    input.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_type_save", {id: "1", name: "Programming"});
+    expect(group("Programming").classList.contains("greet")).toBe(true);
+    expect(notice()).toContain("Renamed “Coding” to “Programming”.");
+
+    root.querySelector<HTMLElement>('[data-type-title="2"]')!.dispatchEvent(new MouseEvent("dblclick", {bubbles: true}));
+    const writing = root.querySelector<HTMLInputElement>('[data-type-name-input="2"]')!;
+    writing.value = "Essays";
+    writing.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector('[data-type-name-input]')).toBeNull();
+    expect(group("Writing")).toBeTruthy();
+    expect(send).not.toHaveBeenCalledWith("task_type_save", expect.objectContaining({name: "Essays"}));
+  });
+
+  it("closes the type menu with Escape or a press elsewhere", async () => {
+    await renderApp(root, client);
+    menu("3");
+    document.body.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector(".type-menu")).toBeNull();
+    expect(document.activeElement?.getAttribute("data-type-menu")).toBe("3");
+    menu("3");
+    root.querySelector(".page-heading")!.dispatchEvent(new Event("pointerdown", {bubbles: true}));
+    expect(root.querySelector(".type-menu")).toBeNull();
+    expect(root.querySelector(".group-badge.is-open")).toBeNull();
+  });
+
+  it("deletes a type after asking where its tasks go", async () => {
+    await renderApp(root, client);
+    menu("1");
+    click('[data-type-delete="1"]');
+    const panel = group("Coding").querySelector<HTMLElement>(".type-delete")!;
+    expect(panel.textContent).toContain("Delete “Coding”?");
+    expect(panel.textContent).toContain("Its 2 tasks move to");
+    expect(group("Coding").querySelector(".task-card")).toBeNull();
+    const select = panel.querySelector<HTMLSelectElement>("[data-type-move]")!;
+    expect([...select.options].map(option => option.textContent)).toEqual(["Writing", "Reading", "Exercise"]);
+    expect(select.value).toBe("2");
+    select.value = "3"; select.dispatchEvent(new Event("change"));
+    click("[data-type-delete-confirm]");
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_type_delete", {id: "1", moveTo: "3"});
+    expect(names()).not.toContain("Coding");
+    expect(group("Reading").querySelectorAll(".task-card")).toHaveLength(3);
+    expect(notice()).toContain("Deleted the type “Coding”. 2 tasks moved to “Reading”.");
+    expect(document.activeElement?.hasAttribute("data-type-new")).toBe(true);
+  });
+
+  it("keeps a type when the question is dismissed", async () => {
+    await renderApp(root, client);
+    menu("4");
+    click('[data-type-delete="4"]');
+    const panel = group("Exercise").querySelector<HTMLElement>(".type-delete")!;
+    expect(panel.textContent).toContain("No tasks or deadlines use it.");
+    expect(panel.querySelector("select")).toBeNull();
+    click("[data-type-delete-cancel]");
+    expect(root.querySelector(".type-delete")).toBeNull();
+    expect(document.activeElement?.getAttribute("data-type-menu")).toBe("4");
+    menu("4");
+    click('[data-type-delete="4"]');
+    group("Exercise").querySelector(".type-delete")!.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector(".type-delete")).toBeNull();
+    expect(send).not.toHaveBeenCalledWith("task_type_delete", expect.anything());
+  });
+
+  it("lets deadlines of a type without tasks lose their type", async () => {
+    data.deadlines = [{event: "Marathon", deadline: "2026-10-20", daysLeft: 15, status: "ok", type: "4", typeName: "Exercise"}];
+    await renderApp(root, client);
+    menu("4");
+    click('[data-type-delete="4"]');
+    const select = group("Exercise").querySelector<HTMLSelectElement>("[data-type-move]")!;
+    expect(group("Exercise").textContent).toContain("Its 1 deadline moves to");
+    expect(select.options[0].textContent).toBe("No type");
+    expect(select.value).toBe("");
+    click("[data-type-delete-confirm]");
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_type_delete", {id: "4"});
+  });
+
+  it("keeps at least one type", async () => {
+    data.taskTypes = {"1": "Coding"};
+    data.tasks = data.tasks.filter(item => item.type === "1");
+    await renderApp(root, client);
+    menu("1");
+    expect(root.querySelector<HTMLButtonElement>('[data-type-delete="1"]')!.disabled).toBe(true);
+  });
+
+  it("adds a type from the tile at the end of the board", async () => {
+    await renderApp(root, client);
+    const board = root.querySelector("#task-board")!;
+    expect(board.lastElementChild?.classList.contains("new-type")).toBe(true);
+    click("[data-type-new]");
+    const input = () => root.querySelector<HTMLInputElement>('[name="newTypeName"]')!;
+    expect(document.activeElement).toBe(input());
+    input().dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector(".new-type-form")).toBeNull();
+    expect(document.activeElement?.hasAttribute("data-type-new")).toBe(true);
+
+    click("[data-type-new]");
+    root.querySelector(".new-type-form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+    expect(root.querySelector(".new-type-form")?.classList.contains("shake")).toBe(true);
+    input().value = "Errands";
+    input().dispatchEvent(new Event("input", {bubbles: true}));
+    root.querySelector(".new-type-form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_type_save", {name: "Errands"});
+    expect(names().at(-1)).toBe("Errands");
+    expect(group("Errands").classList.contains("greet")).toBe(true);
+    expect(root.querySelector(".new-type-form")).toBeNull();
+    expect(notice()).toContain("Added the type “Errands”.");
+    expect(document.activeElement?.getAttribute("data-compose")).toBe("5");
+  });
+
+  it("leaves types alone while searching", async () => {
+    await renderApp(root, client);
+    const search = root.querySelector<HTMLInputElement>('[name="search"]')!;
+    search.value = "paper"; search.dispatchEvent(new Event("input"));
+    expect(root.querySelector(".new-type")).toBeNull();
+    expect(root.querySelector("[data-type-menu]")).toBeNull();
+    expect(root.querySelector(".task-group .group-count")?.textContent).toBe("1");
+  });
+});
+
+describe("type colors", () => {
+  it("uses saved colors, so deleting a type never recolors the others", async () => {
+    data.taskTypeColors = {"1": "violet", "3": "red", "4": "plaid"};
+    await renderApp(root, client);
+    expect(group("Coding").classList.contains("sw-violet")).toBe(true);
+    expect(group("Reading").classList.contains("sw-red")).toBe(true);
+    // Without a saved color (or with an unknown one), a type keeps the color of its place: Writing is second.
+    expect(group("Writing").classList.contains("sw-orange")).toBe(true);
+    expect(group("Exercise").classList.contains("sw-magenta")).toBe(false);
+    expect(group("Exercise").classList.contains("sw-yellow")).toBe(true);
+    delete data.taskTypes["2"];
+    data.tasks = data.tasks.filter(item => item.type !== "2");
+    await renderApp(root, client);
+    expect(group("Reading").classList.contains("sw-red")).toBe(true);
   });
 });

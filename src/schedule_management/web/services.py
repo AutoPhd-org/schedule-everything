@@ -8,6 +8,7 @@ return JSON-serializable dictionaries for the local HTTP API.
 
 from __future__ import annotations
 
+import tomllib
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -426,6 +427,7 @@ def status_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "deadlines": _deadline_rows(current_date),
         "habits": _habit_rows(current_date),
         "taskTypes": _load_task_types(),
+        "taskTypeColors": _load_task_type_colors(),
         "history": _history_rows(),
     }
 
@@ -787,6 +789,55 @@ def settings_set_task_types(payload: dict[str, Any]) -> dict[str, Any]:
             raise WebError("invalid_input", f"task type '{key_str}' name must be non-empty.")
         validated[key_str] = value_str
 
+    _save_task_types(validated)
+    return {"taskTypes": validated}
+
+
+TASK_TYPE_NAME_LIMIT = 60
+# Saved type colors, so a type keeps its color when the types before it change.
+TASK_TYPE_COLORS = "task_type_colors"
+
+
+def _type_order(type_id: str) -> tuple[int, int, str]:
+    return (0, int(type_id), "") if type_id.isdigit() else (1, 0, type_id)
+
+
+def _load_task_type_colors() -> dict[str, str]:
+    """Saved type colors; only the palette's color names count."""
+    try:
+        with open(_snapshot_runtime_paths().settings_path, "rb") as handle:
+            saved = tomllib.load(handle).get(TASK_TYPE_COLORS)
+    except Exception:
+        return {}
+    if not isinstance(saved, dict):
+        return {}
+    return {str(key): value for key, value in saved.items() if value in DEADLINE_COLORS}
+
+
+def _shown_type_colors(task_types: dict[str, str]) -> dict[str, str]:
+    """Each type's color as the browser shows it now: its saved color, or else
+    the palette color of its place among the types (the browser's fallback)."""
+    saved = _load_task_type_colors()
+    ordered = sorted(task_types, key=_type_order)
+    return {
+        type_id: saved.get(type_id) or DEADLINE_COLORS[index % len(DEADLINE_COLORS)]
+        for index, type_id in enumerate(ordered)
+    }
+
+
+def _hashed_type_color(type_id: str) -> str:
+    """The color the browser gives a type ID that is not in the settings."""
+    return DEADLINE_COLORS[sum(ord(char) for char in type_id) % len(DEADLINE_COLORS)]
+
+
+def _least_used_color(colors: dict[str, str]) -> str:
+    counts = {color: 0 for color in DEADLINE_COLORS}
+    for color in colors.values():
+        counts[color] = counts.get(color, 0) + 1
+    return min(DEADLINE_COLORS, key=lambda color: counts[color])
+
+
+def _save_task_types(task_types: dict[str, str], colors: dict[str, str] | None = None) -> None:
     runtime_paths = _snapshot_runtime_paths()
     from schedule_management.commands.settings import SettingsModel
 
@@ -795,11 +846,105 @@ def settings_set_task_types(payload: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         raise WebError("config_error", f"failed to load settings: {exc}") from exc
 
-    model.data["task_types"] = validated
+    model.data["task_types"] = task_types
+    if colors is not None:
+        model.data[TASK_TYPE_COLORS] = {type_id: colors[type_id] for type_id in sorted(colors, key=_type_order) if type_id in task_types}
     model.dirty = True
     try:
         model.save()
     except Exception as exc:
         raise WebError("storage_error", f"failed to save settings: {exc}") from exc
 
-    return {"taskTypes": validated}
+
+def _next_task_type_id(task_types: dict[str, str]) -> str:
+    """One past the highest numeric type ID ever used, by a type, a task, a
+    deadline, or the task history, so a new type never inherits another's past."""
+    used = set(task_types)
+    for item in [*load_tasks(), *load_deadlines()]:
+        if isinstance(item, dict) and item.get("type") is not None:
+            used.add(str(item["type"]))
+    try:
+        log_entries = load_task_log()
+    except Exception:
+        log_entries = []
+    for entry in log_entries:
+        task = entry.get("task") if isinstance(entry, dict) else None
+        if isinstance(task, dict) and task.get("type") is not None:
+            used.add(str(task["type"]))
+    return str(max((int(key) for key in used if key.isdigit()), default=0) + 1)
+
+
+def task_type_save(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add a task type, or rename the type with `id`.
+
+    Naming an ID that only existing tasks still use (its type was removed from
+    the settings) brings that type back under the new name.
+    """
+    name = _require_text(payload, "name")
+    if len(name) > TASK_TYPE_NAME_LIMIT:
+        raise WebError("invalid_input", f"task type names can be at most {TASK_TYPE_NAME_LIMIT} characters.")
+    task_types = dict(_load_task_types())
+    raw_id = payload.get("id")
+    type_id = str(raw_id).strip() if raw_id is not None else ""
+    if not type_id:
+        type_id = _next_task_type_id(task_types)
+    elif type_id not in task_types and not any(
+        isinstance(task, dict) and str(task.get("type")) == type_id for task in load_tasks()
+    ):
+        raise WebError("not_found", f"task type not found: {type_id}")
+    if any(key != type_id and value.casefold() == name.casefold() for key, value in task_types.items()):
+        raise WebError("duplicate", f"a task type named “{name}” already exists.")
+    # Every color is saved as it shows now, so later changes to the list never shift it. A new type gets the
+    # least-used color; a type named back from its tasks keeps the color it already shows.
+    colors = _shown_type_colors(task_types)
+    if type_id not in colors:
+        colors[type_id] = _hashed_type_color(type_id) if payload.get("id") else _least_used_color(colors)
+    task_types[type_id] = name
+    _save_task_types(task_types, colors)
+    return {"id": type_id, "name": name, "taskTypes": task_types, "color": colors[type_id]}
+
+
+def task_type_delete(payload: dict[str, Any]) -> dict[str, Any]:
+    """Delete a task type and move what uses it.
+
+    Open tasks of the type move to `moveTo`, which is required when there are
+    any. Deadlines of the type move there too, or become uncategorized when no
+    `moveTo` is given. Finished tasks in the history keep the old type ID.
+    """
+    type_id = _require_text(payload, "id")
+    task_types = dict(_load_task_types())
+    default_type = _default_task_type(task_types)
+    tasks = load_tasks()
+    # Tasks saved without a type belong to the default type.
+    owned = [task for task in tasks if isinstance(task, dict) and str(task.get("type", default_type)) == type_id]
+    if type_id not in task_types and not owned:
+        raise WebError("not_found", f"task type not found: {type_id}")
+    remaining = {key: value for key, value in task_types.items() if key != type_id}
+    if not remaining:
+        raise WebError("invalid_input", "keep at least one task type.")
+    raw_target = payload.get("moveTo")
+    move_to = str(raw_target).strip() if raw_target is not None else ""
+    if move_to and move_to not in remaining:
+        raise WebError("invalid_input", f"unknown task type: {move_to}")
+    if owned and not move_to:
+        raise WebError("invalid_input", "choose a type for this type's tasks.")
+
+    for task in owned:
+        task["type"] = move_to
+    if owned:
+        _save_tasks_or_error(tasks)
+    deadlines = load_deadlines()
+    moved_deadlines = 0
+    for item in deadlines:
+        if isinstance(item, dict) and item.get("type") is not None and str(item["type"]) == type_id:
+            if move_to:
+                item["type"] = move_to
+            else:
+                item.pop("type", None)
+            moved_deadlines += 1
+    if moved_deadlines:
+        _save_deadlines_or_error(deadlines)
+    if type_id in task_types:
+        # The other types keep the colors they show now instead of moving up the palette.
+        _save_task_types(remaining, _shown_type_colors(task_types))
+    return {"taskTypes": remaining, "movedTasks": len(owned), "movedDeadlines": moved_deadlines}

@@ -24,6 +24,8 @@ from schedule_management.web.services import (
     task_add,
     task_delete,
     task_history,
+    task_type_delete,
+    task_type_save,
     task_update,
 )
 from schedule_management.conferences import conference_calendar
@@ -45,6 +47,8 @@ COMMANDS: dict[str, BridgeHandler] = {
     "task_update": task_update,
     "task_delete": task_delete,
     "task_history": task_history,
+    "task_type_save": task_type_save,
+    "task_type_delete": task_type_delete,
     "weekly_overview": weekly_overview,
     "conference_calendar": conference_calendar,
     "deadline_add": deadline_add,

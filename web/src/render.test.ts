@@ -170,10 +170,18 @@ describe('browser workspace',()=>{
     expect(notice.classList.contains('leaving')).toBe(false);
   });
   it('switches themes without discarding unsaved form contents',async()=>{
-    await renderApp(root,client);click('[data-page="settings"]');
-    const name=root.querySelector<HTMLInputElement>('[name="typeName"]')!;name.value='An unsaved type name';
+    await renderApp(root,client);click('[data-compose="1"]');
+    const draft=root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')!;draft.value='An unsaved task';
     click('[data-theme-choice="dark"]');
-    expect(root.querySelector('[name="typeName"]')).toBe(name);
-    expect(name.value).toBe('An unsaved type name');
+    expect(root.querySelector('form.composer [name="composerText"]')).toBe(draft);
+    expect(draft.value).toBe('An unsaved task');
+  });
+  it('points to the task board for managing types instead of editing them in Settings',async()=>{
+    await renderApp(root,client);click('[data-page="settings"]');
+    expect(root.querySelector('[data-type-row]')).toBeNull();
+    expect(root.querySelector('[data-action="types-save"]')).toBeNull();
+    expect(root.textContent).toContain('Types are managed on the task board');
+    click('.page-settings [data-page="today"]');
+    expect(root.querySelector('#task-board .new-type')).not.toBeNull();
   });
 });

@@ -362,3 +362,153 @@ def test_history_rows_include_task_types(monkeypatch):
         ("Legacy", "1", "Work", "dropped"),
         ("Typed", "2", "Study", "completed"),
     ]
+
+
+def _task_type_store(tmp_path, monkeypatch, types, tasks=(), deadlines=(), log=(), colors=()):
+    """Point the type, task, deadline, and history storage at temporary files."""
+    from schedule_management.web import services
+    import schedule_management.data.loaders as loaders
+
+    store = {"types": dict(types), "colors": dict(colors)}
+    paths = {name: tmp_path / name for name in ("tasks.json", "ddl.json", "tasks.log")}
+    paths["tasks.json"].write_text(json.dumps(list(tasks)), encoding="utf-8")
+    paths["ddl.json"].write_text(json.dumps(list(deadlines)), encoding="utf-8")
+    paths["tasks.log"].write_text(json.dumps(list(log)), encoding="utf-8")
+    monkeypatch.setattr(loaders, "TASKS_PATH", str(paths["tasks.json"]))
+    monkeypatch.setattr(loaders, "DDL_PATH", str(paths["ddl.json"]))
+    monkeypatch.setattr(loaders, "TASK_LOG_PATH", str(paths["tasks.log"]))
+    monkeypatch.setattr(services, "_load_task_types", lambda: dict(store["types"]))
+    monkeypatch.setattr(services, "_load_task_type_colors", lambda: dict(store["colors"]))
+
+    def save(task_types, colors=None):
+        store["types"] = dict(task_types)
+        if colors is not None:
+            store["colors"] = {key: value for key, value in colors.items() if key in task_types}
+
+    monkeypatch.setattr(services, "_save_task_types", save)
+    read = lambda name: json.loads(paths[name].read_text(encoding="utf-8"))
+    return services, store, read
+
+
+def test_task_type_save_adds_types_with_fresh_ids_and_renames(tmp_path, monkeypatch):
+    services, store, _ = _task_type_store(
+        tmp_path,
+        monkeypatch,
+        {"1": "Work", "3": "Study"},
+        tasks=[{"description": "Orphan", "priority": 5, "type": "7"}],
+        deadlines=[{"event": "Old", "deadline": "2026-10-10", "type": "5"}],
+        log=[{"action": "deleted", "timestamp": "2026-10-01T09:00:00", "task": {"description": "Done", "priority": 3, "type": "9"}}],
+    )
+
+    # IDs 5, 7, and 9 are still used by a deadline, a task, and the history, so the new type gets 10.
+    created = services.task_type_save({"name": "  Reading  "})
+    assert created["id"] == "10"
+    assert store["types"] == {"1": "Work", "3": "Study", "10": "Reading"}
+
+    services.task_type_save({"id": "1", "name": "Job"})
+    assert store["types"]["1"] == "Job"
+    # A type only open tasks still use can be named again.
+    services.task_type_save({"id": "7", "name": "Errands"})
+    assert store["types"]["7"] == "Errands"
+
+    with pytest.raises(services.WebError) as duplicate:
+        services.task_type_save({"name": "study"})
+    assert duplicate.value.code == "duplicate"
+    with pytest.raises(services.WebError) as missing:
+        services.task_type_save({"id": "42", "name": "Nowhere"})
+    assert missing.value.code == "not_found"
+    with pytest.raises(services.WebError, match="at most 60"):
+        services.task_type_save({"name": "x" * 61})
+
+
+def test_task_type_delete_moves_tasks_and_deadlines(tmp_path, monkeypatch):
+    services, store, read = _task_type_store(
+        tmp_path,
+        monkeypatch,
+        {"1": "Work", "2": "Study", "3": "Home"},
+        tasks=[
+            {"description": "Read chapter", "priority": 5, "type": "2"},
+            {"description": "Untyped", "priority": 4},
+            {"description": "Clean", "priority": 3, "type": "3"},
+        ],
+        deadlines=[
+            {"event": "Exam", "deadline": "2026-10-10", "type": "2"},
+            {"event": "Report", "deadline": "2026-10-12", "type": "1"},
+            {"event": "Plain", "deadline": "2026-10-13"},
+        ],
+    )
+
+    for payload in ({"id": "2"}, {"id": "2", "moveTo": "2"}, {"id": "2", "moveTo": "9"}):
+        with pytest.raises(services.WebError):
+            services.task_type_delete(payload)
+    assert store["types"] == {"1": "Work", "2": "Study", "3": "Home"}
+    assert read("tasks.json")[0]["type"] == "2"
+
+    result = services.task_type_delete({"id": "2", "moveTo": "3"})
+    assert result == {"taskTypes": {"1": "Work", "3": "Home"}, "movedTasks": 1, "movedDeadlines": 1}
+    assert store["types"] == {"1": "Work", "3": "Home"}
+    assert [task.get("type") for task in read("tasks.json")] == ["3", None, "3"]
+    assert [item.get("type") for item in read("ddl.json")] == ["3", "1", None]
+
+    # Tasks saved without a type belong to the default (lowest) type and move with it.
+    services.task_type_delete({"id": "1", "moveTo": "3"})
+    assert [task.get("type") for task in read("tasks.json")] == ["3", "3", "3"]
+    assert [item.get("type") for item in read("ddl.json")] == ["3", "3", None]
+
+    with pytest.raises(services.WebError, match="keep at least one"):
+        services.task_type_delete({"id": "3", "moveTo": "3"})
+
+
+def test_task_type_delete_without_tasks_leaves_deadlines_uncategorized(tmp_path, monkeypatch):
+    services, store, read = _task_type_store(
+        tmp_path,
+        monkeypatch,
+        {"1": "Work", "2": "Study"},
+        tasks=[{"description": "Write", "priority": 5, "type": "1"}],
+        deadlines=[{"event": "Exam", "deadline": "2026-10-10", "type": "2"}],
+    )
+
+    result = services.task_type_delete({"id": "2"})
+
+    assert result["movedTasks"] == 0 and result["movedDeadlines"] == 1
+    assert store["types"] == {"1": "Work"}
+    assert "type" not in read("ddl.json")[0]
+    assert read("tasks.json")[0]["type"] == "1"
+
+
+def test_task_types_keep_their_colors_when_the_list_changes(tmp_path, monkeypatch):
+    services, store, _ = _task_type_store(
+        tmp_path,
+        monkeypatch,
+        {"1": "Work", "2": "Study", "3": "Home", "5": "Garden"},
+        tasks=[{"description": "Orphan", "priority": 5, "type": "7"}],
+    )
+
+    # Without saved colors, types show the palette color of their place: blue, orange, aqua, yellow.
+    services.task_type_delete({"id": "2"})
+    # Deleting Study saves the others as they showed, instead of moving Home and Garden up the palette.
+    assert store["colors"] == {"1": "blue", "3": "aqua", "5": "yellow"}
+
+    # A new type takes the least-used color, in palette order.
+    created = services.task_type_save({"name": "Errands"})
+    assert created["color"] == "orange"
+    assert store["colors"][created["id"]] == "orange"
+
+    services.task_type_save({"id": "1", "name": "Job"})
+    assert store["colors"]["1"] == "blue"
+    # A type named back from its tasks keeps the hashed color it already showed ("7" -> 55 % 8 -> red).
+    services.task_type_save({"id": "7", "name": "Errands 2"})
+    assert store["colors"]["7"] == "red"
+
+
+def test_snapshot_reports_saved_type_colors(tmp_path, monkeypatch):
+    from schedule_management.web import services
+
+    settings = tmp_path / "settings.toml"
+    settings.write_text('[task_types]\n1 = "Work"\n\n[task_type_colors]\n1 = "violet"\n2 = "plaid"\n', encoding="utf-8")
+
+    class Paths:
+        settings_path = settings
+
+    monkeypatch.setattr(services, "_snapshot_runtime_paths", lambda: Paths)
+    assert services._load_task_type_colors() == {"1": "violet"}

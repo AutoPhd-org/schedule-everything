@@ -407,6 +407,56 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .fold-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--grad); box-shadow: 0 6px 14px -6px var(--accent); transition: transform .6s var(--spring); }
 .fold-switch.is-folded .fold-thumb { transform: translateX(100%); }
 
+/* Managing types on the board. The task count gives way to a menu button on hover or focus (both show on
+   touch screens); the menu renames or deletes the type. */
+.group-badge { position: relative; display: grid; flex-shrink: 0; }
+.group-badge > .group-count, .group-badge > .group-more { grid-area: 1 / 1; align-self: center; justify-self: center; }
+.group-count { transition: opacity .2s, transform .3s var(--spring); }
+.group-more { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--c) 22%, var(--surface-solid)); color: var(--text); opacity: 0; transform: scale(.6); transition: opacity .2s, transform .35s var(--spring), background .2s; }
+.group-more svg { width: 16px; height: 16px; }
+.task-group:hover .group-badge .group-more, .group-badge:focus-within .group-more, .group-badge.is-open .group-more { opacity: 1; transform: none; }
+.task-group:hover .group-badge .group-count, .group-badge:focus-within .group-count, .group-badge.is-open .group-count { opacity: 0; transform: scale(.6); }
+.group-more:hover, .group-badge.is-open .group-more { background: color-mix(in oklab, var(--c) 36%, var(--surface-solid)); }
+@media (hover: none) {
+  .group-badge { display: flex; align-items: center; gap: 6px; }
+  .task-group:hover .group-badge .group-count, .group-badge:focus-within .group-count, .group-badge.is-open .group-count, .group-badge .group-count { opacity: 1; transform: none; }
+  .group-more { opacity: 1; transform: none; }
+}
+.task-group.menu-open { z-index: 6; }
+.type-menu { position: absolute; top: calc(100% + 6px); right: -6px; z-index: 30; display: grid; gap: 2px; min-width: 170px; padding: 6px; border-radius: 18px; background: var(--surface-solid); border: 1px solid var(--line); box-shadow: var(--shadow-lg); transform-origin: top right; animation: menu-in .24s var(--spring); }
+.type-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--text); font-size: 13px; font-weight: 620; text-align: left; white-space: nowrap; transition: background .15s; }
+.type-menu button svg { width: 16px; height: 16px; color: var(--muted); }
+.type-menu button:hover:not(:disabled), .type-menu button:focus-visible { background: var(--surface-alt); outline: none; }
+.type-menu button.danger, .type-menu button.danger svg { color: var(--critical-ink); }
+.type-menu button:disabled { opacity: .45; cursor: not-allowed; }
+.type-name-input { flex: 1; width: auto; min-width: 0; margin: -5px 0; padding: 5px 11px; border: 1.5px solid var(--c); border-radius: 12px; background: var(--surface-solid); font: 700 14px/1.35 var(--display); box-shadow: 0 0 0 4px color-mix(in oklab, var(--c) 18%, transparent); }
+.type-name-input:focus { border-color: var(--c); box-shadow: 0 0 0 4px color-mix(in oklab, var(--c) 24%, transparent); }
+.group-heading h3[data-type-title] { cursor: text; }
+.type-delete { margin: 0 2px 2px; padding: 14px 14px 12px; border-radius: 20px; background: color-mix(in oklab, var(--critical) 7%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--critical) 30%, var(--line)); animation: panel-in .4s var(--spring); }
+.type-delete-title { font: 720 14px/1.35 var(--display); color: var(--text); overflow-wrap: anywhere; }
+.type-delete-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.type-move { gap: 6px; margin: 10px 0 0; font-size: 12px; }
+.type-move select { padding: 7px 12px; border-radius: 999px; font-size: 12.5px; }
+.type-delete-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.button.delete-type { border-color: transparent; background: var(--critical); color: #fff; }
+.button.delete-type:hover { box-shadow: 0 10px 20px -10px var(--critical); }
+.task-group.greet { animation: group-greet 1.6s var(--ease); }
+/* The last tile on the board adds a type. */
+.new-type { display: flex; min-height: 66px; }
+.new-type-button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px; border: 2px dashed var(--line-strong); border-radius: 28px; background: transparent; color: var(--muted); font: 720 13.5px/1 var(--display); transition: color .25s, background .25s, border-color .25s, transform .4s var(--spring); }
+.new-type-icon { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; background: var(--grad-soft); color: var(--accent); transition: transform .5s var(--spring); }
+.new-type-icon svg { width: 18px; height: 18px; }
+.new-type-button:hover { color: var(--text); border-color: var(--accent); background: color-mix(in oklab, var(--accent) 6%, var(--surface)); transform: translateY(-2px); }
+.new-type-button:hover .new-type-icon { transform: rotate(90deg) scale(1.08); }
+.new-type-form { flex: 1; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px; align-self: start; padding: 12px 12px 10px; border-radius: 28px; background: var(--surface-solid); border: 1.5px solid color-mix(in oklab, var(--accent) 55%, var(--line)); box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 12%, transparent), var(--shadow); animation: panel-in .45s var(--spring); }
+.new-type-form input { padding: 6px 4px; border: 0; background: transparent; font: 700 14px/1.35 var(--display); box-shadow: none; }
+.new-type-form input:focus { box-shadow: none; }
+.new-type-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line-strong); }
+.new-type-form.shake { animation: shake .42s var(--ease); }
+@keyframes menu-in { from { opacity: 0; transform: scale(.9) translateY(-4px); } }
+@keyframes panel-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+@keyframes group-greet { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--c) 60%, transparent); } 35% { box-shadow: 0 0 0 7px color-mix(in oklab, var(--c) 26%, transparent); } 100% { box-shadow: 0 0 0 16px transparent; } }
+
 /* Group header toggle, groups without tasks, and the inline new-task form. */
 .group-toggle { display: grid; place-items: center; width: 28px; height: 28px; margin: -3px -4px -3px -2px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); flex-shrink: 0; transition: background .2s, color .2s; }
 .group-toggle svg { width: 17px; height: 17px; transition: transform .5s var(--spring); }
@@ -490,9 +540,10 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 :root[data-vt="board"] .sidebar { view-transition-name: sidebar; }
 :root[data-vt="board"] .notice.visible { view-transition-name: notice; }
 :root[data-vt="board"] .timeline-card { view-transition-name: after-board; }
+:root[data-vt="board"] .new-type { view-transition-name: new-type; }
 :root[data-vt="board"]::view-transition-old(root), :root[data-vt="board"]::view-transition-old(fold-switch), :root[data-vt="board"]::view-transition-old(topbar), :root[data-vt="board"]::view-transition-old(sidebar), :root[data-vt="board"]::view-transition-old(notice) { display: none; }
 :root[data-vt="board"]::view-transition-new(root), :root[data-vt="board"]::view-transition-new(fold-switch), :root[data-vt="board"]::view-transition-new(topbar), :root[data-vt="board"]::view-transition-new(sidebar), :root[data-vt="board"]::view-transition-new(notice) { animation: none; }
-:root[data-vt="board"]::view-transition-group(after-board) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+:root[data-vt="board"]::view-transition-group(after-board), :root[data-vt="board"]::view-transition-group(new-type) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
 /* Class selectors stay in rules of their own: a browser without view-transition-class drops only these. */
 ::view-transition-group(.tg) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
 ::view-transition-image-pair(.tg) { overflow: clip; border-radius: 14px; }
@@ -1094,11 +1145,6 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
 .loading-blob { display: grid; place-items: center; width: 74px; height: 74px; color: var(--on-grad); background: var(--grad); border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; animation: morph 3s ease-in-out infinite, float 3s ease-in-out infinite; box-shadow: var(--shadow-lg); }
 .loading-blob svg { width: 34px; height: 34px; }
-.type-row { display: flex; gap: 10px; align-items: center; }
-.type-row label:first-child { width: 64px; flex-shrink: 0; }
-.type-row label:nth-child(2) { flex: 1; min-width: 0; }
-.type-row input { padding: 8px 12px; }
-.type-row button { margin-top: 20px; }
 .config-banner { padding: 22px 26px; background: color-mix(in oklab, var(--warning) 16%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--warning) 55%, transparent); border-radius: 30px 30px 30px 10px; margin-bottom: 24px; }
 .config-banner p { font-size: 13px; color: var(--muted); margin: 12px 0; overflow-wrap: anywhere; }
 

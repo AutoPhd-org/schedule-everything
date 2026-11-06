@@ -30,11 +30,11 @@ files can be repaired in the browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add a task right inside its group or from **New task**; fold the groups into summaries; edit, postpone, complete, cancel, or drop tasks |
+| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, search all tasks grouped by type; add a task right inside its group or from **New task**; add, rename, or delete task types; fold the groups into summaries; edit, postpone, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
-| Settings | Edit shared task/deadline types, settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
+| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
 
 ## J mode and P mode
 
@@ -190,8 +190,8 @@ high-importance tasks. Each status also has a text label. The current and next
 schedule blocks appear beside the three nearest deadlines; open **Routines &
 deadlines** to see every deadline.
 
-Deadlines can use any type configured under **Settings → Task & deadline
-types**. Choose the type in the add/edit dialog; its name appears beside the
+Deadlines share the task types you manage on the task board. Choose the type
+in the add/edit dialog; its name appears beside the
 deadline date in both views. Existing deadlines remain **Uncategorized** until
 you assign a type. Editing just the event or date preserves its category.
 
@@ -214,13 +214,15 @@ an icon rail and cards stack.
 
 Tasks preserve their importance (1–10), type, postponed reminder date, and
 procrastination status. The board groups the same tasks returned by `rmd ls`
-without imposing a display limit, and shows a group for every type in
-**Settings → Task & deadline types**, even before it has tasks. Groups with
+without imposing a display limit, and shows a group for every task type, even
+before it has tasks. Groups with
 more important work come first: they are ordered by the average importance of
 their tasks, then by how many tasks they hold, and empty groups come last.
 Inside each group, the existing ordering is preserved: procrastinated tasks,
 available tasks, then postponed tasks, with importance descending within each
 section. The overview refreshes every 30 seconds when you are not editing.
+The CLI table and task IDs are unchanged. Completing a task matches `rmd rm`;
+cancel and drop remain distinct from completion in history and reports.
 
 To add a task to a group, click **Add a task** at the bottom of the group, type
 it, set its importance, and press **Enter**. The form stays open for the next
@@ -233,9 +235,22 @@ open tasks, and how many tasks are important (8 or more), waiting for a later
 day, or deferred. **Expand** brings back every task, and the arrow in a group's
 header folds or opens just that group. Your choice is remembered in this
 browser; a search always lists the matching tasks.
-The CLI table and task IDs are
-unchanged. Completing a task matches `rmd rm`; cancel and drop remain distinct
-from completion in history and reports.
+
+Task types, which deadlines share, are managed on the board too:
+
+- **Add** a type with the **New type** tile at the end of the board. Its group
+  appears, ready for its first task.
+- **Rename** a type from the **⋯** menu in its group's header (the task count
+  turns into **⋯** when you point at a group), or double-click its name. Press
+  **Enter** to save or **Esc** to keep the old name.
+- **Delete** a type from the same menu. The group asks where its open tasks
+  should go, and its deadlines go with them; deadlines of a type without tasks
+  can instead lose their type. At least one type always remains. Finished tasks
+  in Activity keep the deleted type's ID.
+
+A new type never reuses the ID of a type you deleted earlier, so it doesn't
+inherit that type's finished tasks. Each type keeps its color: deleting one
+never recolors the others, and a new type takes the color used least.
 
 ## AI agent plugins
 
