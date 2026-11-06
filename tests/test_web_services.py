@@ -91,6 +91,105 @@ def test_task_delete_removes_by_description(tmp_path, monkeypatch):
     ]
 
 
+def _task_storage(tmp_path, monkeypatch, tasks, procrastinated=None):
+    import schedule_management.data.loaders as loaders
+
+    paths = {
+        "tasks": tmp_path / "tasks.json",
+        "log": tmp_path / "tasks.log",
+        "procrastinate": tmp_path / "procrastinate.json",
+    }
+    paths["tasks"].write_text(json.dumps(tasks), encoding="utf-8")
+    paths["procrastinate"].write_text(json.dumps(procrastinated or []), encoding="utf-8")
+    monkeypatch.setattr(loaders, "TASKS_PATH", str(paths["tasks"]))
+    monkeypatch.setattr(loaders, "TASK_LOG_PATH", str(paths["log"]))
+    monkeypatch.setattr(loaders, "PROCRASTINATE_PATH", str(paths["procrastinate"]))
+    return {key: (lambda path=path: json.loads(path.read_text(encoding="utf-8"))) for key, path in paths.items()}
+
+
+@pytest.mark.parametrize("action", ["deleted", "cancelled", "dropped"])
+def test_task_restore_undoes_a_removal(tmp_path, monkeypatch, action):
+    from schedule_management.commands.history import _pair_task_activities
+    from schedule_management.data import log_task_action
+    from schedule_management.web.services import task_delete, task_restore
+
+    tasks = [
+        {"description": "Draft proposal", "priority": 9, "type": "2"},
+        {"description": "Read notes", "priority": 4, "type": "3", "alarm_from": "2026-01-02"},
+        {"description": "Email Sam", "priority": 6},
+    ]
+    read = _task_storage(
+        tmp_path,
+        monkeypatch,
+        tasks,
+        [{"description": "Read notes", "since": "2026-01-01"}, {"description": "Email Sam", "since": "2026-01-03"}],
+    )
+    log_task_action("added", tasks[1])
+    log_before = read["log"]()
+
+    result = task_delete({"description": "Read notes", "action": action})
+    json.dumps(result)
+    assert [task["description"] for task in read["tasks"]()] == ["Draft proposal", "Email Sam"]
+    assert _pair_task_activities(read["log"]())[0]["status"] == ("completed" if action == "deleted" else action)
+
+    restored = task_restore(result["undo"])
+
+    assert restored == {"description": "Read notes", "restored": 1}
+    # Back in its old place with every field, still deferred since the same day, and gone from the history.
+    assert read["tasks"]() == tasks
+    assert read["procrastinate"]() == [
+        {"description": "Email Sam", "since": "2026-01-03"},
+        {"description": "Read notes", "since": "2026-01-01"},
+    ]
+    assert read["log"]() == log_before
+    assert _pair_task_activities(read["log"]()) == []
+
+
+def test_task_restore_leaves_deferrals_alone_for_tasks_that_were_not_deferred(tmp_path, monkeypatch):
+    from schedule_management.web.services import task_delete, task_restore
+
+    read = _task_storage(tmp_path, monkeypatch, [{"description": "Read notes", "priority": 4}])
+    result = task_delete({"description": "Read notes"})
+    assert result["undo"]["procrastinated"] is None
+
+    task_restore(result["undo"])
+
+    assert read["tasks"]() == [{"description": "Read notes", "priority": 4}]
+    assert read["procrastinate"]() == []
+
+
+def test_task_restore_refuses_a_task_that_is_already_back(tmp_path, monkeypatch):
+    from schedule_management.web.services import WebError, task_add, task_delete, task_restore
+
+    read = _task_storage(tmp_path, monkeypatch, [{"description": "Read notes", "priority": 4, "type": "1"}])
+    result = task_delete({"description": "Read notes"})
+    task_add({"description": "Read notes", "priority": 7, "type": "1"})
+
+    with pytest.raises(WebError) as error:
+        task_restore(result["undo"])
+
+    assert error.value.code == "duplicate"
+    assert read["tasks"]() == [{"description": "Read notes", "priority": 7, "type": "1"}]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"action": "deleted", "tasks": []},
+        {"action": "finished", "tasks": [{"index": 0, "task": {"description": "Read notes"}}]},
+        {"action": "deleted", "tasks": [{"index": 0, "task": {"description": "Other"}}]},
+        {"action": "deleted", "tasks": [{"index": -1, "task": {"description": "Read notes"}}]},
+    ],
+)
+def test_task_restore_rejects_malformed_tokens(tmp_path, monkeypatch, payload):
+    from schedule_management.web.services import WebError, task_restore
+
+    _task_storage(tmp_path, monkeypatch, [])
+    with pytest.raises(WebError) as error:
+        task_restore({"description": "Read notes", **payload})
+    assert error.value.code == "invalid_input"
+
+
 def test_deadline_add_accepts_iso_date(tmp_path, monkeypatch):
     from schedule_management.web.services import deadline_add
 

@@ -247,7 +247,7 @@ def save_task_log(log_entries: list[dict[str, Any]]) -> None:
 
 def log_task_action(
     action: str, task: dict[str, Any], metadata: dict[str, Any] | None = None
-) -> None:
+) -> dict[str, Any] | None:
     """
     Log a task action (added/updated/deleted) with timestamp.
 
@@ -259,6 +259,9 @@ def log_task_action(
         task: Task dictionary that was affected
         metadata: Optional additional data (e.g., old_priority)
 
+    Returns:
+        The entry that was appended, or None when there is no log file.
+
     Example:
         >>> task = {'description': 'Study', 'priority': 8}
         >>> log_task_action('added', task)
@@ -266,7 +269,7 @@ def log_task_action(
     """
     log_path = Path(TASK_LOG_PATH)
     if not log_path:
-        return
+        return None
 
     log_entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -280,6 +283,7 @@ def log_task_action(
     log_entries = load_task_log()
     log_entries.append(log_entry)
     save_task_log(log_entries)
+    return log_entry
 
 
 # =============================================================================

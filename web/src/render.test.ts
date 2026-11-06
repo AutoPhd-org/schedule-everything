@@ -47,7 +47,7 @@ describe('browser workspace',()=>{
   it('edits tasks without losing their type or postponement',async()=>{await renderApp(root,client);click('[data-task="13"][data-operation="edit"]');expect(root.querySelector<HTMLSelectElement>('[name="type"]')!.value).toBe('3');expect(root.querySelector<HTMLInputElement>('[name="postpone"]')!.value).toBe('2');});
   it('distinguishes completed, cancelled, and dropped tasks',async()=>{await renderApp(root,client);click('[data-task="0"][data-operation="cancelled"]');await flush();expect(send).toHaveBeenCalledWith('task_delete',{description:'Write notes',action:'cancelled'});click('[data-task="0"][data-operation="deleted"]');await flush();expect(send).toHaveBeenCalledWith('task_delete',{description:'Write notes',action:'deleted'});});
   it('records habits in the browser',async()=>{await renderApp(root,client);click('[data-page="routines"]');const check=root.querySelector<HTMLInputElement>('[data-habit]')!;check.checked=true;check.dispatchEvent(new Event('change'));await flush();expect(send).toHaveBeenCalledWith('habit_mark',{habitIds:['1']});});
-  it('keeps the interface usable after an operation fails',async()=>{await renderApp(root,client);send.mockRejectedValueOnce(new Error('Storage is busy'));click('[data-task="0"][data-operation="deleted"]');await flush();expect(root.querySelector('#notice')?.textContent).toBe('Storage is busy');expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.querySelector<HTMLButtonElement>('[data-action="add-task"]')!.disabled).toBe(false);});
+  it('keeps the interface usable after an operation fails',async()=>{await renderApp(root,client);send.mockRejectedValueOnce(new Error('Storage is busy'));click('[data-task="0"][data-operation="deleted"]');await flush();expect(root.querySelector('#notice .notice-text')?.textContent).toBe('Storage is busy');expect(root.querySelectorAll('.task-card')).toHaveLength(14);expect(root.querySelector<HTMLButtonElement>('[data-action="add-task"]')!.disabled).toBe(false);});
   it('opens and saves configuration with a revision',async()=>{send.mockImplementation(async(command:string)=>command==='status_snapshot'?snapshot:command==='workspace_info'?{configIds:[0],mode:'j'}:{file:'settings',content:'[settings]',revision:'r1',activeId:0,message:'Saved'});await renderApp(root,client);click('[data-page="settings"]');click('[data-action="open-config"]');await flush();expect(root.querySelector('[name="configContent"]')).not.toBeNull();click('[data-action="config-save"]');await flush();expect(send).toHaveBeenCalledWith('config_save',expect.objectContaining({revision:'r1',activeId:0,content:'[settings]'}));});
   it('shows agent plugin install steps on the Schedule page and copies commands',async()=>{
     const writeText=vi.fn(async()=>{});vi.stubGlobal('navigator',{clipboard:{writeText}});
@@ -150,14 +150,75 @@ describe('browser workspace',()=>{
     const notice=()=>root.querySelector<HTMLElement>('#notice')!;
     click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
     expect(notice().classList.contains('visible')).toBe(true);
-    expect(notice().textContent).toContain('Task completed');
+    expect(notice().textContent).toContain('Completed “Write notes”');
     click('[data-notice-close]');
     expect(notice().classList.contains('visible')).toBe(false);
-    expect(notice().textContent).toBe('');
+    expect(notice().querySelector('.notice-text')!.textContent).toBe('');
     click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
     expect(notice().classList.contains('visible')).toBe(true);
     document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
     expect(notice().classList.contains('visible')).toBe(false);
+  });
+  describe('undoing a removal from the notice',()=>{
+    const token={description:'Write notes',action:'deleted',tasks:[{index:0,task:{description:'Write notes',priority:10,type:'2'}}],procrastinated:null,logged:['2026-10-05T16:00:00+00:00']};
+    const undoButton=()=>root.querySelector<HTMLButtonElement>('[data-notice-undo]')!;
+    const noticeText=()=>root.querySelector('#notice .notice-text')!.textContent;
+    const ctrlZ=(target:EventTarget=document.body)=>target.dispatchEvent(new KeyboardEvent('keydown',{key:'z',ctrlKey:true,bubbles:true,cancelable:true}));
+    beforeEach(()=>{
+      const base=send.getMockImplementation()!;
+      send.mockImplementation(async(command:string,payload:Record<string,unknown>)=>command==='task_delete'?{description:payload.description,deleted:1,undo:token}:command==='task_restore'?{description:'Write notes',restored:1}:base(command,payload));
+    });
+    it('offers Undo after completing a task and puts the task back',async()=>{
+      await renderApp(root,client);
+      expect(undoButton().hidden).toBe(true);
+      click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+      expect(noticeText()).toBe('Completed “Write notes”. Nice work.');
+      expect(undoButton().hidden).toBe(false);
+      undoButton().click();await flush();await flush();
+      expect(send).toHaveBeenCalledWith('task_restore',token);
+      expect(noticeText()).toBe('“Write notes” is back on your list.');
+      expect(undoButton().hidden).toBe(true);
+      expect(root.querySelector('.task-card.just-added h4')?.textContent).toBe('Write notes');
+    });
+    it('offers Undo after cancelling or dropping a task too',async()=>{
+      await renderApp(root,client);
+      click('[data-task="0"][data-operation="dropped"]');await flush();await flush();
+      expect(noticeText()).toBe('Removed “Write notes”.');
+      expect(undoButton().hidden).toBe(false);
+    });
+    it('undoes with Ctrl+Z, but not while typing in a field',async()=>{
+      await renderApp(root,client);
+      click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+      const search=root.querySelector<HTMLInputElement>('[name="search"]')!;
+      search.focus();ctrlZ(search);await flush();
+      expect(send).not.toHaveBeenCalledWith('task_restore',expect.anything());
+      search.blur();
+      ctrlZ();await flush();await flush();
+      expect(send).toHaveBeenCalledWith('task_restore',token);
+      expect(send.mock.calls.filter(([command])=>command==='task_restore')).toHaveLength(1);
+    });
+    it('lets the chance to undo go once the notice is dismissed or replaced',async()=>{
+      vi.stubGlobal('matchMedia',vi.fn((query:string)=>({matches:query.includes('reduced-motion'),addEventListener:vi.fn()})));
+      await renderApp(root,client);
+      click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+      click('[data-notice-close]');
+      expect(undoButton().hidden).toBe(true);
+      ctrlZ();await flush();
+      click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+      root.dispatchEvent(new Event('workspace-activate'));
+      expect(noticeText()).toBe('Your existing workspace is ready.');
+      expect(undoButton().hidden).toBe(true);
+      ctrlZ();await flush();
+      expect(send).not.toHaveBeenCalledWith('task_restore',expect.anything());
+    });
+    it('reports a failed undo in the notice',async()=>{
+      await renderApp(root,client);
+      click('[data-task="0"][data-operation="deleted"]');await flush();await flush();
+      send.mockRejectedValueOnce(new Error('“Write notes” is already on your list.'));
+      undoButton().click();await flush();await flush();
+      expect(noticeText()).toBe('“Write notes” is already on your list.');
+      expect(undoButton().hidden).toBe(true);
+    });
   });
   it('slides the notice away before hiding it',async()=>{
     await renderApp(root,client);

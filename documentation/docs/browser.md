@@ -229,6 +229,13 @@ section. The overview refreshes every 30 seconds when you are not editing.
 The CLI table and task IDs are unchanged. Completing a task matches `rmd rm`;
 cancel and drop remain distinct from completion in history and reports.
 
+Clicked complete by mistake? The notice at the top of the page names the task
+and has an **Undo** button (or press **⌘Z** / **Ctrl+Z** when you are not typing
+in a field). Undo puts the task back where it was, with its importance, type,
+postponed date, and deferral, and takes the completion out of your history and
+reports. Cancel and drop can be undone the same way. You can undo until the
+notice is dismissed or replaced by your next action.
+
 To add a task to a group, click **Add a task** at the bottom of the group, type
 it, set its importance, and press **Enter**. The form stays open for the next
 task; **Esc** closes it. **New task** in the heading still opens the full form

@@ -4,7 +4,7 @@ import {
   ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, Clock3,
   Copy, CornerDownLeft, Ellipsis, Feather, Repeat, Flag, Flame, GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon,
   Palette, Pencil, Plus, RefreshCw, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
-  Trophy, X, Zap
+  Trophy, Undo2, X, Zap
 } from "lucide";
 
 type SvgNode = readonly [tag: string, attrs: Record<string, string | number>, children?: readonly SvgNode[]];
@@ -28,7 +28,7 @@ export const icons = {
   grip: icon(GripVertical), hourglass: icon(Hourglass), palette: icon(Palette), edit: icon(Pencil), trash: icon(Trash2),
   flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy), repeat: icon(Repeat),
   tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft),
-  more: icon(Ellipsis)
+  more: icon(Ellipsis), undo: icon(Undo2)
 };
 
 /** Categorical hues in a fixed, colorblind-validated order (see styles.css for light and dark steps). */

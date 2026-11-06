@@ -27,7 +27,10 @@ type BoardState = {
   menu: string | null; renaming: string | null; deleting: {id: string; moveTo: string} | null; newType: {draft: string} | null; greet: string | null;
 };
 type AgentTab = "claude" | "codex" | "antigravity";
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState};
+/** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
+ *  away, or anything else is done, the chance to undo is gone. */
+type Undo = {notice: string; run: () => Promise<void>};
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -70,6 +73,7 @@ const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string
 const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings"];
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
+const undoKey = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘Z" : "Ctrl+Z";
 
 /** Run a DOM update as a view transition, so boxes that change size or place morph instead of jumping.
  *  Browsers without view transitions, and people who prefer reduced motion, get the update at once. */
@@ -102,7 +106,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   let appearance = themePreference();
   applyTheme(appearance);
   const state: State = {
-    page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", config: null,
+    page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", undo: null, config: null,
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
@@ -148,6 +152,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (state.busy) return;
     state.busy = true;
     state.notice = "";
+    state.undo = null;
     status();
     // Only buttons disabled here are re-enabled, so intentionally disabled controls stay disabled.
     root.querySelectorAll<HTMLButtonElement>("button:not(:disabled)").forEach(btn => { btn.disabled = true; btn.dataset.busy = ""; });
@@ -161,6 +166,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (!region) return;
     const text = state.busy ? "Working on it…" : state.notice;
     region.querySelector(".notice-text")!.textContent = text;
+    region.querySelector<HTMLButtonElement>("[data-notice-undo]")!.hidden = !undoable();
     region.classList.remove("leaving");
     region.classList.toggle("visible", !!text);
     region.classList.toggle("busy", state.busy);
@@ -170,12 +176,24 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const region = root.querySelector<HTMLElement>("#notice");
     if (state.busy || !state.notice || !region) return;
     state.notice = "";
+    state.undo = null;
     if (reducedMotion()) { status(); return; }
     region.style.setProperty("--h", `${region.offsetHeight}px`);
     region.classList.add("leaving");
     const finish = () => { if (region.classList.contains("leaving") && !state.notice && !state.busy) status(); };
     region.addEventListener("animationend", event => { if (event.target === region) finish(); });
     window.setTimeout(finish, 520);
+  }
+  /** Show a notice with an Undo button beside it. */
+  function offerUndo(notice: string, run: () => Promise<void>) {
+    state.notice = notice;
+    state.undo = {notice, run};
+  }
+  const undoable = () => !state.busy && !!state.undo && state.undo.notice === state.notice;
+  function undo() {
+    if (!undoable()) return;
+    const {run} = state.undo!;
+    void action(run);
   }
   function navigate(page: Page) {
     state.page = page;
@@ -200,7 +218,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       <nav aria-label="Main navigation">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(label)}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? "P mode" : "J mode"}</strong><span>${mode === "p" ? "Flexible, task-first" : "Structured day"}</span></div></div><span class="local-dot"></span> Saved on your computer<p>One day, one thing at a time.</p></div></aside>
       <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
-      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-close" data-notice-close aria-label="Dismiss notification" title="Dismiss (Esc)">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
+      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="Undo (${undoKey()})">${icons.undo}<span>Undo</span></button><button type="button" class="notice-close" data-notice-close aria-label="Dismiss notification" title="Dismiss (Esc)">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
     status();
     state.board.added = null;
@@ -233,6 +251,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelector<HTMLAnchorElement>(".brand")!.onclick = event => { event.preventDefault(); navigate("today"); };
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(btn => btn.onclick = () => void action(() => runAction(btn.dataset.action!)));
     root.querySelector<HTMLButtonElement>("[data-notice-close]")!.onclick = dismissNotice;
+    root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.onclick = undo;
     const board = root.querySelector<HTMLElement>("#task-board");
     if (board) bindBoard(board, s);
     root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
@@ -300,12 +319,23 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         if (kind !== "deleted" && !window.confirm(`${kind === "cancelled" ? "Cancel" : "Drop"} “${task.description}”?`)) return;
         const card = btn.closest(".task-card");
         if (kind === "deleted") { burst(btn); card?.classList.add("completing"); }
-        try { await request("task_delete", {description: task.description, action: kind}); }
+        let result: {undo?: Record<string, unknown>} | undefined;
+        try { result = await request<{undo?: Record<string, unknown>}>("task_delete", {description: task.description, action: kind}); }
         catch (error) { card?.classList.remove("completing"); throw error; }
         await reload();
-        state.notice = kind === "deleted" ? "Task completed. Nice work." : "Task removed.";
+        const notice = kind === "deleted" ? `Completed “${task.description}”. Nice work.` : `Removed “${task.description}”.`;
+        const token = result?.undo;
+        if (token) offerUndo(notice, () => restoreTask(task.description, token));
+        else state.notice = notice;
       });
     });
+  }
+  /** Put a completed, cancelled, or dropped task back as it was, and greet it on the board. */
+  async function restoreTask(description: string, token: Record<string, unknown>) {
+    await request("task_restore", token);
+    state.board.added = description;
+    await reload();
+    state.notice = `“${description}” is back on your list.`;
   }
   // ----- Task board: folding and inline add -----------------------------------
 
@@ -988,6 +1018,12 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   // so Escape often reaches <body> rather than the workspace root.
   document.addEventListener("keydown", event => {
     if (!root.isConnected || event.defaultPrevented) return;
+    // ⌘Z / Ctrl+Z takes back what the notice reports, unless a field would undo its own typing instead.
+    if (event.key.toLowerCase() === "z" && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && undoable()) {
+      const target = document.activeElement;
+      const typing = target instanceof HTMLElement && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
+      if (!typing && !root.querySelector("dialog[open]")) { event.preventDefault(); undo(); return; }
+    }
     if (event.key === "Escape" && state.board.menu) {
       closeTypeMenu(true);
       return;
