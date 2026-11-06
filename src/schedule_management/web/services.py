@@ -37,6 +37,7 @@ from schedule_management.data import (
     log_task_action,
     save_deadlines,
     save_habit_records,
+    save_task_log,
     save_tasks,
     get_procrastinate_age_days,
 )
@@ -147,9 +148,9 @@ def _log_task_or_error(
     action: str,
     task: dict[str, Any],
     metadata: dict[str, Any] | None = None,
-) -> None:
+) -> dict[str, Any] | None:
     try:
-        log_task_action(action, task, metadata)
+        return log_task_action(action, task, metadata)
     except Exception as exc:
         raise WebError("storage_error", f"failed to log task action: {exc}") from exc
 
@@ -541,25 +542,125 @@ def task_update(payload: dict[str, Any]) -> dict[str, Any]:
     raise WebError("not_found", f"task not found: {original_description}")
 
 
+_CLOSING_ACTIONS = {"deleted", "cancelled", "dropped"}
+
+
 def task_delete(payload: dict[str, Any]) -> dict[str, Any]:
+    """Complete, cancel, or drop a task.
+
+    The result carries an ``undo`` token: everything ``task_restore`` needs to
+    put the task back as it was, in its place on the list, still deferred if it
+    was, and without the history entry this removal wrote.
+    """
     description = _require_text(payload, "description")
     action = payload.get("action", "deleted")
-    if action not in {"deleted", "cancelled", "dropped"}:
+    if action not in _CLOSING_ACTIONS:
         raise WebError("invalid_input", "invalid task action.")
     tasks = load_tasks()
-    deleted = [task for task in tasks if task.get("description") == description]
+    deleted = [
+        {"index": index, "task": dict(task)}
+        for index, task in enumerate(tasks)
+        if task.get("description") == description
+    ]
     if not deleted:
         raise WebError("not_found", f"task not found: {description}")
 
     remaining = [task for task in tasks if task.get("description") != description]
     _save_tasks_or_error(remaining)
-    for task in deleted:
-        _log_task_or_error(action, dict(task))
+    logged: list[str] = []
+    for item in deleted:
+        entry = _log_task_or_error(action, dict(item["task"]))
+        if entry and isinstance(entry.get("timestamp"), str):
+            logged.append(entry["timestamp"])
     from schedule_management.data import save_procrastinate_list
     records = load_procrastinate_records()
-    if description in records:
+    procrastinated = records.get(description)
+    if procrastinated is not None:
         save_procrastinate_list(set(records) - {description})
-    return {"description": description, "deleted": len(deleted)}
+    return {
+        "description": description,
+        "deleted": len(deleted),
+        "undo": {
+            "description": description,
+            "action": action,
+            "tasks": deleted,
+            "procrastinated": None if procrastinated is None else {"since": procrastinated.get("since")},
+            "logged": logged,
+        },
+    }
+
+
+def _restore_procrastinated(description: str, since: str | None) -> None:
+    """Mark a task as deferred again, keeping the day it was first deferred."""
+    from pathlib import Path
+    import json
+    from schedule_management.data.loaders import PROCRASTINATE_PATH
+
+    records = load_procrastinate_records()
+    record: dict[str, str] = {"description": description}
+    if since:
+        record["since"] = since
+    records[description] = record
+    path = Path(PROCRASTINATE_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps([records[key] for key in sorted(records)], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def task_restore(payload: dict[str, Any]) -> dict[str, Any]:
+    """Undo ``task_delete`` with the ``undo`` token it returned."""
+    description = _require_text(payload, "description")
+    action = payload.get("action")
+    if action not in _CLOSING_ACTIONS:
+        raise WebError("invalid_input", "invalid task action.")
+    items = payload.get("tasks")
+    if not isinstance(items, list) or not items:
+        raise WebError("invalid_input", "tasks are required.")
+    restored: list[tuple[int, dict[str, Any]]] = []
+    for item in items:
+        task = item.get("task") if isinstance(item, dict) else None
+        index = item.get("index") if isinstance(item, dict) else None
+        if not isinstance(task, dict) or task.get("description") != description:
+            raise WebError("invalid_input", "every task must match the description.")
+        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
+            raise WebError("invalid_input", "task index must be a non-negative integer.")
+        restored.append((index, task))
+
+    tasks = load_tasks()
+    if any(task.get("description") == description for task in tasks):
+        raise WebError("duplicate", f"“{description}” is already on your list.")
+    # Indexes were taken from the list before the removal, so inserting in order puts each task back in place.
+    for index, task in sorted(restored, key=lambda pair: pair[0]):
+        tasks.insert(min(index, len(tasks)), task)
+    _save_tasks_or_error(tasks)
+
+    # Take back the history entries the removal wrote, so it never counts as completed, cancelled, or dropped.
+    logged = {stamp for stamp in payload.get("logged") or [] if isinstance(stamp, str)}
+    if logged:
+        log_entries = load_task_log()
+        kept = [
+            entry for entry in log_entries
+            if not (
+                isinstance(entry, dict)
+                and entry.get("timestamp") in logged
+                and entry.get("action") == action
+                and isinstance(entry.get("task"), dict)
+                and entry["task"].get("description") == description
+            )
+        ]
+        if len(kept) != len(log_entries):
+            try:
+                save_task_log(kept)
+            except Exception as exc:
+                raise WebError("storage_error", f"failed to save the task log: {exc}") from exc
+
+    procrastinated = payload.get("procrastinated")
+    if isinstance(procrastinated, dict):
+        since = procrastinated.get("since")
+        _restore_procrastinated(description, since if isinstance(since, str) else None)
+    return {"description": description, "restored": len(restored)}
 
 
 def _apply_deadline_type(item: dict[str, Any], payload: dict[str, Any]) -> None:

@@ -213,7 +213,7 @@ describe("adding a task inline", () => {
     send.mockRejectedValueOnce(new Error("Storage is busy"));
     submit();
     await flush(); await flush();
-    expect(root.querySelector("#notice")?.textContent).toBe("Storage is busy");
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("Storage is busy");
     expect(form().querySelector<HTMLInputElement>('[name="composerText"]')!.value).toBe("Annotate notes");
   });
 
