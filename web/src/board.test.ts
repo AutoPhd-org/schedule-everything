@@ -31,7 +31,9 @@ let data: Snapshot;
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const click = (selector: string) => root.querySelector<HTMLElement>(selector)!.click();
 const names = () => [...root.querySelectorAll(".task-group h3")].map(el => el.textContent);
-const group = (name: string) => [...root.querySelectorAll<HTMLElement>(".task-group")].find(el => el.querySelector("h3")?.textContent === name)!;
+const shelfNames = () => [...root.querySelectorAll("#task-shelf .shelf-item h4")].map(el => el.textContent);
+/** A type's group on the board, or its pill on the shelf of types without tasks. */
+const group = (name: string) => [...root.querySelectorAll<HTMLElement>(".task-group, .shelf-item")].find(el => el.querySelector("[data-type-title]")?.textContent === name)!;
 
 beforeEach(() => {
   document.body.innerHTML = '<div id="app"></div>';
@@ -75,13 +77,24 @@ describe("task groups", () => {
     expect(groups.find(g => g.name === "Exercise")).toMatchObject({average: null, tasks: []});
   });
 
-  it("shows empty groups on the board with a way to add their first task", async () => {
+  it("keeps types without tasks on a shelf below the board, each ready for a first task", async () => {
     await renderApp(root, client);
-    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired", "Exercise"]);
-    const empty = group("Exercise");
-    expect(empty.classList.contains("is-empty")).toBe(true);
-    expect(empty.textContent).toContain("Nothing here yet.");
+    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired"]);
+    expect(shelfNames()).toEqual(["Exercise"]);
+    expect(root.querySelector("#task-shelf .shelf-heading")?.textContent).toContain("Types without tasks 1");
+    const waiting = group("Exercise");
+    expect(waiting.classList.contains("shelf-item")).toBe(true);
+    expect(waiting.querySelector("[data-compose]")?.getAttribute("aria-label")).toBe("Add a task to Exercise");
+    expect(root.querySelector("#task-board .task-group.is-empty")).toBeNull();
     expect(root.querySelectorAll("[data-compose]")).toHaveLength(5);
+  });
+
+  it("keeps the shelf to its New type button when every type has tasks", async () => {
+    data.taskTypes = {"1": "Coding", "2": "Writing", "3": "Reading"};
+    await renderApp(root, client);
+    expect(root.querySelector("#task-shelf .type-shelf")?.classList.contains("is-bare")).toBe(true);
+    expect(root.querySelector("#task-shelf .shelf-heading")).toBeNull();
+    expect(root.querySelector("#task-shelf [data-type-new]")).not.toBeNull();
   });
 
   it("hides groups without matches while searching", async () => {
@@ -89,8 +102,10 @@ describe("task groups", () => {
     const search = root.querySelector<HTMLInputElement>('[name="search"]')!;
     search.value = "paper"; search.dispatchEvent(new Event("input"));
     expect(names()).toEqual(["Reading"]);
+    expect(root.querySelector("#task-shelf")?.innerHTML).toBe("");
     search.value = ""; search.dispatchEvent(new Event("input"));
-    expect(names()).toHaveLength(5);
+    expect(names()).toHaveLength(4);
+    expect(shelfNames()).toEqual(["Exercise"]);
   });
 });
 
@@ -101,7 +116,7 @@ describe("folding", () => {
     click('[data-board-view="folded"]');
     expect(root.querySelector('[data-board-view="folded"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(root.querySelector(".fold-switch")?.classList.contains("is-folded")).toBe(true);
-    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(5);
+    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(4);
     expect(root.querySelector(".task-card")).toBeNull();
     expect(root.querySelector("#task-board")?.classList.contains("is-uniform")).toBe(true);
     const coding = group("Coding");
@@ -111,11 +126,12 @@ describe("folding", () => {
     expect(coding.textContent).toContain("1 later");
     expect(group("Writing").textContent).toContain("1 deferred");
     expect(group("Reading").textContent).toContain("1 important");
-    expect(group("Exercise").textContent).toContain("No tasks yet.");
+    // The shelf of types without tasks looks the same either way.
+    expect(shelfNames()).toEqual(["Exercise"]);
     expect(window.localStorage.getItem("schedule-everything-task-board")).toBe("folded");
 
     await renderApp(root, client);
-    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(5);
+    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(4);
     click('[data-board-view="expanded"]');
     expect(root.querySelector(".task-group.is-folded")).toBeNull();
     expect(root.querySelectorAll(".task-card")).toHaveLength(5);
@@ -128,11 +144,11 @@ describe("folding", () => {
     expect(group("Coding").classList.contains("is-folded")).toBe(false);
     expect(group("Coding").querySelectorAll(".task-card")).toHaveLength(2);
     expect(group("Coding").querySelector("[data-group-toggle]")?.getAttribute("aria-expanded")).toBe("true");
-    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(4);
+    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(3);
     expect(root.querySelector("#task-board")?.classList.contains("is-uniform")).toBe(false);
     expect(document.activeElement?.getAttribute("data-group-toggle")).toBe("1");
     click('[data-group-toggle="1"]');
-    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(5);
+    expect(root.querySelectorAll(".task-group.is-folded")).toHaveLength(4);
   });
 
   it("lists matching tasks while searching, even when folded", async () => {
@@ -333,10 +349,9 @@ describe("managing types on the board", () => {
     expect(root.querySelector<HTMLButtonElement>('[data-type-delete="1"]')!.disabled).toBe(true);
   });
 
-  it("adds a type from the tile at the end of the board", async () => {
+  it("adds a type from the end of the shelf", async () => {
     await renderApp(root, client);
-    const board = root.querySelector("#task-board")!;
-    expect(board.lastElementChild?.classList.contains("new-type")).toBe(true);
+    expect(root.querySelector("#task-shelf .shelf-items")?.lastElementChild?.classList.contains("new-type")).toBe(true);
     click("[data-type-new]");
     const input = () => root.querySelector<HTMLInputElement>('[name="newTypeName"]')!;
     expect(document.activeElement).toBe(input());
@@ -352,7 +367,8 @@ describe("managing types on the board", () => {
     root.querySelector(".new-type-form")!.dispatchEvent(new Event("submit", {cancelable: true}));
     await flush(); await flush();
     expect(send).toHaveBeenCalledWith("task_type_save", {name: "Errands"});
-    expect(names().at(-1)).toBe("Errands");
+    // A new type has no tasks yet, so it waits on the shelf, ready for its first one.
+    expect(shelfNames()).toEqual(["Exercise", "Errands"]);
     expect(group("Errands").classList.contains("greet")).toBe(true);
     expect(root.querySelector(".new-type-form")).toBeNull();
     expect(notice()).toContain("Added the type “Errands”.");

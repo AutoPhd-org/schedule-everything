@@ -448,7 +448,42 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .button.delete-type { border-color: transparent; background: var(--critical); color: #fff; }
 .button.delete-type:hover { box-shadow: 0 10px 20px -10px var(--critical); }
 .task-group.greet { animation: group-greet 1.6s var(--ease); }
-/* The last tile on the board adds a type. */
+/* Types without tasks wait on a quiet shelf below the board, as small pills: "+" adds a first task (and the
+   type moves up to the board), and ⋯ renames or deletes the type. A pill opens into a card for its form. */
+.board-area { margin-bottom: 34px; }
+.type-shelf { padding: 14px 16px 16px; border-radius: 26px; border: 1.5px dashed var(--line-strong); background: color-mix(in oklab, var(--surface) 45%, transparent); }
+.type-shelf.is-bare { padding: 0; border: 0; background: none; }
+.shelf-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0 4px 12px; }
+.shelf-heading h3 { font: 700 13.5px/1.3 var(--display); color: var(--muted); }
+.shelf-heading p { font-size: 12px; color: var(--muted); }
+.shelf-items { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; }
+.shelf-item { position: relative; display: flex; flex-direction: column; min-width: 0; max-width: 100%; border-radius: 22px; background: color-mix(in oklab, var(--c) 7%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--c) 26%, transparent); transition: border-color .25s, box-shadow .3s; }
+.shelf-item:hover { border-color: color-mix(in oklab, var(--c) 55%, transparent); box-shadow: 0 12px 24px -18px var(--c); }
+.shelf-item.is-open { flex: 1 1 320px; max-width: 440px; padding-bottom: 10px; }
+.shelf-item.menu-open { z-index: 6; }
+.shelf-item.greet { animation: group-greet 1.6s var(--ease); }
+.shelf-head { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 6px 6px 6px 7px; }
+.shelf-icon { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; background: color-mix(in oklab, var(--c) 60%, var(--surface-solid)); color: #fff; }
+.shelf-icon svg { width: 15px; height: 15px; }
+.shelf-head h4 { flex: 1; min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 650 13px/1.3 var(--display); color: var(--text); cursor: text; }
+.shelf-head .type-name-input { min-width: 140px; margin: 0; }
+.shelf-add { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--c) 18%, var(--surface-solid)); color: var(--text); transition: background .2s, color .2s, transform .45s var(--spring); }
+.shelf-add svg { width: 16px; height: 16px; }
+.shelf-add:hover { background: var(--c); color: #fff; transform: rotate(90deg); }
+.shelf-item .group-more { opacity: .5; transform: none; background: transparent; }
+.shelf-item:hover .group-more, .shelf-item .group-badge:focus-within .group-more, .shelf-item .group-badge.is-open .group-more { opacity: 1; background: color-mix(in oklab, var(--c) 22%, var(--surface-solid)); }
+.shelf-item .compose-slot { padding: 0 10px; }
+.shelf-item .composer { margin-top: 2px; }
+.shelf-item .type-delete { margin: 2px 10px 0; }
+.shelf-items .new-type { min-height: 0; }
+.shelf-items .new-type-button { flex: none; gap: 8px; min-height: 42px; padding: 6px 14px 6px 7px; border-width: 1.5px; border-radius: 22px; font-size: 13px; }
+.shelf-items .new-type-button:hover { transform: none; }
+.shelf-items .new-type-icon { width: 28px; height: 28px; }
+.shelf-items .new-type-icon svg { width: 16px; height: 16px; }
+.shelf-items .new-type.is-open { flex: 1 1 320px; max-width: 440px; }
+.shelf-items .new-type-form { border-radius: 22px; }
+
+/* The last item on the shelf adds a type. */
 .new-type { display: flex; min-height: 66px; }
 .new-type-button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 16px; border: 2px dashed var(--line-strong); border-radius: 28px; background: transparent; color: var(--muted); font: 720 13.5px/1 var(--display); transition: color .25s, background .25s, border-color .25s, transform .4s var(--spring); }
 .new-type-icon { display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; background: var(--grad-soft); color: var(--accent); transition: transform .5s var(--spring); }
@@ -548,9 +583,12 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 :root[data-vt="board"] .notice.visible { view-transition-name: notice; }
 :root[data-vt="board"] .timeline-card { view-transition-name: after-board; }
 :root[data-vt="board"] .new-type { view-transition-name: new-type; }
+/* A type keeps its name on the shelf and on the board, so it glides between them; the shelf follows the board. */
+:root[data-vt="board"] .shelf-item { view-transition-name: var(--vt); view-transition-class: tg; }
+:root[data-vt="board"] #task-shelf { view-transition-name: type-shelf; }
 :root[data-vt="board"]::view-transition-old(root), :root[data-vt="board"]::view-transition-old(fold-switch), :root[data-vt="board"]::view-transition-old(topbar), :root[data-vt="board"]::view-transition-old(sidebar), :root[data-vt="board"]::view-transition-old(notice) { display: none; }
 :root[data-vt="board"]::view-transition-new(root), :root[data-vt="board"]::view-transition-new(fold-switch), :root[data-vt="board"]::view-transition-new(topbar), :root[data-vt="board"]::view-transition-new(sidebar), :root[data-vt="board"]::view-transition-new(notice) { animation: none; }
-:root[data-vt="board"]::view-transition-group(after-board), :root[data-vt="board"]::view-transition-group(new-type) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+:root[data-vt="board"]::view-transition-group(after-board), :root[data-vt="board"]::view-transition-group(new-type), :root[data-vt="board"]::view-transition-group(type-shelf) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
 /* Class selectors stay in rules of their own: a browser without view-transition-class drops only these. */
 ::view-transition-group(.tg) { animation-duration: .62s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
 ::view-transition-image-pair(.tg) { overflow: clip; border-radius: 14px; }

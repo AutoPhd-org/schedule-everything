@@ -243,6 +243,6 @@ describe('browser workspace',()=>{
     expect(root.querySelector('[data-action="types-save"]')).toBeNull();
     expect(root.textContent).toContain('Types are managed on the task board');
     click('.page-settings [data-page="today"]');
-    expect(root.querySelector('#task-board .new-type')).not.toBeNull();
+    expect(root.querySelector('#task-shelf .new-type')).not.toBeNull();
   });
 });

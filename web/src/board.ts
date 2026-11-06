@@ -64,10 +64,38 @@ export function taskBoard(options: BoardOptions): string {
   const needle = query.toLowerCase();
   const all = groupTasks(snapshot);
   // A search shows only the groups with matches, listing them so the matching tasks can be seen.
-  const groups = needle ? all.map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(needle))})).filter(group => group.tasks.length) : all;
-  if (needle && !groups.length) return empty("No tasks match your search.");
-  // Searching is about tasks, so types can only be changed on the full board.
-  return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("") + (needle ? "" : newTypeTile(options.newType ?? null));
+  // Types without tasks wait on the shelf below the board (see typeShelf).
+  const groups = needle ? all.map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(needle))})).filter(group => group.tasks.length) : all.filter(group => group.tasks.length);
+  if (!groups.length) return empty(needle ? "No tasks match your search." : "No open tasks. Add one to a type below, or use New task.");
+  return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("");
+}
+
+/** Types without tasks, kept out of the board's way: each is a small pill that can take its first task (which
+ *  moves it up to the board), be renamed, or be deleted. The shelf also adds new types. Hidden while searching. */
+export function typeShelf(options: BoardOptions): string {
+  if (options.query) return "";
+  const waiting = groupTasks(options.snapshot).filter(group => !group.tasks.length);
+  const heading = waiting.length
+    ? `<header class="shelf-heading"><h3>Types without tasks <span class="count">${waiting.length}</span></h3><p>Add a task to one and it moves up to the board.</p></header>`
+    : "";
+  return `<section class="type-shelf ${waiting.length ? "" : "is-bare"}" aria-label="Types without tasks">${heading}<div class="shelf-items">${waiting.map(group => shelfItem(group, options)).join("")}${newTypeTile(options.newType ?? null)}</div></section>`;
+}
+
+function shelfItem(group: TaskGroup, options: BoardOptions): string {
+  const {snapshot: s} = options;
+  const id = e(group.id);
+  const name = e(group.name);
+  const deleting = options.deleting?.id === group.id ? options.deleting : null;
+  const composing = options.composer?.type === group.id ? options.composer : null;
+  const title = options.renaming === group.id
+    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="Name of this type" enterkeyhint="done">`
+    : `<h4 data-type-title="${id}" title="Double-click to rename">${name}</h4>`;
+  const open = !!(deleting || composing);
+  const classes = ["shelf-item", sw(typeSwatch(s.taskTypes, group.id)), open ? "is-open" : "", options.greet === group.id ? "greet" : "", options.menu === group.id ? "menu-open" : ""].filter(Boolean).join(" ");
+  return `<article class="${classes}" data-group="${id}" style="--vt:${groupTransitionName(group.id)}">
+      <div class="shelf-head"><span class="shelf-icon" aria-hidden="true">${icons.tasks}</span>${title}<button type="button" class="shelf-add" data-compose="${id}" aria-label="Add a task to ${name}" title="Add a task">${icons.plus}</button>${typeMenu(group, s, null, options.menu === group.id)}</div>
+      ${deleting ? deletePanel(group, s, deleting.moveTo) : composing ? `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, composing)}</div>` : ""}
+    </article>`;
 }
 
 function groupCard(group: TaskGroup, order: number, options: BoardOptions, folded: boolean, searching: boolean): string {
@@ -95,13 +123,13 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
 
 const countBadge = (count: number) => `<span class="group-count" title="${plural(count, "task")}">${count}</span>`;
 
-/** The task count, which gives way to a menu button on hover or focus: rename or delete the type. */
-function typeMenu(group: TaskGroup, s: Snapshot, count: number, open: boolean): string {
+/** The task count (when given), which gives way to a menu button on hover or focus: rename or delete the type. */
+function typeMenu(group: TaskGroup, s: Snapshot, count: number | null, open: boolean): string {
   const id = e(group.id);
   const name = e(group.name);
   // Deleting needs another type to remain for the tasks and deadlines.
   const lastType = group.id in s.taskTypes && Object.keys(s.taskTypes).length <= 1;
-  return `<span class="group-badge ${open ? "is-open" : ""}">${countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="Options for the type ${name}" title="Rename or delete this type">${icons.more}</button>
+  return `<span class="group-badge ${open ? "is-open" : ""} ${count === null ? "no-count" : ""}">${count === null ? "" : countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="Options for the type ${name}" title="Rename or delete this type">${icons.more}</button>
     ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>Rename</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? 'disabled title="Keep at least one task type"' : ""}>${icons.trash}<span>Delete type</span></button></span>` : ""}</span>`;
 }
 
@@ -122,7 +150,7 @@ function deletePanel(group: TaskGroup, s: Snapshot, moveTo: string): string {
     </div>`;
 }
 
-/** The last tile on the board: a button that becomes a form for naming a new type. */
+/** The last item on the shelf: a button that becomes a form for naming a new type. */
 function newTypeTile(open: {draft: string} | null): string {
   if (!open) return `<div class="new-type" data-slot="new-type"><button type="button" class="new-type-button" data-type-new><span class="new-type-icon">${icons.plus}</span><span>New type</span></button></div>`;
   return `<div class="new-type is-open" data-slot="new-type"><form class="new-type-form" autocomplete="off">
