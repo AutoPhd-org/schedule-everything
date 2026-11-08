@@ -237,7 +237,7 @@ impl<'a> ScheduleVisualizer<'a> {
 
         let mut canvas = Canvas::new(fonts, PAGE);
         let (w, h) = (canvas.width, canvas.height);
-        let legend_rows = legend.len().div_ceil(legend.len().clamp(1, 6));
+        let legend_rows = legend_columns(legend.len()).first().copied().unwrap_or(0);
         let plot = Plot { left: 64.0, top: 72.0, right: w - 24.0, bottom: h - 82.0 - legend_rows as f32 * 14.0 };
 
         // Alternating day stripes, hour grid and the left axis line.
@@ -322,21 +322,30 @@ fn draw_block(canvas: &mut Canvas, plot: &Plot, day_index: usize, start: f64, du
     canvas.text(plot.x(day_index as f64), plot.y(center), &label, &style);
 }
 
-/// Color swatches with activity names, centered under the chart. Entries
-/// fill columns first, at most six columns (matplotlib's legend layout).
-fn draw_legend(canvas: &mut Canvas, entries: &[(String, &str)], center_x: f32, top: f32) {
-    if entries.is_empty() {
-        return;
+/// Entries per legend column: at most six columns, filled column by column,
+/// the first ones one entry longer (matplotlib's `ncol` layout).
+fn legend_columns(entries: usize) -> Vec<usize> {
+    let columns = entries.min(6);
+    if columns == 0 {
+        return Vec::new();
     }
+    let (rows, large_columns) = (entries / columns, entries % columns);
+    (0..columns).map(|column| if column < large_columns { rows + 1 } else { rows }).collect()
+}
+
+/// Color swatches with activity names, centered under the chart.
+fn draw_legend(canvas: &mut Canvas, entries: &[(String, &str)], center_x: f32, top: f32) {
     let style = TextStyle::new(8.0).color(INK).middle();
     let (swatch_width, swatch_height, gap, column_gap, row_height) = (16.0, 6.0, 5.0, 16.0, 14.0);
-    let columns = entries.len().min(6);
-    let (rows, large_columns) = (entries.len() / columns, entries.len() % columns);
+    let counts = legend_columns(entries.len());
+    let columns = counts.len();
+    if columns == 0 {
+        return;
+    }
 
     let mut column_entries = Vec::with_capacity(columns);
     let mut next = 0;
-    for column in 0..columns {
-        let count = if column < large_columns { rows + 1 } else { rows };
+    for count in counts {
         let labels: Vec<(String, &str)> = entries[next..next + count]
             .iter()
             .map(|(label, color)| (canvas.fonts().fit(label, 150.0, &style), *color))
@@ -409,7 +418,172 @@ pub fn visualize(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::config::{WeeklySchedule, load_toml_file};
+    use crate::report::tests::pdf_page_count;
+    use crate::test_support::TestEnv;
+
+    fn repo_file(relative: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative)
+    }
+
+    /// `tests/config` settings and odd/even schedules.
+    fn fixture() -> (ScheduleConfig, WeeklySchedule) {
+        let dir = repo_file("tests/config/user_config_0");
+        let config = ScheduleConfig::load(&dir.join("settings.toml")).unwrap();
+        let weekly = WeeklySchedule::load(&dir.join("odd_weeks.toml"), &dir.join("even_weeks.toml")).unwrap();
+        (config, weekly)
+    }
+
+    fn schedule(value: Value) -> Dict {
+        value.as_object().cloned().unwrap()
+    }
+
+    #[test]
+    fn activity_helpers_match_python() {
+        let (config, weekly) = fixture();
+        let visualizer = ScheduleVisualizer::new(&config, &weekly.odd_data, &weekly.even_data);
+        // (name, hours, color, text color) from the Python visualizer.
+        let expected = [
+            ("pomodoro", 0.4166666666666667, "#FF6B6B", "#FFFFFF"),
+            ("long break", 0.5, "#8395A7", "#FFFFFF"),
+            ("long_break", 0.6666666666666666, "#1DD1A1", "#FFFFFF"),
+            ("napping", 0.5, "#54A0FF", "#FFFFFF"),
+            ("summary_time", 0.5, "#C8D6E5", "#333333"),
+            ("go_to_bed", 0.5, "#576574", "#FFFFFF"),
+            ("Lunch with team", 1.0, "#5F27CD", "#FFFFFF"),
+            ("deep_work", 0.5, "#0ABDE3", "#FFFFFF"),
+            ("meeting", 0.8333333333333334, "#FF9F43", "#FFFFFF"),
+            ("exercise", 0.5, "#Feca57", "#333333"),
+        ];
+        for (name, hours, color, text) in expected {
+            assert_eq!(visualizer.activity_duration(name).unwrap(), hours, "{name}");
+            assert_eq!(activity_color(name), color, "{name}");
+            assert_eq!(text_color(name), text, "{name}");
+        }
+    }
+
+    #[test]
+    fn activity_names_and_labels() {
+        assert_eq!(extract_activity_name(&json!("pomodoro")), "pomodoro");
+        assert_eq!(extract_activity_name(&json!({"block": "pomodoro", "title": "Paper"})), "Paper");
+        assert_eq!(extract_activity_name(&json!({"block": "pomodoro"})), "pomodoro");
+        assert_eq!(extract_activity_name(&json!({"x": 1})), "{'x': 1}");
+        assert_eq!(extract_activity_name(&json!(5)), "5");
+
+        assert_eq!(display_name("long break"), "Long Break");
+        assert_eq!(display_name("go_to_bed"), "Go To Bed");
+        assert_eq!(display_name("it's deep_work2x"), "It'S Deep Work2X");
+        assert_eq!(display_name("论文写作 deep_work"), "论文写作 Deep Work");
+        assert_eq!(py_title("ÉCOLE élan"), "École Élan");
+    }
+
+    #[test]
+    fn day_schedule_merges_common_then_day() {
+        let data = schedule(json!({
+            "common": {"20:00": "pomodoro", "09:00": "common"},
+            "monday": {"08:00": "potato", "09:00": "meeting"},
+            "tuesday": "not a table"
+        }));
+        let monday = day_schedule(&data, "monday");
+        assert_eq!(monday.keys().collect::<Vec<_>>(), ["20:00", "09:00", "08:00"]);
+        assert_eq!(monday["09:00"], json!("meeting"));
+        assert_eq!(day_schedule(&data, "tuesday").len(), 2);
+        assert!(day_schedule(&Dict::new(), "sunday").is_empty());
+    }
+
+    #[test]
+    fn weekly_stats_match_python() {
+        let (config, weekly) = fixture();
+        let visualizer = ScheduleVisualizer::new(&config, &weekly.odd_data, &weekly.even_data);
+        let stats = visualizer.weekly_stats(&weekly.odd_data).unwrap();
+        assert_eq!(stats, WeeklyStats { pomodoro_count: 66, potato_count: 0, work_hours: 27.500000000000025 });
+
+        let template = load_toml_file(&repo_file("config/user_config_0/week_schedule_template.toml")).unwrap();
+        let template_config = ScheduleConfig::load(&repo_file("config/user_config_0/settings_template.toml")).unwrap();
+        let visualizer = ScheduleVisualizer::new(&template_config, &template, &template);
+        let stats = visualizer.weekly_stats(&template).unwrap();
+        assert_eq!(stats, WeeklyStats { pomodoro_count: 16, potato_count: 43, work_hours: 42.500000000000014 });
+
+        // A titled block counts by its title; meeting and deep_work are work.
+        let custom = schedule(json!({
+            "monday": {"09:00": {"block": "potato", "title": "Deep work"}, "10:00": "meeting", "11:00": "deep_work"},
+            "common": {"20:00": "pomodoro"}
+        }));
+        let stats = visualizer.weekly_stats(&custom).unwrap();
+        assert_eq!(stats, WeeklyStats { pomodoro_count: 7, potato_count: 0, work_hours: 4.249999999999999 });
+    }
+
+    #[test]
+    fn legend_fills_columns_first() {
+        assert_eq!(legend_columns(0), Vec::<usize>::new());
+        assert_eq!(legend_columns(5), [1, 1, 1, 1, 1]);
+        assert_eq!(legend_columns(9), [2, 2, 2, 1, 1, 1]);
+        assert_eq!(legend_columns(13), [3, 2, 2, 2, 2, 2]);
+    }
+
+    #[test]
+    fn invalid_entries_fail_like_python() {
+        assert_eq!(parse_block_time("09:30").unwrap(), 9.5);
+        assert_eq!(parse_block_time(" 7:05").unwrap(), 7.0 + 5.0 / 60.0);
+        assert_eq!(parse_block_time("9am").unwrap_err().to_string(), "invalid literal for int() with base 10: '9am'");
+        assert_eq!(parse_block_time("0900").unwrap_err().to_string(), "list index out of range");
+
+        let env = TestEnv::new();
+        let (config, _) = fixture();
+        let bad = schedule(json!({"monday": {"9am": "pomodoro"}}));
+        let output = env.root().join("bad.pdf");
+        let error = visualize(&config, &bad, &Dict::new(), Some(&output)).unwrap_err();
+        assert_eq!(error.to_string(), "invalid literal for int() with base 10: '9am'");
+        assert!(!output.exists());
+
+        let mut config = ScheduleConfig::default();
+        config.time_blocks.insert("pomodoro".into(), json!("25"));
+        let visualizer = ScheduleVisualizer::new(&config, &bad, &bad);
+        let error = visualizer.activity_duration("pomodoro").unwrap_err();
+        assert_eq!(error.to_string(), "unsupported operand type(s) for /: 'str' and 'float'");
+    }
+
+    #[test]
+    fn visualize_writes_three_pages() {
+        let env = TestEnv::new();
+        let (config, weekly) = fixture();
+        let output = env.root().join("exports/nested/schedule.pdf");
+        let written = visualize(&config, &weekly.odd_data, &weekly.even_data, Some(&output)).unwrap();
+        assert_eq!(written, output);
+        assert_eq!(pdf_page_count(&output), 3);
+    }
+
+    #[test]
+    fn visualize_handles_titles_and_hours_off_the_chart() {
+        let env = TestEnv::new();
+        let (config, _) = fixture();
+        let odd = schedule(json!({
+            "monday": {
+                "05:30": "exercise",
+                "09:00": {"block": "pomodoro", "title": "论文写作 & <review> with a very long title indeed"},
+                "23:50": "go_to_bed",
+                "25:00": "napping"
+            },
+            "common": {"12:00": "lunch"}
+        }));
+        let output = env.root().join("edge.pdf");
+        visualize(&config, &odd, &Dict::new(), Some(&output)).unwrap();
+        assert_eq!(pdf_page_count(&output), 3);
+    }
+
+    #[test]
+    fn visualize_defaults_to_the_desktop() {
+        let mut env = TestEnv::new();
+        let home = env.root().join("home");
+        env.set_var("HOME", home.to_str().unwrap());
+        let (config, weekly) = fixture();
+        let written = visualize(&config, &weekly.odd_data, &weekly.even_data, None).unwrap();
+        assert_eq!(written, home.join("Desktop/schedule_visualization.pdf"));
+        assert!(written.is_file());
+    }
 
     /// TEMPORARY: render the fixture schedules for visual inspection.
     #[test]

@@ -213,16 +213,21 @@ fn label(value: Option<&Value>, default: &str) -> String {
     }
 }
 
-/// The completed tasks, newest first, 20 per A4 portrait page.
-pub(super) fn task_list<'f>(fonts: &'f Fonts, tasks: &[Value], title: &str) -> Vec<Canvas<'f>> {
+/// Tasks by timestamp text, newest first; ties keep their order, like
+/// `sorted(..., reverse=True)`.
+fn newest_first(tasks: &[Value]) -> Vec<&Value> {
     let mut sorted: Vec<&Value> = tasks.iter().collect();
     let timestamp = |entry: &Value| match entry.get("timestamp") {
         Some(Value::String(s)) => s.clone(),
         _ => String::new(),
     };
-    // Stable sort, newest first (`sorted(..., reverse=True)` keeps ties in order).
     sorted.sort_by_key(|entry| std::cmp::Reverse(timestamp(entry)));
+    sorted
+}
 
+/// The completed tasks, newest first, 20 per A4 portrait page.
+pub(super) fn task_list<'f>(fonts: &'f Fonts, tasks: &[Value], title: &str) -> Vec<Canvas<'f>> {
+    let sorted = newest_first(tasks);
     let total_pages = tasks.len().div_ceil(TASKS_PER_PAGE);
     let mut pages = Vec::with_capacity(total_pages);
     for (page_index, page_tasks) in sorted.chunks(TASKS_PER_PAGE).enumerate() {
@@ -265,4 +270,152 @@ pub(super) fn task_list<'f>(fonts: &'f Fonts, tasks: &[Value], title: &str) -> V
         pages.push(canvas);
     }
     pages
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use serde_json::json;
+    use usvg::fontdb::Database;
+
+    use super::*;
+    use crate::report::pdf::write_pdf;
+    use crate::report::tests::{date, habit_record, log_entry, pdf_page_count, sample_habits};
+    use crate::report::{filter_habits, filter_tasks};
+    use crate::test_support::TestEnv;
+
+    #[test]
+    fn completion_rate_counts_every_recorded_completion() {
+        let habits = sample_habits();
+        // "9" is not a configured habit but still counts, as in Python.
+        let records = vec![habit_record("2025-11-10", &["1", "2"]), habit_record("2025-11-11", &["1", "9"])];
+        let (start, end) = (date(2025, 11, 10), date(2025, 11, 16));
+        let habits_data = filter_habits(&records, start, end);
+        let summary = Summary { start, end, tasks: &[], habits_data: &habits_data, habits_config: &habits };
+        assert_eq!(format!("{:.1}", summary.completion_rate()), "19.0"); // 4 of 3 × 7 slots
+        assert!(summary.is_completed("1", date(2025, 11, 11)));
+        assert!(!summary.is_completed("2", date(2025, 11, 11)));
+        assert!(!summary.is_completed("1", date(2025, 11, 12)));
+        assert_eq!(summary.habit_ids(), ["1", "2", "3"]);
+
+        let no_habits = IndexMap::new();
+        let summary = Summary { habits_config: &no_habits, ..summary };
+        assert_eq!(summary.completion_rate(), 0.0);
+    }
+
+    #[test]
+    fn habit_ids_sort_as_text() {
+        let habits: IndexMap<String, String> =
+            ["2", "10", "1"].iter().map(|id| (id.to_string(), format!("habit {id}"))).collect();
+        let summary = Summary {
+            start: date(2025, 11, 1),
+            end: date(2025, 11, 30),
+            tasks: &[],
+            habits_data: &IndexMap::new(),
+            habits_config: &habits,
+        };
+        assert_eq!(summary.habit_ids(), ["1", "10", "2"]);
+        assert_eq!(summary.days(), 30);
+    }
+
+    #[test]
+    fn task_list_is_newest_first_twenty_per_page() {
+        let tasks = vec![
+            log_entry("deleted", "2025-11-10T09:00:00", "Monday", 1),
+            log_entry("deleted", "2025-11-12T09:00:00", "Wednesday", 2),
+            log_entry("deleted", "2025-11-11T09:00:00", "Tuesday A", 3),
+            log_entry("deleted", "2025-11-11T09:00:00", "Tuesday B", 4),
+        ];
+        let order: Vec<&str> =
+            newest_first(&tasks).iter().map(|t| t["task"]["description"].as_str().unwrap()).collect();
+        assert_eq!(order, ["Wednesday", "Tuesday A", "Tuesday B", "Monday"]);
+
+        let fonts = Fonts::with_database(Arc::new(Database::new()));
+        let many: Vec<Value> = (0..45)
+            .map(|i| log_entry("deleted", &format!("2025-11-{:02}T10:00:00", i % 28 + 1), &format!("Task {i}"), 1))
+            .collect();
+        assert_eq!(task_list(&fonts, &many, "Monthly Completed Tasks").len(), 3);
+        assert_eq!(task_list(&fonts, &many[..20], "Weekly Completed Tasks").len(), 1);
+        assert!(task_list(&fonts, &[], "Weekly Completed Tasks").is_empty());
+    }
+
+    #[test]
+    fn completion_time_shows_the_wall_clock_time() {
+        assert_eq!(completion_time(&json!({"timestamp": "2025-11-16T23:30:00.123-08:00"})), "2025-11-16 23:30");
+        assert_eq!(completion_time(&json!({"timestamp": "2025-11-16 07:05"})), "2025-11-16 07:05");
+        assert_eq!(completion_time(&json!({"timestamp": "yesterday"})), "yesterday");
+        assert_eq!(label(Some(&json!(7)), "-"), "7");
+        assert_eq!(label(Some(&Value::Null), "-"), "");
+        assert_eq!(label(None, "Unknown"), "Unknown");
+    }
+
+    fn crowded_pages(fonts: &Fonts, path: &Path) {
+        let mut habits = IndexMap::new();
+        for i in 0..40 {
+            let name = format!("Habit {i} <b>&\"'</b> with a rather long name 😴 中文名称很长很长很长很长很长很长很长");
+            habits.insert(i.to_string(), name);
+        }
+        let records: Vec<Value> =
+            (1..=30).map(|day| habit_record(&format!("2025-11-{day:02}"), &["1", "2", "30", "x"])).collect();
+        let log = vec![
+            log_entry(
+                "deleted",
+                "2025-11-12T10:00:00",
+                "Line\nbreak\ttab \u{FFFF} <tag> & \"quotes\" 'apos' 🎉 超长的中文任务描述没有空格可以断开超长的中文任务描述没有空格可以断开超长的中文任务描述没有空格",
+                3,
+            ),
+            log_entry("deleted", "2025-11-12T11:00:00", &"x".repeat(400), 1),
+            json!({"action": "deleted", "timestamp": "2025-11-12T12:00:00", "task": {"priority": null}}),
+            json!({"action": "deleted", "timestamp": "2025-11-12T13:00:00", "task": "not a table"}),
+        ];
+        let (start, end) = (date(2025, 11, 10), date(2025, 11, 16));
+        let (tasks, habits_data) = (filter_tasks(&log, start, end), filter_habits(&records, start, end));
+        let week = Summary { start, end, tasks: &tasks, habits_data: &habits_data, habits_config: &habits };
+        let (start, end) = (date(2025, 11, 1), date(2025, 11, 30));
+        let month_data = filter_habits(&records, start, end);
+        let month = Summary { start, end, tasks: &tasks, habits_data: &month_data, habits_config: &habits };
+
+        let mut pages = vec![weekly_summary(fonts, &week), monthly_summary(fonts, &month)];
+        pages.extend(task_list(fonts, &tasks, "Weekly Completed Tasks"));
+        write_pdf(path, "Crowded", &pages).unwrap();
+        assert_eq!(pdf_page_count(path), 3);
+    }
+
+    #[test]
+    fn crowded_and_unusual_text_still_renders() {
+        let env = TestEnv::new();
+        crowded_pages(&Fonts::load(), &env.root().join("crowded.pdf"));
+    }
+
+    #[test]
+    fn pages_render_without_any_fonts() {
+        let env = TestEnv::new();
+        crowded_pages(&Fonts::with_database(Arc::new(Database::new())), &env.root().join("no-fonts.pdf"));
+    }
+
+    #[test]
+    fn long_text_is_fitted_and_wrapped() {
+        let _env = TestEnv::new();
+        let fonts = Fonts::load();
+        let style = TextStyle::new(9.0);
+        let text = "Read the attention paper and take detailed notes on the experiments section";
+        let fitted = fonts.fit(text, 120.0, &style);
+        assert!(fitted.ends_with('…') && fonts.width(&fitted, &style) <= 120.0, "{fitted}");
+        assert_eq!(fonts.fit("Gym", 120.0, &style), "Gym");
+
+        let lines = fonts.wrap(text, 150.0, 2, &style);
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|line| fonts.width(line, &style) <= 150.0), "{lines:?}");
+        // Breaks at spaces: the first line is whole words.
+        assert!(text.starts_with(&format!("{} ", lines[0])), "{lines:?}");
+        assert!(lines[1].ends_with('…'));
+
+        let chinese = "超长的中文任务描述没有空格可以断开超长的中文任务描述";
+        let lines = fonts.wrap(chinese, 60.0, 3, &style);
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().all(|line| fonts.width(line, &style) <= 60.0), "{lines:?}");
+        assert!(chinese.starts_with(&lines[0]));
+    }
 }

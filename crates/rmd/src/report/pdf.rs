@@ -140,25 +140,39 @@ fn fallback_selector(preferred: Arc<[String]>, cache: FallbackCache) -> usvg::Fa
     })
 }
 
-/// Fonts for one document, with a cache of measured text widths.
+/// Horizontal advances of one font face, in ems, read as characters are
+/// measured (`None`: the face has no glyph for the character).
+struct FaceMetrics {
+    notdef: f32,
+    advances: HashMap<char, Option<f32>>,
+}
+
+/// Fonts for one document, with the metrics used to fit text into place.
 pub(crate) struct Fonts {
     db: Arc<Database>,
     sans: String,
     mono: String,
     fallbacks: Arc<[String]>,
     fallback_cache: FallbackCache,
-    widths: RefCell<HashMap<(String, u32, u16, bool), f32>>,
+    select_fallback: usvg::FallbackSelectionFn<'static>,
+    metrics: RefCell<HashMap<ID, Option<FaceMetrics>>>,
 }
 
 impl Fonts {
     /// Resolve the families to draw with from the installed system fonts.
     pub(crate) fn load() -> Self {
-        let db = system_fonts();
+        Self::with_database(system_fonts())
+    }
+
+    /// Resolve the families to draw with from `db`.
+    pub(crate) fn with_database(db: Arc<Database>) -> Self {
         let sans = pick_family(&db, SANS_FAMILIES).unwrap_or_else(|| "sans-serif".to_string());
         let mono = pick_family(&db, MONO_FAMILIES).unwrap_or_else(|| sans.clone());
-        let fallbacks: Vec<String> =
+        let fallbacks: Arc<[String]> =
             FALLBACK_FAMILIES.iter().filter(|name| has_family(&db, name)).map(|name| (*name).to_string()).collect();
-        Self { db, sans, mono, fallbacks: fallbacks.into(), fallback_cache: Arc::default(), widths: RefCell::default() }
+        let fallback_cache = FallbackCache::default();
+        let select_fallback = fallback_selector(fallbacks.clone(), fallback_cache.clone());
+        Self { db, sans, mono, fallbacks, fallback_cache, select_fallback, metrics: RefCell::default() }
     }
 
     fn options(&self) -> usvg::Options<'static> {
@@ -177,26 +191,80 @@ impl Fonts {
         if mono { &self.mono } else { &self.sans }
     }
 
+    /// Advances of `chars` in the face `id`, in ems (`None` if unreadable).
+    fn em_advances(&self, id: ID, chars: &[char]) -> Option<Vec<Option<f32>>> {
+        let mut metrics = self.metrics.borrow_mut();
+        let face = metrics
+            .entry(id)
+            .or_insert_with(|| {
+                self.db.with_face_data(id, |data, index| {
+                    let face = ttf_parser::Face::parse(data, index).ok()?;
+                    let units = f32::from(face.units_per_em().max(1));
+                    let notdef = f32::from(face.glyph_hor_advance(ttf_parser::GlyphId(0)).unwrap_or(0)) / units;
+                    Some(FaceMetrics { notdef, advances: HashMap::new() })
+                })?
+            })
+            .as_mut()?;
+        let unknown: Vec<char> = chars.iter().copied().filter(|c| !face.advances.contains_key(c)).collect();
+        if !unknown.is_empty() {
+            self.db.with_face_data(id, |data, index| {
+                let Ok(parsed) = ttf_parser::Face::parse(data, index) else {
+                    return;
+                };
+                let units = f32::from(parsed.units_per_em().max(1));
+                for c in unknown {
+                    let advance =
+                        parsed.glyph_index(c).map(|g| f32::from(parsed.glyph_hor_advance(g).unwrap_or(0)) / units);
+                    face.advances.insert(c, advance);
+                }
+            });
+        }
+        Some(chars.iter().map(|c| face.advances.get(c).copied().flatten()).collect())
+    }
+
+    /// Width from the font metrics, choosing fonts the way usvg does when it
+    /// lays the text out: the main face, then fallbacks for missing glyphs
+    /// (a fallback that has every glyph takes over the whole text).
+    fn measure(&self, text: &str, style: &TextStyle) -> Option<f32> {
+        let family = self.family(style.mono);
+        let named = [Family::Name(family), Family::Serif];
+        let generic = [Family::SansSerif, Family::Serif];
+        let families = if family == "sans-serif" { &generic } else { &named };
+        let query = Query { families, weight: Weight(style.weight), stretch: Stretch::Normal, style: Style::Normal };
+        let base = self.db.query(&query)?;
+        let chars: Vec<char> = text.chars().collect();
+        let mut advances = self.em_advances(base, &chars)?;
+        let mut used = vec![base];
+        let mut db = self.db.clone();
+        while let Some(missing) = advances.iter().position(Option::is_none) {
+            let Some(fallback) = (self.select_fallback)(chars[missing], &used, &mut db) else {
+                break;
+            };
+            let Some(alternative) = self.em_advances(fallback, &chars) else {
+                break;
+            };
+            if alternative.iter().all(Option::is_some) {
+                advances = alternative;
+                break;
+            }
+            for (advance, other) in advances.iter_mut().zip(alternative) {
+                if advance.is_none() {
+                    *advance = other;
+                }
+            }
+            used.push(fallback);
+        }
+        let notdef = self.metrics.borrow().get(&base).and_then(|m| m.as_ref().map(|m| m.notdef)).unwrap_or(0.0);
+        Some(advances.iter().map(|advance| advance.unwrap_or(notdef)).sum::<f32>() * style.size)
+    }
+
     /// Advance width of `text` in points, as laid out on the page.
     pub(crate) fn width(&self, text: &str, style: &TextStyle) -> f32 {
         let text = clean_text(text);
         if text.is_empty() {
             return 0.0;
         }
-        let key = (text.clone(), style.size.to_bits(), style.weight, style.mono);
-        if let Some(width) = self.widths.borrow().get(&key) {
-            return *width;
-        }
-        let mut svg = String::from(r#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1">"#);
-        let measured = TextStyle { anchor: Anchor::Start, baseline: Baseline::Alphabetic, ..*style };
-        write_text_element(&mut svg, self.family(style.mono), 0.0, 0.0, &text, &measured);
-        svg.push_str("</svg>");
-        let width = usvg::Tree::from_str(&svg, &self.options())
-            .ok()
-            .and_then(|tree| first_text_width(tree.root()))
-            .unwrap_or_else(|| estimate_width(&text, style.size));
-        self.widths.borrow_mut().insert(key, width);
-        width
+        self.measure(&text, style).unwrap_or_else(|| estimate_width(&text, style.size))
     }
 
     /// `text` shortened with an ellipsis so it fits in `max_width`.
@@ -259,14 +327,6 @@ impl Fonts {
     }
 }
 
-fn first_text_width(group: &usvg::Group) -> Option<f32> {
-    group.children().iter().find_map(|node| match node {
-        usvg::Node::Text(text) => Some(text.bounding_box().width()),
-        usvg::Node::Group(group) => first_text_width(group),
-        _ => None,
-    })
-}
-
 fn is_wide(c: char) -> bool {
     c.width().unwrap_or(0) > 1
 }
@@ -291,6 +351,8 @@ fn xml_escape(text: &str) -> String {
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&apos;"),
             c if c.is_control() => out.push(' '),
+            // Not allowed in XML documents.
+            '\u{FFFE}' | '\u{FFFF}' => out.push('\u{FFFD}'),
             c => out.push(c),
         }
     }
@@ -380,10 +442,15 @@ fn write_text_element(out: &mut String, family: &str, x: f32, y: f32, text: &str
         Baseline::Alphabetic => "alphabetic",
         Baseline::Central => "central",
     };
-    let family = xml_escape(&family.replace('\'', ""));
+    // A generic family stays unquoted; quoted, it would name a font.
+    let family = if family == "sans-serif" {
+        family.to_string()
+    } else {
+        format!("'{}'", xml_escape(&family.replace('\'', "")))
+    };
     let _ = write!(
         out,
-        r#"<text x="{x:.2}" y="{y:.2}" font-family="'{family}'" font-size="{size}" font-weight="{weight}" fill="{color}" text-anchor="{anchor}" dominant-baseline="{baseline}" xml:space="preserve">{text}</text>"#,
+        r#"<text x="{x:.2}" y="{y:.2}" font-family="{family}" font-size="{size}" font-weight="{weight}" fill="{color}" text-anchor="{anchor}" dominant-baseline="{baseline}" xml:space="preserve">{text}</text>"#,
         size = style.size,
         weight = style.weight,
         color = style.color,
