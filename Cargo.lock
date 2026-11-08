@@ -2088,6 +2088,7 @@ dependencies = [
  "indexmap",
  "krilla",
  "krilla-svg",
+ "libc",
  "mime_guess",
  "open",
  "rand 0.10.3",
