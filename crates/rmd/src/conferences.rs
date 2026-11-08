@@ -834,7 +834,7 @@ pub fn normalize_editions(text: &str) -> Result<Vec<Value>, String> {
 // =============================================================================
 
 /// Download one conference file (`None` until the user asks for the layer).
-pub type Fetcher = dyn Fn(&str) -> Result<String, String> + Sync;
+pub type Fetcher<'a> = dyn Fn(&str) -> Result<String, String> + Sync + 'a;
 
 fn raw_url(conference_id: &str) -> String {
     format!("{RAW_URL}{conference_id}.yml")
@@ -875,11 +875,13 @@ fn read_cache() -> Option<Dict> {
     }
 }
 
+/// One conference's editions, or why they could not be fetched.
+type Editions = Result<Vec<Value>, String>;
+
 /// Fetch every conference, at most [`FETCH_WORKERS`] at a time, in list order.
-fn fetch_all(fetch: &Fetcher) -> Vec<Result<Vec<Value>, String>> {
+fn fetch_all(fetch: &Fetcher<'_>) -> Vec<Editions> {
     let next = AtomicUsize::new(0);
-    let results: Vec<Mutex<Option<Result<Vec<Value>, String>>>> =
-        CONFERENCES.iter().map(|_| Mutex::new(None)).collect();
+    let results: Vec<Mutex<Option<Editions>>> = CONFERENCES.iter().map(|_| Mutex::new(None)).collect();
     std::thread::scope(|scope| {
         for _ in 0..FETCH_WORKERS {
             scope.spawn(|| {
@@ -901,7 +903,7 @@ fn fetch_all(fetch: &Fetcher) -> Vec<Result<Vec<Value>, String>> {
 }
 
 /// Fetch every conference; keep the previous data for any conference that fails.
-fn refresh(previous: Option<&Dict>, now: DateTime<Utc>, fetch: &Fetcher) -> Result<Dict, String> {
+fn refresh(previous: Option<&Dict>, now: DateTime<Utc>, fetch: &Fetcher<'_>) -> Result<Dict, String> {
     let results = fetch_all(fetch);
     let old = previous.and_then(|cache| cache.get("conferences")).and_then(Value::as_object);
     let mut conferences = Dict::new();
@@ -940,7 +942,11 @@ fn refresh(previous: Option<&Dict>, now: DateTime<Utc>, fetch: &Fetcher) -> Resu
 }
 
 /// `(cache, error)`: fetch only when forced, missing, or older than a week.
-pub fn load_conference_data(refresh_now: bool, now: DateTime<Utc>, fetch: &Fetcher) -> (Option<Dict>, Option<String>) {
+pub fn load_conference_data(
+    refresh_now: bool,
+    now: DateTime<Utc>,
+    fetch: &Fetcher<'_>,
+) -> (Option<Dict>, Option<String>) {
     let cache = read_cache();
     let fresh = cache.as_ref().is_some_and(|cache| {
         match cache.get("fetchedAt").and_then(Value::as_str).and_then(py::parse_iso_datetime) {
@@ -1088,7 +1094,7 @@ pub fn conference_calendar(payload: &Dict) -> WebResult {
 }
 
 /// [`conference_calendar`] with an explicit downloader and display zone.
-pub fn conference_calendar_with(payload: &Dict, fetch: &Fetcher, local: Zone) -> WebResult {
+pub fn conference_calendar_with(payload: &Dict, fetch: &Fetcher<'_>, local: Zone) -> WebResult {
     let year = payload.get("year").and_then(py::py_int).ok_or_else(|| invalid("year must be an integer."))?;
     if !(1970..=2200).contains(&year) {
         return Err(invalid("year is out of range."));
@@ -1109,4 +1115,476 @@ pub fn conference_calendar_with(payload: &Dict, fetch: &Fetcher, local: Zone) ->
         "conferences": conferences,
         "events": events,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    const NEURIPS: &str = "
+- title: NeurIPS
+  year: 2026
+  id: neurips26
+  full_name: Conference on Neural Information Processing Systems
+  link: https://neurips.cc/
+  deadlines:
+    - type: abstract
+      label: Abstract registration deadline
+      date: '2026-05-04 23:59:59'
+      timezone: AoE
+    - type: paper
+      label: Paper submission deadline
+      date: '2026-05-06 23:59:59'
+      timezone: AoE
+    - type: notification
+      label: Author notification
+      date: '2026-09-24 23:59:59'
+      timezone: AoE
+    - type: submission
+      label: Workshop Proposal Submission
+      date: '2026-04-10 23:59:59'
+      timezone: AoE
+    - type: paper
+      label: Paper video submission deadline
+      date: '2026-05-10 23:59:59'
+      timezone: AoE
+    - type: registration
+      label: Early registration
+      date: '2026-10-01 23:59:59'
+      timezone: AoE
+  city: Sydney
+  country: Australia
+  date: December 6-12, 2026
+  start: '2026-12-06'
+  end: '2026-12-12'
+";
+    const CVPR: &str = "
+- title: CVPR
+  year: 2025
+  id: cvpr25
+  link: javascript:alert(1)
+  deadline: '2024-11-14 23:59:00'
+  abstract_deadline: '2024-11-07 23:59:00'
+  timezone: UTC-8
+  date: June 10-17, 2025
+  rebuttal_period_end: '2025-01-30 23:59:00'
+- title: CVPR
+  year: 2026
+  id: cvpr26
+  link: https://cvpr.thecvf.com/
+  deadlines:
+  - type: registration
+    label: Paper Registration
+    date: '2025-11-06 23:59:59'
+    timezone: AoE
+  - type: paper
+    label: Paper Submission
+    date: '2025-11-13 23:59:59'
+    timezone: AoE
+  - type: rebuttal_start
+    label: Rebuttal Period Starts
+    date: '2026-01-22 23:59:59'
+    timezone: AoE
+  - type: rebuttal_end
+    label: Rebuttal Period Ends
+    date: '2026-01-29 23:59:59'
+    timezone: AoE
+  - type: rebuttal_end
+    label: Workshop paper rebuttal deadline
+    date: '2026-03-01 23:59:59'
+    timezone: AoE
+  date: June 3-7, 2026
+  start: 2026-06-03
+  end: 2026-06-07
+  rebuttal_period_end: '2026-01-29 23:59:59'
+";
+    const ACL: &str = "
+- title: ACL
+  year: 2025
+  id: acl25
+  deadlines:
+    - type: paper
+      label: Paper submission deadline
+      date: '2025-02-15 23:59:59'
+      timezone: AoE
+    - type: author_response
+      label: Author response period ends
+      date: '2025-04-03 23:59:59'
+      timezone: AoE
+    - type: author_response
+      label: Author response period begins
+      date: '2025-03-27 23:59:59'
+      timezone: AoE
+  date: July 27 - August 1, 2025
+";
+    const ECCV: &str = "
+- title: ECCV
+  year: 2026
+  id: eccv26
+  deadlines:
+  - type: paper
+    label: Paper Submission
+    date: '2026-03-05 22:00:00'
+    timezone: UTC
+  - type: rebuttal_end
+    label: Rebuttal Deadline
+    date: '2026-05-11 21:00:00'
+    timezone: UTC
+  date: September 8-12, 2026
+";
+    const IROS: &str = "
+- title: IROS
+  year: 2026
+  id: iros26
+  link: https://www.iros2026.org/
+  deadlines:
+  - type: submission
+    label: Paper Submission
+    date: '2026-03-01 23:59:59'
+    timezone: PST
+  date: September 27 - October 1, 2026
+";
+
+    fn pacific() -> Zone {
+        Zone::Fixed(FixedOffset::west_opt(8 * 3600).unwrap())
+    }
+
+    /// A downloader serving the sample files; other conferences are missing.
+    struct FakeSource {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl FakeSource {
+        fn new() -> Self {
+            Self { calls: Mutex::new(Vec::new()) }
+        }
+
+        fn fetch(&self, url: &str) -> Result<String, String> {
+            let id = url.rsplit('/').next().unwrap().trim_end_matches(".yml").to_string();
+            self.calls.lock().unwrap().push(id.clone());
+            match id.as_str() {
+                "neurips" => Ok(NEURIPS.to_string()),
+                "cvpr" => Ok(CVPR.to_string()),
+                "iros" => Ok(IROS.to_string()),
+                "acl" => Ok(ACL.to_string()),
+                "eccv" => Ok(ECCV.to_string()),
+                _ => Err("404 Not Found".to_string()),
+            }
+        }
+
+        fn count(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+    }
+
+    fn env() -> TestEnv {
+        let mut env = TestEnv::new();
+        let cache = env.root().join("cache").join("ai_conferences.json");
+        env.set_var("REMINDER_CONFERENCE_CACHE_PATH", cache.to_str().unwrap());
+        env
+    }
+
+    fn utc(y: i32, m: u32, d: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap()
+    }
+
+    #[test]
+    fn normalizes_deadline_lists_legacy_fields_and_date_text() {
+        let editions = normalize_editions(CVPR).unwrap();
+        let (legacy, current) = (&editions[0], &editions[1]);
+        let kinds: Vec<&Value> = legacy["deadlines"].as_array().unwrap().iter().map(|d| &d["kind"]).collect();
+        assert_eq!(kinds, [&json!("abstract"), &json!("submission")]);
+        assert_eq!(legacy["deadlines"][1]["utc"], json!("2024-11-15T07:59:00+00:00"), "UTC-8");
+        assert_eq!(legacy["link"], Value::Null, "only http(s) links are kept");
+        assert_eq!(
+            (&legacy["start"], &legacy["end"]),
+            (&json!("2025-06-10"), &json!("2025-06-17")),
+            "parsed from the date text"
+        );
+        assert_eq!(
+            (&current["start"], &current["end"]),
+            (&json!("2026-06-03"), &json!("2026-06-07")),
+            "bare YAML dates"
+        );
+        let iros = &normalize_editions(IROS).unwrap()[0];
+        assert_eq!((&iros["start"], &iros["end"]), (&json!("2026-09-27"), &json!("2026-10-01")));
+        assert_eq!(iros["deadlines"][0]["utc"], json!("2026-03-02T07:59:59+00:00"), "PST");
+        let neurips = &normalize_editions(NEURIPS).unwrap()[0];
+        // Notifications, side tracks (workshops, videos), and attendee registration are left out.
+        let labels: Vec<&Value> = neurips["deadlines"].as_array().unwrap().iter().map(|d| &d["label"]).collect();
+        assert_eq!(labels, [&json!("Abstract registration deadline"), &json!("Paper submission deadline")]);
+        let current_deadlines: Vec<(&Value, &Value)> =
+            current["deadlines"].as_array().unwrap().iter().map(|d| (&d["kind"], &d["label"])).collect();
+        assert_eq!(
+            current_deadlines,
+            [(&json!("abstract"), &json!("Paper Registration")), (&json!("submission"), &json!("Paper Submission"))]
+        );
+        assert_eq!(neurips["place"], json!("Sydney, Australia"));
+        assert_eq!(neurips["year"], json!(2026));
+        assert_eq!(neurips["fullName"], json!("Conference on Neural Information Processing Systems"));
+        assert_eq!(neurips["dateText"], json!("December 6-12, 2026"));
+    }
+
+    #[test]
+    fn rebuttal_dates_pair_into_periods() {
+        let editions = normalize_editions(CVPR).unwrap();
+        // A start and an end make one period; side tracks and the duplicate flat field are left out.
+        assert_eq!(
+            editions[1]["rebuttals"],
+            json!([{"label": "Rebuttal Period", "start": "2026-01-23T11:59:59+00:00", "end": "2026-01-30T11:59:59+00:00", "timezone": "AoE"}])
+        );
+        // Older editions keep the rebuttal dates in flat fields with the edition's time zone.
+        assert_eq!(
+            editions[0]["rebuttals"],
+            json!([{"label": "Rebuttal period end", "start": null, "end": "2025-01-31T07:59:00+00:00", "timezone": "UTC-8"}])
+        );
+        // "author_response" dates say in the label whether they begin or end the period, in any order.
+        let acl = &normalize_editions(ACL).unwrap()[0];
+        let rebuttal = &acl["rebuttals"][0];
+        assert_eq!(acl["rebuttals"].as_array().unwrap().len(), 1);
+        assert_eq!(rebuttal["label"], json!("Author response period"));
+        assert!(rebuttal["start"].as_str().unwrap().starts_with("2025-03-28"));
+        assert!(rebuttal["end"].as_str().unwrap().starts_with("2025-04-04"));
+        assert_eq!(acl["deadlines"].as_array().unwrap().len(), 1);
+        assert_eq!(acl["deadlines"][0]["kind"], json!("submission"));
+        // A conference that publishes only one end of the period keeps that single date.
+        assert_eq!(
+            normalize_editions(ECCV).unwrap()[0]["rebuttals"],
+            json!([{"label": "Rebuttal Deadline", "start": null, "end": "2026-05-11T21:00:00+00:00", "timezone": "UTC"}])
+        );
+        let lone = normalize_editions(
+            "- year: 2026\n  deadlines:\n  - {type: rebuttal_start, label: Rebuttal opens, date: '2026-02-01 00:00:00', timezone: UTC}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            lone[0]["rebuttals"],
+            json!([{"label": "Rebuttal opens", "start": "2026-02-01T00:00:00+00:00", "end": null, "timezone": "UTC"}])
+        );
+    }
+
+    #[test]
+    fn rebuttal_period_names() {
+        for (start, end, name) in [
+            ("Rebuttal Period Starts", "Rebuttal Period Ends", "Rebuttal Period"),
+            (
+                "Author + Reviewer + AC Discussion Period starts",
+                "Author + Reviewer + AC Discussion Period ends",
+                "Author + Reviewer + AC Discussion Period",
+            ),
+            (
+                "Rebuttal period start (First Cycle)",
+                "Rebuttal period end (First Cycle)",
+                "Rebuttal period (First Cycle)",
+            ),
+            ("Start of the rebuttal", "End of the rebuttal", "Rebuttal"),
+            ("Initial author response due", "Discussion period ends", "Rebuttal period"),
+        ] {
+            assert_eq!(period_name(start, end), name);
+        }
+    }
+
+    #[test]
+    fn time_zone_names() {
+        let moment = utc(2026, 1, 1) + Duration::hours(12);
+        let offset = |name: &str| {
+            let local = zone(&json!(name)).unwrap().local(moment);
+            (local - moment.naive_utc()).num_minutes()
+        };
+        for (name, minutes) in
+            [("AoE", -720), ("UTC", 0), ("UTC+5:30", 330), ("GMT-3", -180), ("PST", -480), ("Mars/Olympus", -720)]
+        {
+            assert_eq!(offset(name), minutes, "{name}");
+        }
+        assert_eq!(offset("Europe/Vienna"), 60);
+        assert_eq!(offset(" ist "), 330);
+        assert_eq!(zone(&Value::Null).unwrap(), zone(&json!("AoE")).unwrap());
+        assert!(zone(&json!("UTC+25")).is_err());
+    }
+
+    #[test]
+    fn yaml_values_follow_pyyaml_types() {
+        let doc = "a: 2026-06-03\nb: '2026-06-03'\nc: 2026-05-04 23:59:59\nd: 2026-05-04T23:59:59Z\ne: yes\nf: 1:30\ng: 017\nh: ~\ni: 1.5\nj: 1e5\nk: \"7\"\nl: 2026-05-04 23:59:59 -5\n";
+        let yaml = safe_load(doc).unwrap().unwrap();
+        let date = NaiveDate::from_ymd_opt(2026, 6, 3).unwrap();
+        let datetime = NaiveDate::from_ymd_opt(2026, 5, 4).unwrap().and_hms_opt(23, 59, 59).unwrap();
+        assert_eq!(yaml.get("a"), Some(&Yaml::Date(date)));
+        assert_eq!(yaml.get("b"), Some(&Yaml::Str("2026-06-03".into())));
+        assert_eq!(yaml.get("c"), Some(&Yaml::DateTime(datetime, None)));
+        assert_eq!(yaml.get("d"), Some(&Yaml::DateTime(datetime, FixedOffset::east_opt(0))));
+        assert_eq!(yaml.get("e"), Some(&Yaml::Bool(true)));
+        assert_eq!(yaml.get("f"), Some(&Yaml::Int(90)));
+        assert_eq!(yaml.get("g"), Some(&Yaml::Int(15)));
+        assert_eq!(yaml.get("h"), Some(&Yaml::Null));
+        assert_eq!(yaml.get("i"), Some(&Yaml::Float(1.5)));
+        assert_eq!(yaml.get("j"), Some(&Yaml::Str("1e5".into())));
+        assert_eq!(yaml.get("k"), Some(&Yaml::Str("7".into())));
+        assert_eq!(yaml.get("l").unwrap().py_str(), "2026-05-04 23:59:59-05:00");
+        assert_eq!(safe_load("").unwrap(), None);
+        assert!(safe_load("a: 1\n---\nb: 2\n").is_err());
+        assert_eq!(normalize_editions("").unwrap(), Vec::<Value>::new());
+        assert_eq!(normalize_editions("a: 1").unwrap_err(), "conference data must be a list of editions");
+        // An unquoted date means the end of that day in the deadline's zone; a quoted one, midnight.
+        let typed = normalize_editions("- year: 2026\n  deadline: 2026-05-04\n  timezone: UTC\n").unwrap();
+        assert_eq!(typed[0]["deadlines"][0]["utc"], json!("2026-05-04T23:59:59+00:00"));
+        let text = normalize_editions("- year: 2026\n  deadline: '2026-05-04'\n  timezone: UTC\n").unwrap();
+        assert_eq!(text[0]["deadlines"][0]["utc"], json!("2026-05-04T00:00:00+00:00"));
+    }
+
+    #[test]
+    fn calendar_api_returns_year_events_in_local_time() {
+        let mut env = env();
+        env.set_now("2026-11-04T10:00:00");
+        let source = FakeSource::new();
+        let fetch = |url: &str| source.fetch(url);
+        let request = |value: Value| conference_calendar_with(value.as_object().unwrap(), &fetch, pacific());
+        let data = request(json!({"year": 2026})).unwrap();
+        assert_eq!(data["error"], Value::Null);
+        let ids: Vec<&Value> = data["conferences"].as_array().unwrap().iter().map(|c| &c["id"]).collect();
+        assert_eq!(ids[..3], [&json!("neurips"), &json!("iclr"), &json!("icml")]);
+        let events: HashMap<String, Value> = data["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["id"].as_str().unwrap().to_string(), e.clone()))
+            .collect();
+        let paper = &events["neurips2026-submission-1"];
+        // 23:59 AoE on May 6 is 03:59 on May 7 in Pacific time.
+        assert_eq!(
+            [&paper["date"], &paper["time"], &paper["sourceTime"]],
+            [&json!("2026-05-07"), &json!("03:59"), &json!("May 6, 23:59 AoE")]
+        );
+        assert_eq!(
+            [&paper["kind"], &paper["group"], &paper["name"]],
+            [&json!("submission"), &json!("ml"), &json!("NeurIPS")]
+        );
+        let conference = &events["neurips2026-conference"];
+        assert_eq!(
+            [&conference["date"], &conference["endDate"], &conference["place"]],
+            [&json!("2026-12-06"), &json!("2026-12-12"), &json!("Sydney, Australia")]
+        );
+        assert!(!events.keys().any(|id| id.contains("notification")), "notifications are left out");
+        let mut cvpr: Vec<&String> = events.keys().filter(|id| id.starts_with("cvpr2026-")).collect();
+        cvpr.sort();
+        assert_eq!(cvpr, ["cvpr2026-conference", "cvpr2026-rebuttal-0"], "CVPR 2026 deadlines fell in 2025");
+        assert!(events.contains_key("iros2026-conference"));
+        // The rebuttal period spans its days in local time: 23:59 AoE is 03:59 the next day in Pacific time.
+        let rebuttal = &events["cvpr2026-rebuttal-0"];
+        assert_eq!(
+            ["kind", "label", "date", "endDate", "time"].map(|key| rebuttal[key].clone()),
+            [json!("rebuttal"), json!("Rebuttal Period"), json!("2026-01-23"), json!("2026-01-30"), json!("03:59")]
+        );
+        assert_eq!(rebuttal["sourceTime"], json!("Jan 22, 23:59 – Jan 29, 23:59 AoE"));
+        let single = &events["eccv2026-rebuttal-0"];
+        assert_eq!(
+            ["date", "endDate", "time", "sourceTime"].map(|key| single[key].clone()),
+            [json!("2026-05-11"), Value::Null, json!("13:00"), json!("May 11, 21:00 UTC")]
+        );
+        let dates: Vec<&str> = data["events"].as_array().unwrap().iter().map(|e| e["date"].as_str().unwrap()).collect();
+        let mut sorted = dates.clone();
+        sorted.sort();
+        assert_eq!(dates, sorted);
+
+        assert_eq!(request(json!({"year": "soon"})).unwrap_err().message, "year must be an integer.");
+        assert_eq!(request(json!({"year": 1900})).unwrap_err().message, "year is out of range.");
+        // Validation happens before any download.
+        assert_eq!(source.count(), 15);
+    }
+
+    #[test]
+    fn rebuttal_periods_show_in_every_year_they_touch() {
+        let cache = json!({"conferences": {"iclr": [{"year": 2027, "deadlines": [], "rebuttals": [
+            {"label": "Discussion period", "start": "2026-12-28T12:00:00+00:00", "end": "2027-01-04T11:59:59+00:00", "timezone": "AoE"}]}]}});
+        let cache = cache.as_object().unwrap();
+        let in_2026 = calendar_events(cache, 2026, pacific()).unwrap();
+        assert_eq!((&in_2026[0]["date"], &in_2026[0]["endDate"]), (&json!("2026-12-28"), &json!("2027-01-04")));
+        assert_eq!(in_2026.len(), 1);
+        let in_2027 = calendar_events(cache, 2027, pacific()).unwrap();
+        assert_eq!(in_2027.iter().map(|e| e["id"].clone()).collect::<Vec<_>>(), [json!("iclr2027-rebuttal-0")]);
+        assert!(calendar_events(cache, 2028, pacific()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn local_times_follow_daylight_saving_time() {
+        let cache = json!({"conferences": {"neurips": normalize_editions(NEURIPS).unwrap()}});
+        let cache = cache.as_object().unwrap().clone();
+        let submission = |events: Vec<Value>| {
+            let event = events.into_iter().find(|e| e["id"] == json!("neurips2026-submission-1")).unwrap();
+            (event["date"].clone(), event["time"].clone())
+        };
+        // 23:59 AoE on May 6 is 04:59 in Los Angeles in May (PDT), not 03:59 (PST).
+        let named = Zone::Named(chrono_tz::America::Los_Angeles);
+        assert_eq!(submission(calendar_events(&cache, 2026, named).unwrap()), (json!("2026-05-07"), json!("04:59")));
+        // The real default is the system zone; a fresh thread reads TZ afresh.
+        let mut env = TestEnv::new();
+        env.set_var("TZ", "America/Los_Angeles");
+        let events = std::thread::spawn(move || calendar_events(&cache, 2026, Zone::Local).unwrap()).join().unwrap();
+        assert_eq!(submission(events), (json!("2026-05-07"), json!("04:59")));
+        drop(env);
+    }
+
+    #[test]
+    fn fetches_at_most_weekly_and_on_request() {
+        let _env = env();
+        let source = FakeSource::new();
+        let fetch = |url: &str| source.fetch(url);
+        let start = utc(2026, 11, 4);
+        let (cache, error) = load_conference_data(false, start, &fetch);
+        assert_eq!((error, source.count()), (None, 15));
+        assert_eq!(cache.unwrap()["errors"]["icml"], json!("404 Not Found"));
+        let stored: Value = serde_json::from_str(&std::fs::read_to_string(cache_path()).unwrap()).unwrap();
+        let first = stored["conferences"]["neurips"][0].as_object().unwrap();
+        assert!(["year", "deadlines", "start", "end"].iter().all(|key| first.contains_key(*key)));
+        assert_eq!(stored["fetchedAt"], json!("2026-11-04T00:00:00+00:00"));
+        let text = std::fs::read_to_string(cache_path()).unwrap();
+        assert!(
+            text.starts_with(r#"{"version":2,"source":"https://github.com/huggingface/ai-deadlines","fetchedAt":"#),
+            "{text}"
+        );
+
+        load_conference_data(false, start + Duration::days(6), &fetch);
+        assert_eq!(source.count(), 15, "a fresh cache is reused");
+        load_conference_data(true, start + Duration::days(1), &fetch);
+        assert_eq!(source.count(), 30, "refresh always fetches");
+        load_conference_data(false, start + Duration::days(9), &fetch);
+        assert_eq!(source.count(), 45, "a week-old cache is refreshed");
+    }
+
+    #[test]
+    fn cache_from_an_older_version_is_refetched() {
+        let _env = env();
+        let path = cache_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"version": 1, "fetchedAt": "2026-11-04T00:00:00+00:00", "conferences": {"cvpr": []}}"#,
+        )
+        .unwrap();
+        let source = FakeSource::new();
+        let fetch = |url: &str| source.fetch(url);
+        let (cache, error) = load_conference_data(false, utc(2026, 11, 5), &fetch);
+        assert_eq!((error, source.count()), (None, 15), "a cache saved before rebuttal dates is replaced");
+        assert!(!cache.unwrap()["conferences"]["cvpr"][1]["rebuttals"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn offline_keeps_the_last_data_and_reports_errors() {
+        let mut env = env();
+        let source = FakeSource::new();
+        let start = utc(2026, 11, 4);
+        load_conference_data(false, start, &|url: &str| source.fetch(url));
+
+        let offline = |_: &str| -> Result<String, String> { Err("network is unreachable".to_string()) };
+        let (cache, error) = load_conference_data(false, start + Duration::days(30), &offline);
+        assert!(!cache.unwrap()["conferences"]["neurips"].as_array().unwrap().is_empty(), "stale data is still shown");
+        assert_eq!(error.unwrap(), "Could not fetch conference dates: network is unreachable");
+
+        std::fs::remove_file(cache_path()).unwrap();
+        let (cache, error) = load_conference_data(true, start, &offline);
+        assert!(cache.is_none() && error.unwrap().contains("Could not fetch"));
+        env.set_now("2026-11-04T10:00:00");
+        let data = conference_calendar_with(json!({"year": 2026}).as_object().unwrap(), &offline, pacific()).unwrap();
+        assert_eq!((&data["events"], &data["fetchedAt"]), (&json!([]), &Value::Null));
+        assert!(data["error"].is_string());
+    }
 }

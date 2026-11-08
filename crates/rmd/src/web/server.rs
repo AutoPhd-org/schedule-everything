@@ -524,3 +524,334 @@ pub fn run(root: &Path, port: u16) -> i32 {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::{Duration, Instant};
+
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    const TOKEN: &str = "test-token";
+
+    /// A server on a free port, served from a background runtime.
+    struct TestServer {
+        server: Arc<BrowserServer>,
+        thread: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl TestServer {
+        fn start() -> Self {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let thread = std::thread::spawn(move || {
+                let runtime =
+                    tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+                runtime.block_on(async move {
+                    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+                    let port = listener.local_addr().unwrap().port();
+                    let server = Arc::new(BrowserServer::new(port, TOKEN.to_string(), "test-build".to_string()));
+                    sender.send(server.clone()).unwrap();
+                    serve(server, listener).await.unwrap();
+                });
+            });
+            Self { server: receiver.recv().unwrap(), thread: Some(thread) }
+        }
+
+        fn port(&self) -> u16 {
+            self.server.port
+        }
+
+        fn stop(&mut self) {
+            self.server.shutdown();
+            if let Some(thread) = self.thread.take() {
+                thread.join().unwrap();
+            }
+        }
+    }
+
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            self.stop();
+        }
+    }
+
+    struct Reply {
+        status: u16,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    }
+
+    impl Reply {
+        fn header(&self, name: &str) -> Option<&str> {
+            self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+        }
+
+        fn json(&self) -> Value {
+            serde_json::from_slice(&self.body).unwrap()
+        }
+    }
+
+    fn send_request(port: u16, method: &str, path: &str, body: Option<&str>, headers: &[(&str, &str)]) -> TcpStream {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut text = format!("{method} {path} HTTP/1.1\r\n");
+        if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
+            text += &format!("Host: 127.0.0.1:{port}\r\n");
+        }
+        for (key, value) in headers {
+            text += &format!("{key}: {value}\r\n");
+        }
+        if let Some(body) = body
+            && !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+        {
+            text += &format!("Content-Length: {}\r\n", body.len());
+        }
+        text += "Connection: close\r\n\r\n";
+        text += body.unwrap_or("");
+        stream.write_all(text.as_bytes()).unwrap();
+        stream
+    }
+
+    fn parse_head(raw: &[u8]) -> (u16, Vec<(String, String)>, usize) {
+        let end = raw.windows(4).position(|w| w == b"\r\n\r\n").expect("complete head") + 4;
+        let head = String::from_utf8_lossy(&raw[..end]).to_string();
+        let mut lines = head.split("\r\n");
+        let status = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+        let headers =
+            lines.filter_map(|line| line.split_once(": ")).map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        (status, headers, end)
+    }
+
+    fn request(port: u16, method: &str, path: &str, body: Option<&str>, headers: &[(&str, &str)]) -> Reply {
+        let mut stream = send_request(port, method, path, body, headers);
+        let mut raw = Vec::new();
+        let _ = stream.read_to_end(&mut raw);
+        let (status, headers, end) = parse_head(&raw);
+        Reply { status, headers, body: raw[end..].to_vec() }
+    }
+
+    fn auth() -> (&'static str, &'static str) {
+        ("Authorization", "Bearer test-token")
+    }
+
+    #[test]
+    fn static_app_is_bundled_and_paths_are_restricted() {
+        let server = TestServer::start();
+        let reply = request(server.port(), "GET", "/", None, &[]);
+        assert_eq!(reply.status, 200);
+        assert!(String::from_utf8_lossy(&reply.body).contains("<main id=\"app\">"));
+        assert_eq!(reply.header("Content-Type"), Some("text/html"));
+        assert!(reply.header("Content-Security-Policy").unwrap().contains("frame-ancestors 'none'"));
+        assert_eq!(reply.header("Cache-Control"), Some("no-store"));
+        assert_eq!(reply.header("X-Content-Type-Options"), Some("nosniff"));
+        assert_eq!(reply.header("Referrer-Policy"), Some("no-referrer"));
+        for path in ["/../server.py", "/%2e%2e/server.py", "/.browser.json", "/assets", "/missing.js"] {
+            let reply = request(server.port(), "GET", path, None, &[]);
+            assert_eq!((reply.status, reply.json()), (404, json!({"error": "Not found."})), "{path}");
+        }
+        let asset = Assets::iter().find(|name| name.ends_with(".js")).expect("bundled script");
+        let reply = request(server.port(), "GET", &format!("/{asset}?v=1"), None, &[]);
+        assert_eq!((reply.status, reply.header("Content-Type")), (200, Some("text/javascript")));
+        let reply = request(server.port(), "GET", "/", None, &[("Host", "evil.example")]);
+        assert_eq!((reply.status, reply.json()), (403, json!({"error": "Invalid host."})));
+    }
+
+    #[test]
+    fn api_rejects_unauthenticated_cross_origin_and_rebound_requests() {
+        let server = TestServer::start();
+        let body = r#"{"command": "workspace_info"}"#;
+        for headers in [
+            vec![],
+            vec![("Authorization", "Bearer wrong")],
+            vec![auth(), ("Origin", "https://example.com")],
+            vec![auth(), ("Host", "evil.example")],
+        ] {
+            let reply = request(server.port(), "POST", "/api", Some(body), &headers);
+            assert_eq!((reply.status, reply.json()), (403, json!({"error": "Unauthorized request."})));
+        }
+        for path in ["/health", "/events", "/downloads/x"] {
+            let reply = request(server.port(), "GET", path, None, &[]);
+            assert_eq!((reply.status, reply.json()), (403, json!({"error": "Unauthorized."})), "{path}");
+        }
+    }
+
+    #[test]
+    fn session_cookie_authenticates_same_origin_requests() {
+        let _env = TestEnv::new();
+        let server = TestServer::start();
+        let origin = format!("http://127.0.0.1:{}", server.port());
+        let reply = request(server.port(), "POST", "/session", Some("{}"), &[auth(), ("Origin", &origin)]);
+        assert_eq!((reply.status, reply.json()), (200, json!({"ok": true})));
+        let cookie = reply.header("Set-Cookie").unwrap().to_string();
+        assert_eq!(cookie, format!("rmd_{}=test-token; HttpOnly; SameSite=Strict; Path=/", server.port()));
+        let session = cookie.split(';').next().unwrap();
+        let body = r#"{"command": "settings_get_task_types"}"#;
+        let reply = request(server.port(), "POST", "/api", Some(body), &[("Cookie", session), ("Origin", &origin)]);
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.json()["ok"], json!(true));
+        assert_eq!(reply.header("Content-Type"), Some("application/json; charset=utf-8"));
+    }
+
+    #[test]
+    fn api_validates_json_shape_and_size() {
+        let server = TestServer::start();
+        let reply = request(server.port(), "POST", "/api", Some("[]"), &[auth()]);
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.json()["error"]["code"], json!("invalid_request"));
+        let reply = request(server.port(), "POST", "/api", Some("{}"), &[auth(), ("Content-Length", "8388609")]);
+        assert_eq!((reply.status, reply.json()), (413, json!({"error": "Invalid request size."})));
+        let reply = request(server.port(), "POST", "/api", None, &[auth()]);
+        assert_eq!(reply.status, 413, "a missing body counts as length 0");
+        let reply = request(server.port(), "POST", "/api", Some("{nope"), &[auth()]);
+        assert_eq!((reply.status, reply.json()), (400, json!({"error": "Invalid JSON."})));
+        let reply = request(server.port(), "POST", "/elsewhere", Some("{}"), &[auth()]);
+        assert_eq!((reply.status, reply.json()), (404, json!({"error": "Not found."})));
+        let reply = request(server.port(), "PUT", "/api", Some("{}"), &[auth()]);
+        assert_eq!(reply.status, 501);
+    }
+
+    #[test]
+    fn activation_notifies_existing_tabs() {
+        let server = TestServer::start();
+        let (tab, mut events) = server.server.add_tab();
+        let reply = request(server.port(), "POST", "/activate", Some("{}"), &[auth()]);
+        assert_eq!((reply.status, reply.json()), (200, json!({"hasTab": true})));
+        assert_eq!(events.try_recv().unwrap(), "activate");
+        server.server.remove_tab(tab);
+        assert!(!server.server.activate());
+    }
+
+    /// Read decoded chunked-body text until it contains `count` lines.
+    fn read_lines(stream: &mut TcpStream, buffer: &mut Vec<u8>, count: usize) -> Vec<String> {
+        let decoded = |raw: &[u8]| -> String {
+            let mut out = Vec::new();
+            let mut rest = raw;
+            while let Some(line_end) = rest.windows(2).position(|w| w == b"\r\n") {
+                let size = usize::from_str_radix(std::str::from_utf8(&rest[..line_end]).unwrap().trim(), 16).unwrap();
+                if rest.len() < line_end + 2 + size + 2 {
+                    break;
+                }
+                out.extend_from_slice(&rest[line_end + 2..line_end + 2 + size]);
+                rest = &rest[line_end + 2 + size + 2..];
+            }
+            String::from_utf8(out).unwrap()
+        };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let text = decoded(buffer);
+            let lines: Vec<String> = text.split_inclusive('\n').map(str::to_string).collect();
+            if lines.len() >= count || Instant::now() > deadline {
+                return lines;
+            }
+            let mut chunk = [0u8; 1024];
+            let read = stream.read(&mut chunk).unwrap();
+            buffer.extend_from_slice(&chunk[..read]);
+        }
+    }
+
+    #[test]
+    fn sse_registers_an_open_browser_tab() {
+        let server = TestServer::start();
+        let mut stream = send_request(server.port(), "GET", "/events", None, &[auth()]);
+        let mut raw = Vec::new();
+        while !raw.windows(4).any(|w| w == b"\r\n\r\n") {
+            let mut chunk = [0u8; 256];
+            let read = stream.read(&mut chunk).unwrap();
+            raw.extend_from_slice(&chunk[..read]);
+        }
+        let (status, headers, end) = parse_head(&raw);
+        assert_eq!(status, 200);
+        assert!(headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("content-type") && v == "text/event-stream"));
+        let mut body = raw[end..].to_vec();
+        let lines = read_lines(&mut stream, &mut body, 4);
+        assert_eq!(lines[..4], ["event: ready\n", "retry: 1000\n", "data: {}\n", "\n"]);
+        assert_eq!(server.server.tab_count(), 1);
+        assert!(server.server.activate());
+        let lines = read_lines(&mut stream, &mut body, 6);
+        assert_eq!(lines[4], "event: activate\n");
+        let health = request(server.port(), "GET", "/health", None, &[auth()]);
+        assert_eq!(health.json()["tabs"], json!(1));
+        // Closing the tab unregisters it (at the latest when the next heartbeat fails).
+        drop(stream);
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while server.server.tab_count() > 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert_eq!(server.server.tab_count(), 0);
+    }
+
+    #[test]
+    fn downloads_require_authentication_and_known_export() {
+        let env = TestEnv::new();
+        let output = env.write("report.pdf", "%PDF-test");
+        workspace::register_export("test-export", output);
+        let server = TestServer::start();
+        assert_eq!(request(server.port(), "GET", "/downloads/test-export", None, &[]).status, 403);
+        let reply = request(server.port(), "GET", "/downloads/test-export", None, &[auth()]);
+        assert_eq!((reply.status, reply.body.as_slice()), (200, b"%PDF-test".as_slice()));
+        assert_eq!(reply.header("Content-Type"), Some("application/pdf"));
+        let missing = request(server.port(), "GET", "/downloads/missing", None, &[auth()]);
+        assert_eq!((missing.status, missing.json()), (404, json!({"error": "Export expired."})));
+    }
+
+    #[test]
+    fn health_reports_code_build_and_open_tabs() {
+        let server = TestServer::start();
+        let health = request(server.port(), "GET", "/health", None, &[auth()]);
+        assert_eq!(health.status, 200);
+        let body = health.json();
+        assert_eq!(body["app"], json!("schedule-everything"));
+        assert_eq!(body["pid"], json!(std::process::id()));
+        assert_eq!((&body["build"], &body["tabs"]), (&json!("test-build"), &json!(0)));
+        let _tab = server.server.add_tab();
+        assert_eq!(request(server.port(), "GET", "/health", None, &[auth()]).json()["tabs"], json!(1));
+    }
+
+    #[test]
+    fn shutdown_request_stops_the_server() {
+        let mut server = TestServer::start();
+        let reply = request(server.port(), "POST", "/api", Some(r#"{"command": "server_shutdown"}"#), &[auth()]);
+        assert_eq!(
+            (reply.status, reply.json()),
+            (200, json!({"ok": true, "data": {"message": "Browser service stopped."}}))
+        );
+        let port = server.port();
+        server.thread.take().unwrap().join().unwrap();
+        assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+    }
+
+    #[test]
+    fn registry_is_private_and_removed_only_by_its_server() {
+        let env = TestEnv::new();
+        let registry = env.root().join(".browser.json");
+        write_registry(&registry, 8765, "secret").unwrap();
+        let state: Value = serde_json::from_str(&env.read(".browser.json")).unwrap();
+        assert_eq!(state, json!({"port": 8765, "token": "secret", "pid": std::process::id()}));
+        assert!(env.read(".browser.json").starts_with("{\"port\": 8765, \"token\": "));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&registry).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        assert!(!env.root().join(".browser.tmp").exists());
+        env.write(".browser.json", r#"{"port": 1, "token": "t", "pid": 1}"#);
+        clear_registry(&registry);
+        assert!(registry.exists(), "another server's entry stays");
+        write_registry(&registry, 8765, "secret").unwrap();
+        clear_registry(&registry);
+        assert!(!registry.exists());
+    }
+
+    #[test]
+    fn request_paths_resolve_like_files_under_the_bundle() {
+        assert_eq!(unquote("/%2e%2e/a%20b"), "/../a b");
+        assert_eq!(unquote("/100%"), "/100%");
+        assert_eq!(static_file("/"), Some("index.html".to_string()));
+        assert_eq!(static_file("//assets/./x.js"), Some("assets/x.js".to_string()));
+        assert_eq!(static_file("/assets/../index.html/"), Some("index.html".to_string()));
+        assert_eq!(static_file("/../server.py"), None);
+        assert_eq!(static_file("/a\\b"), None);
+    }
+}

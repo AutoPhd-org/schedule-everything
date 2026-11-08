@@ -1612,3 +1612,7 @@ pub fn task_type_delete(payload: &Dict) -> WebResult {
     }
     Ok(json!({"taskTypes": remaining, "movedTasks": owned.len(), "movedDeadlines": moved_deadlines}))
 }
+
+#[cfg(test)]
+#[path = "services_tests.rs"]
+mod tests;

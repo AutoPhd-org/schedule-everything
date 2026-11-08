@@ -99,7 +99,7 @@ fn ratio_to_f64(numerator: i128, denominator: u128, exponent: i32) -> f64 {
     let magnitude = numerator.unsigned_abs();
     let shift = 124 - (128 - magnitude.leading_zeros()) as i32;
     let scaled = magnitude << shift;
-    let (quotient, sticky) = (scaled / denominator, scaled % denominator != 0);
+    let (quotient, sticky) = (scaled / denominator, !scaled.is_multiple_of(denominator));
     let bits = 128 - quotient.leading_zeros() as i32;
     let drop = bits - 53;
     let mut mantissa = quotient >> drop;
@@ -526,4 +526,228 @@ pub fn weekly_overview(payload: &Dict) -> WebResult {
         "streak": history.streak(end),
         "highlights": highlight_rows(&completed),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    fn log(action: &str, when: &str, description: &str, priority: i64, task_type: Option<&str>) -> Value {
+        let mut task = json!({"description": description, "priority": priority});
+        if let Some(task_type) = task_type {
+            task["type"] = json!(task_type);
+        }
+        json!({"action": action, "timestamp": when, "task": task})
+    }
+
+    fn empty() -> Dict {
+        Dict::new()
+    }
+
+    fn with_date(date: &str) -> Dict {
+        json!({"date": date}).as_object().cloned().unwrap()
+    }
+
+    /// Wednesday of the week starting Monday 2026-10-26.
+    fn overview() -> TestEnv {
+        let mut env = TestEnv::new();
+        env.set_now("2026-10-28T12:00:00");
+        env.write("user_config_0/settings.toml", "[task_types]\n1 = \"Work\"\n2 = \"Study\"\n");
+        env.write("user_config_0/habits.toml", "[habits]\n1 = \"Exercise\"\n2 = \"Read\"\n");
+        let records = json!([
+            {"date": "2026-10-26", "completed": {"1": "Exercise", "2": "Read"}},
+            {"date": "2026-10-27", "completed": {"1": "Exercise", "retired": "Old habit"}},
+            {"date": "2026-10-20", "completed": {"2": "Read"}},
+        ]);
+        env.write("tasks/record.json", &records.to_string());
+        let entries = json!([
+            // Two weeks ago: one completion.
+            log("added", "2026-10-12T08:00:00", "Old report", 4, Some("1")),
+            log("deleted", "2026-10-13T08:00:00", "Old report", 4, Some("1")),
+            // Last week: one completion and one drop.
+            log("added", "2026-10-19T09:00:00", "Plan", 6, Some("2")),
+            log("deleted", "2026-10-21T09:00:00", "Plan", 6, Some("2")),
+            log("added", "2026-10-19T09:00:00", "Idea", 3, Some("1")),
+            log("dropped", "2026-10-22T09:00:00", "Idea", 3, Some("1")),
+            // This week: three completions (one legacy without a type) and a cancel.
+            log("added", "2026-10-25T10:00:00", "Draft", 9, Some("1")),
+            log("deleted", "2026-10-26T10:00:00", "Draft", 9, Some("1")),
+            log("added", "2026-10-26T12:00:00", "Notes", 5, Some("2")),
+            log("deleted", "2026-10-27T12:00:00", "Notes", 5, Some("2")),
+            log("added", "2026-10-27T08:00:00", "Legacy", 7, None),
+            log("deleted", "2026-10-27T10:00:00", "Legacy", 7, None),
+            log("added", "2026-10-27T08:00:00", "Mistake", 2, Some("1")),
+            log("cancelled", "2026-10-27T08:30:00", "Mistake", 2, Some("1")),
+        ]);
+        env.write("tasks/tasks.log", &entries.to_string());
+        env
+    }
+
+    fn without_history() -> TestEnv {
+        let mut env = TestEnv::new();
+        env.set_now("2026-10-28T12:00:00");
+        env.write("user_config_0/settings.toml", "[task_types]\n1 = \"Work\"\n");
+        env
+    }
+
+    fn column(rows: &Value, key: &str) -> Vec<Value> {
+        rows.as_array().unwrap().iter().map(|row| row[key].clone()).collect()
+    }
+
+    #[test]
+    fn weekly_overview_summarizes_current_week() {
+        let _env = overview();
+        let data = weekly_overview(&empty()).unwrap();
+        assert_eq!(
+            (&data["weekStart"], &data["weekEnd"], &data["isCurrentWeek"]),
+            (&json!("2026-10-26"), &json!("2026-11-01"), &json!(true))
+        );
+        let current = &data["current"];
+        assert_eq!(
+            (&current["completed"], &current["cancelled"], &current["dropped"]),
+            (&json!(3), &json!(1), &json!(0))
+        );
+        assert_eq!(current["added"], json!(3), "Draft was added the previous Sunday");
+        assert_eq!(current["byType"], json!({"1": 2, "2": 1}), "the untyped legacy task uses the default type");
+        // statistics.mean of whole priorities that divide evenly stays an int, as in the JSON Python wrote.
+        assert_eq!(current["avgPriority"].to_string(), "7");
+        assert_eq!(current["medianLeadHours"], json!(24.0));
+        // Monday to Wednesday elapsed: 3 completed habit slots out of 2 habits x 3 days.
+        assert_eq!(current["habitRate"], json!(0.5));
+
+        assert_eq!(column(&data["days"], "completed"), [1, 2, 0, 0, 0, 0, 0].map(|n| json!(n)));
+        assert_eq!(column(&data["days"], "future"), [false, false, false, true, true, true, true].map(|b| json!(b)));
+        assert_eq!(data["days"][1]["byType"], json!({"1": 1, "2": 1}));
+        assert_eq!(column(&data["previousDays"], "completed"), [0, 0, 1, 0, 0, 0, 0].map(|n| json!(n)));
+
+        let exercise = &data["habits"][0];
+        assert_eq!(exercise["days"].as_array().unwrap()[..4], [json!(true), json!(true), json!(false), Value::Null]);
+        assert_eq!(exercise["rate"], json!(0.6667));
+        assert_eq!(exercise["previousRate"], json!(0.0));
+        assert_eq!(data["habits"][1]["previousRate"], json!(0.1429));
+
+        assert_eq!(column(&data["highlights"], "description"), [json!("Draft"), json!("Legacy"), json!("Notes")]);
+        assert_eq!(data["streak"], json!(2), "today has no completion yet, so the streak ends yesterday");
+    }
+
+    #[test]
+    fn weekly_overview_compares_with_history() {
+        let _env = overview();
+        let data = weekly_overview(&empty()).unwrap();
+        let trend = data["trend"].as_array().unwrap();
+        assert_eq!(trend.len() as i64, TREND_WEEKS);
+        assert_eq!(column(&data["trend"], "completed")[5..], [json!(1), json!(1), json!(3)]);
+        assert_eq!(data["previous"]["dropped"], json!(1));
+        assert_eq!(data["firstActivity"], json!("2026-10-12"));
+        // Only the two weeks since history began count toward the baseline.
+        assert_eq!(data["baseline"]["weeks"], json!(2));
+        assert_eq!(data["baseline"]["completed"].to_string(), "1");
+        assert_eq!(data["baseline"]["byType"], json!({"1": 0.5, "2": 0.5}));
+        assert_eq!(trend[0]["active"], json!(false));
+    }
+
+    #[test]
+    fn weekly_overview_navigates_to_past_weeks() {
+        let _env = overview();
+        let data = weekly_overview(&with_date("2026-10-22")).unwrap();
+        assert_eq!(data["weekStart"], json!("2026-10-19"));
+        assert_eq!(data["isCurrentWeek"], json!(false));
+        assert_eq!(data["current"]["completed"], json!(1));
+        assert!(column(&data["days"], "future").iter().all(|future| *future == json!(false)));
+        assert_eq!(data["streak"], json!(0));
+    }
+
+    #[test]
+    fn overviews_reject_invalid_dates() {
+        let _env = overview();
+        for date in ["next week", "tomorrow", "07/11/2026"] {
+            assert_eq!(weekly_overview(&with_date(date)).unwrap_err().code, "invalid_input");
+            let error = daily_overview(&with_date(date)).unwrap_err();
+            assert_eq!((error.code.as_str(), error.message.as_str()), ("invalid_input", "date must be YYYY-MM-DD."));
+        }
+    }
+
+    #[test]
+    fn weekly_overview_without_history() {
+        let _env = without_history();
+        let data = weekly_overview(&empty()).unwrap();
+        assert_eq!(data["current"]["completed"], json!(0));
+        assert_eq!(data["current"]["habitRate"], Value::Null);
+        assert_eq!(data["baseline"]["weeks"], json!(0));
+        assert_eq!(data["baseline"]["completed"], Value::Null);
+        assert_eq!(data["firstActivity"], Value::Null);
+    }
+
+    #[test]
+    fn daily_overview_summarizes_one_day() {
+        let _env = overview();
+        let data = daily_overview(&with_date("2026-10-27")).unwrap();
+        assert_eq!(data["date"], json!("2026-10-27"));
+        assert_eq!(data["isToday"], json!(false));
+        let counts = ["completed", "cancelled", "dropped", "added"].map(|key| data[key].clone());
+        assert_eq!(counts, [json!(2), json!(1), json!(0), json!(2)]);
+        // The legacy completion without a type counts toward the default type.
+        assert_eq!(data["byType"], json!({"1": 1, "2": 1}));
+        assert_eq!(data["hours"][10], json!({"1": 1}));
+        assert_eq!(data["hours"][12], json!({"2": 1}));
+        let filled: usize = data["hours"].as_array().unwrap().iter().map(|h| h.as_object().unwrap().len()).sum();
+        assert_eq!(filled, 2);
+        // Yesterday had one completion; the usual day averages the 15 days since the history began.
+        assert_eq!(data["yesterday"], json!(1));
+        assert_eq!((&data["usual"], &data["usualDays"]), (&json!(0.2), &json!(15)));
+        // Only configured habits count.
+        assert_eq!((&data["habitsDone"], &data["habitsTotal"]), (&json!(1), &json!(2)));
+        assert_eq!(data["streak"], json!(2));
+        assert_eq!(data["medianLeadHours"], json!(13.0));
+        assert_eq!(column(&data["highlights"], "description"), [json!("Legacy"), json!("Notes")]);
+        assert_eq!(
+            data["highlights"][0],
+            json!({"description": "Legacy", "priority": 7, "type": "1", "endedAt": "2026-10-27T10:00:00"})
+        );
+    }
+
+    #[test]
+    fn daily_overview_defaults_to_today() {
+        let _env = overview();
+        let data = daily_overview(&empty()).unwrap();
+        assert_eq!((&data["date"], &data["today"]), (&json!("2026-10-28"), &json!("2026-10-28")));
+        assert_eq!(data["isToday"], json!(true));
+        assert_eq!(data["completed"], json!(0));
+        assert_eq!(data["hours"], json!(vec![json!({}); 24]));
+        assert_eq!(data["yesterday"], json!(2));
+        assert_eq!(data["medianLeadHours"], Value::Null);
+        assert_eq!(data["highlights"], json!([]));
+        // Nothing finished yet today, so the streak still counts up to yesterday.
+        assert_eq!(data["streak"], json!(2));
+    }
+
+    #[test]
+    fn daily_overview_without_history() {
+        let _env = without_history();
+        let data = daily_overview(&empty()).unwrap();
+        assert_eq!(data["completed"], json!(0));
+        assert_eq!(data["yesterday"], Value::Null);
+        assert_eq!(data["usual"], Value::Null);
+        assert_eq!(data["usualDays"], json!(0));
+        assert_eq!(data["firstActivity"], Value::Null);
+        assert_eq!(data["habitsTotal"], json!(0));
+    }
+
+    #[test]
+    fn numbers_follow_python() {
+        // round() is correctly rounded with ties to even; mean() is exact and keeps whole int means ints.
+        assert_eq!(round_float(0.125, 2), 0.12);
+        assert_eq!(round_float(0.375, 2), 0.38);
+        assert_eq!(round_float(2.675, 2), 2.67);
+        assert_eq!(round_float(2.0 / 3.0, 4), 0.6667);
+        assert_eq!(mean(&[Num::Int(9), Num::Int(5), Num::Int(7)]), Num::Int(7));
+        assert_eq!(mean(&[Num::Int(1), Num::Int(2)]), Num::Float(1.5));
+        assert_eq!(mean(&[Num::Int(7), Num::Float(6.5)]), Num::Float(6.75));
+        // The exact sum is 0.25 + 2e-18, so the mean rounds to 0.125 (Python: 0.12), not 0.13.
+        assert_eq!(mean(&[Num::Float(0.1429), Num::Float(0.1071)]).round(2), Num::Float(0.12));
+        assert_eq!(mean(&[Num::Float(0.0), Num::Float(0.5)]), Num::Float(0.25));
+        assert_eq!(median(&[24.0, 2.0, 24.0]), 24.0);
+        assert_eq!(median(&[2.0, 24.0]), 13.0);
+    }
 }
