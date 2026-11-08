@@ -1,10 +1,11 @@
 // Shared markup helpers, icons, and color assignments for the browser workspace.
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
-  ArrowDownRight, ArrowLeft, Ban, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, CircleCheck, Clock3,
-  Copy, CornerDownLeft, Ellipsis, Feather, Repeat, Flag, Flame, GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, ListTodo, Monitor, Moon,
-  Palette, Pencil, Plus, RefreshCw, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
-  Trophy, Undo2, X, Zap
+  AlarmClock, ArrowDownRight, ArrowLeft, Ban, BellRing, CalendarClock, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp,
+  ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Ellipsis, Feather, Repeat, Flag, Flame, Gauge,
+  GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, LayoutGrid, Leaf, ListChecks, ListPlus, ListTodo, Monitor, Moon, Orbit, Palette,
+  PartyPopper, Pencil, Plus, RefreshCw, Scale, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown,
+  TrendingUp, Trophy, Undo2, Waves, X, Zap
 } from "lucide";
 
 type SvgNode = readonly [tag: string, attrs: Record<string, string | number>, children?: readonly SvgNode[]];
@@ -28,8 +29,13 @@ export const icons = {
   grip: icon(GripVertical), hourglass: icon(Hourglass), palette: icon(Palette), edit: icon(Pencil), trash: icon(Trash2),
   flow: icon(Shuffle), target: icon(Target), feather: icon(Feather), zap: icon(Zap), copy: icon(Copy), repeat: icon(Repeat),
   tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft),
-  more: icon(Ellipsis), undo: icon(Undo2)
+  more: icon(Ellipsis), undo: icon(Undo2), subtasks: icon(ListChecks), subtaskAdd: icon(ListPlus), next: icon(CornerDownRight),
+  alarm: icon(AlarmClock), ringing: icon(BellRing), due: icon(CalendarClock), coffee: icon(Coffee), party: icon(PartyPopper),
+  gauge: icon(Gauge), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale)
 };
+
+/** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */
+export const liveClock = `<svg class="live-clock" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path class="hand hand-hour" d="M12 12V8"/><path class="hand hand-minute" d="M12 12V5.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>`;
 
 /** Categorical hues in a fixed, colorblind-validated order (see styles.css for light and dark steps). */
 export const PALETTE = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"] as const;

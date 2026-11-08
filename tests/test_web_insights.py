@@ -129,6 +129,65 @@ def test_weekly_overview_without_history(monkeypatch):
     assert data["firstActivity"] is None
 
 
+def test_daily_overview_summarizes_one_day(overview):
+    data = overview.daily_overview({"date": "2026-10-27"})
+
+    json.dumps(data)
+    assert data["date"] == "2026-10-27"
+    assert data["isToday"] is False
+    assert (data["completed"], data["cancelled"], data["dropped"], data["added"]) == (2, 1, 0, 2)
+    # The legacy completion without a type counts toward the default type.
+    assert data["byType"] == {"2": 1, "1": 1}
+    assert data["hours"][10] == {"1": 1}
+    assert data["hours"][12] == {"2": 1}
+    assert sum(len(hour) for hour in data["hours"]) == 2
+    # Yesterday had one completion; the usual day averages the 15 days since the history began (3 completions).
+    assert data["yesterday"] == 1
+    assert (data["usual"], data["usualDays"]) == (0.2, 15)
+    # Only configured habits count.
+    assert (data["habitsDone"], data["habitsTotal"]) == (1, 2)
+    assert data["streak"] == 2
+    assert data["medianLeadHours"] == 13.0
+    assert [item["description"] for item in data["highlights"]] == ["Legacy", "Notes"]
+    assert data["highlights"][0] == {"description": "Legacy", "priority": 7, "type": "1", "endedAt": "2026-10-27T10:00:00"}
+
+
+def test_daily_overview_defaults_to_today(overview):
+    data = overview.daily_overview({})
+
+    assert data["date"] == data["today"] == "2026-10-28"
+    assert data["isToday"] is True
+    assert data["completed"] == 0
+    assert data["hours"] == [{}] * 24
+    assert data["yesterday"] == 2
+    assert data["medianLeadHours"] is None
+    assert data["highlights"] == []
+    # Nothing finished yet today, so the streak still counts up to yesterday.
+    assert data["streak"] == 2
+    with pytest.raises(overview.services.WebError) as exc_info:
+        overview.daily_overview({"date": "tomorrow"})
+    assert exc_info.value.code == "invalid_input"
+
+
+def test_daily_overview_without_history(monkeypatch):
+    from schedule_management.web import insights, services
+
+    monkeypatch.setattr(services, "_today", lambda: date(2026, 10, 28))
+    monkeypatch.setattr(services, "_load_task_types", lambda: {"1": "Work"})
+    monkeypatch.setattr(insights, "load_habits", lambda: {})
+    monkeypatch.setattr(insights, "load_habit_records", lambda: [])
+    monkeypatch.setattr(insights, "load_task_log", lambda: [])
+
+    data = insights.daily_overview({})
+
+    assert data["completed"] == 0
+    assert data["yesterday"] is None
+    assert data["usual"] is None
+    assert data["usualDays"] == 0
+    assert data["firstActivity"] is None
+    assert data["habitsTotal"] == 0
+
+
 def test_history_uses_local_time_and_task_types():
     from schedule_management.commands.history import _pair_task_activities
 

@@ -406,6 +406,68 @@ def test_timed_tasks_keep_their_finish_time_and_progress(tmp_path, monkeypatch):
     assert exc_info.value.code == "invalid_input"
 
 
+def test_subtasks_drive_a_tasks_progress(tmp_path, monkeypatch):
+    from schedule_management.web.services import WebError, _sorted_tasks, task_delete, task_progress, task_restore, task_subtasks, task_update
+
+    read = _task_storage(tmp_path, monkeypatch, [
+        {"description": "Write paper", "priority": 8, "type": "1", "progress": 30},
+        {"description": "Read notes", "priority": 4, "type": "1"},
+    ])
+
+    result = task_subtasks({"description": "Write paper", "subtasks": [
+        {"text": "  Outline ", "done": True},
+        {"text": "Draft", "done": False},
+        {"text": "Proofread"},
+    ]})
+    assert result == {"description": "Write paper", "progress": 33, "subtasks": [
+        {"text": "Outline", "done": True}, {"text": "Draft", "done": False}, {"text": "Proofread", "done": False},
+    ]}
+    # The derived progress is saved too, so everything that reads progress agrees; no history entry is written.
+    saved = read["tasks"]()[0]
+    assert saved["progress"] == 33
+    assert saved["subtasks"][0] == {"text": "Outline", "done": True}
+    assert not (tmp_path / "tasks.log").exists() or read["log"]() == []
+
+    rows = {row["description"]: row for row in _sorted_tasks()}
+    assert rows["Write paper"]["progress"] == 33
+    assert [item["text"] for item in rows["Write paper"]["subtasks"]] == ["Outline", "Draft", "Proofread"]
+    assert rows["Read notes"]["subtasks"] == []
+
+    # Halves round up, as in the browser: one of eight done is 13%.
+    task_subtasks({"description": "Read notes", "subtasks": [{"text": f"Page {i}", "done": i == 0} for i in range(8)]})
+    assert read["tasks"]()[1]["progress"] == 13
+
+    # While subtasks set the pace, the progress slider has no say.
+    with pytest.raises(WebError) as exc_info:
+        task_progress({"description": "Write paper", "progress": 90})
+    assert exc_info.value.code == "invalid_input"
+
+    # Renaming, completing, and restoring a task keep its subtasks.
+    task_update({"originalDescription": "Write paper", "description": "Write the paper", "priority": 8})
+    undo = task_delete({"description": "Write the paper", "action": "deleted"})["undo"]
+    task_restore(undo)
+    assert read["tasks"]()[0]["subtasks"][2] == {"text": "Proofread", "done": False}
+
+    # Every subtask done is 100%; clearing them keeps the last progress as the task's own.
+    task_subtasks({"description": "Write the paper", "subtasks": [{"text": "Outline", "done": True}, {"text": "Draft", "done": True}]})
+    assert read["tasks"]()[0]["progress"] == 100
+    assert task_subtasks({"description": "Write the paper", "subtasks": []})["progress"] == 100
+    assert "subtasks" not in read["tasks"]()[0]
+    assert task_progress({"description": "Write the paper", "progress": 40})["progress"] == 40
+
+    # None done drops the saved progress, like a slider at zero.
+    task_subtasks({"description": "Write the paper", "subtasks": [{"text": "Again", "done": False}]})
+    assert "progress" not in read["tasks"]()[0]
+
+    for subtasks in ("Outline", [{"text": ""}], [{"done": True}], ["Outline"], [{"text": "x" * 201}], [{"text": "Fine", "done": "yes"}], [{"text": f"{i}"} for i in range(51)]):
+        with pytest.raises(WebError) as exc_info:
+            task_subtasks({"description": "Write the paper", "subtasks": subtasks})
+        assert exc_info.value.code == "invalid_input"
+    with pytest.raises(WebError) as exc_info:
+        task_subtasks({"description": "Missing", "subtasks": []})
+    assert exc_info.value.code == "not_found"
+
+
 def test_timed_tasks_completed_today_still_count_toward_today(tmp_path, monkeypatch):
     from datetime import UTC, timedelta
 
@@ -434,7 +496,7 @@ def test_timed_tasks_completed_today_still_count_toward_today(tmp_path, monkeypa
     done = services._timed_done_today(today)
 
     assert [item["description"] for item in done] == ["Ship slides", "Overdue essay"]
-    assert done[0] == {"description": "Ship slides", "type": "2", "due": "2026-11-05T18:00", "endedAt": "2026-11-05T15:00:00"}
+    assert done[0] == {"description": "Ship slides", "priority": 7, "type": "2", "due": "2026-11-05T18:00", "endedAt": "2026-11-05T15:00:00"}
     assert done[1]["type"] is None
 
 
