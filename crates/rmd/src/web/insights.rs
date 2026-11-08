@@ -134,7 +134,7 @@ fn mean(values: &[Num]) -> Num {
         // Too wide for exact integer arithmetic; never the case for these statistics.
         return Num::Float(values.iter().map(|v| v.as_f64()).sum::<f64>() / count as f64);
     }
-    let sum: i128 = parts.iter().map(|(m, e)| i128::from(*m) << (e - low)).sum();
+    let sum: i128 = parts.iter().filter(|(m, _)| *m != 0).map(|(m, e)| i128::from(*m) << (e - low)).sum();
     Num::Float(ratio_to_f64(sum, count as u128, low))
 }
 

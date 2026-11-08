@@ -181,6 +181,24 @@ pub(crate) fn os_error(error: &std::io::Error, path: &Path) -> String {
     }
 }
 
+/// `'utf-8' codec can't decode ...` for invalid bytes.
+pub(crate) fn utf8_error(bytes: &[u8], error: &std::str::Utf8Error) -> String {
+    let position = error.valid_up_to();
+    let (length, reason) = match error.error_len() {
+        None => (bytes.len() - position, "unexpected end of data"),
+        Some(length) => {
+            let start = bytes[position];
+            let invalid_start = (0x80..=0xc1).contains(&start) || start >= 0xf5;
+            (length, if invalid_start { "invalid start byte" } else { "invalid continuation byte" })
+        }
+    };
+    if length <= 1 {
+        format!("'utf-8' codec can't decode byte 0x{:02x} in position {position}: {reason}", bytes[position])
+    } else {
+        format!("'utf-8' codec can't decode bytes in position {position}-{}: {reason}", position + length - 1)
+    }
+}
+
 /// `date + timedelta(days=days)` with Python's range limits.
 pub(crate) fn add_days(date: NaiveDate, days: i64) -> Result<NaiveDate, String> {
     if days.abs() > 999_999_999 {
