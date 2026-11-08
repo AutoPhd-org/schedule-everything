@@ -1,0 +1,38 @@
+[
+  {
+    "event": "Rent",
+    "deadline": "2026-09-30",
+    "added": "2026-09-01T17:00:00+00:00",
+    "repeat": "monthly",
+    "repeat_day": 30
+  },
+  {
+    "event": "Old submission",
+    "deadline": "2026-11-05",
+    "added": "2026-10-15T17:00:00+00:00"
+  },
+  {
+    "event": "Grant report",
+    "deadline": "2026-11-20",
+    "added": "2026-10-20T17:05:00+00:00",
+    "type": "1"
+  },
+  {
+    "event": "Yesterday thing",
+    "deadline": "2026-11-08",
+    "added": "2026-10-20T17:06:00+00:00"
+  },
+  {
+    "event": "Team sync",
+    "deadline": "2026-11-10",
+    "added": "2026-10-30T17:00:00+00:00",
+    "type": "3",
+    "color": "blue",
+    "repeat": "weekly"
+  },
+  {
+    "event": "论文截止",
+    "deadline": "2026-12-31",
+    "added": "2026-11-02T18:00:00+00:00"
+  }
+]

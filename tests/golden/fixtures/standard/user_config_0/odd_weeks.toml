@@ -1,0 +1,41 @@
+# Odd ISO weeks
+[common]
+"12:00" = "lunch_time"
+"22:30" = "go_to_bed"
+
+[monday]
+"08:30" = "potato"
+"09:30" = "potato"
+"10:30" = { block = "potato", title = "Draft the grant proposal" }
+"11:30" = "pomodoro"
+"13:20" = "napping"
+"14:00" = "meeting"
+
+[tuesday]
+"08:30" = "potato"
+"09:30" = "pomodoro"
+"13:20" = "napping"
+"14:00" = "potato"
+"15:00" = "long_break"
+"16:00" = "potato"
+
+[wednesday]
+"08:30" = "potato"
+"09:30" = "pomodoro"
+"13:20" = "napping"
+"14:00" = "potato"
+
+[thursday]
+"13:20" = "napping"
+"14:00" = "potato"
+"15:00" = "potato"
+
+[friday]
+"08:30" = "potato"
+"09:30" = "pomodoro"
+"13:20" = "napping"
+"21:00" = "summary_time"
+
+[saturday]
+"09:00" = "potato"
+"10:00" = "Water the plants"
