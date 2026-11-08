@@ -34,7 +34,7 @@ cd schedule-everything
 ./install.sh
 ```
 
-The installer sets up a Python environment, scaffolds your configuration in
+The installer puts the `rmd` binary in `~/SCHEDULE_MANAGEMENT`, scaffolds your configuration in
 `~/.schedule_management/config`, and registers the reminder service. See
 [Installation](installation.md) for details.
 

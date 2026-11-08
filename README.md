@@ -95,9 +95,12 @@ cd schedule-everything
 ./install.sh
 ```
 
-The installer sets up a Python environment, scaffolds your configuration in
-`~/.schedule_management/config`, and registers the reminder service
-(LaunchAgent on macOS, systemd on Linux). Existing configuration is kept.
+The installer puts the `rmd` binary in `~/SCHEDULE_MANAGEMENT` (a prebuilt
+release download, or built with `cargo` when you run it from a clone),
+scaffolds your configuration in `~/.schedule_management/config`, and registers
+the reminder service (LaunchAgent on macOS, systemd on Linux). No Python is
+needed, and existing configuration is kept. `pip install schedule-management`
+also installs the binary, if you prefer to manage it with pip or uv.
 
 ### 2. Add the plugin to your AI agent
 
@@ -297,10 +300,12 @@ with `rmd settings`. Run `rmd check` after manual edits.
 
 ## Development
 
+`rmd` is written in Rust (`crates/rmd`); the browser frontend is TypeScript.
+
 ```bash
-uv venv .venv && source .venv/bin/activate
-uv pip install -e .
-uv run pytest -q        # Python tests
+cargo build                    # target/debug/rmd
+cargo test                     # unit tests and the golden parity tests
+cargo clippy --all-targets
 
 bun install
 bun run test            # browser workspace tests (Vitest; plain `bun test` is Bun's own runner)
@@ -309,9 +314,14 @@ bun run build           # rebuild the bundled browser assets
 
 JavaScript dependencies are managed with [Bun](https://bun.sh) (`bun.lock`);
 the tools themselves run on Node.js 20 or newer. The browser frontend lives in
-`web/`, and `bun run build` writes the bundle
-into `src/schedule_management/web/static/`, which ships with the Python
-package. The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
+`web/`, and `bun run build` writes the bundle into
+`src/schedule_management/web/static/`, which is compiled into the `rmd` binary.
+The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
+
+The original Python implementation in `src/schedule_management` is kept as
+the reference the Rust port is tested against:
+[`tests/golden`](tests/golden) records its output for CLI commands and
+browser API requests, and `cargo test` checks that `rmd` matches.
 
 ## License
 
