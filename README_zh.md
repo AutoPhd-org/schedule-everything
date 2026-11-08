@@ -12,7 +12,6 @@
 <p align="center">
   <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/rust.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/rust.yml/badge.svg" alt="Rust"></a>
   <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml/badge.svg" alt="Browser tests"></a>
-  <a href="https://pypi.org/project/schedule-management"><img src="https://badge.fury.io/py/schedule-management.svg" alt="PyPI version"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-6250d6.svg" alt="MIT license"></a>
 </p>
 
@@ -76,6 +75,8 @@
 
 ### 1. 安装 Schedule Everything
 
+安装脚本会从源码编译 `rmd`，所以需要先安装 [Rust](https://rustup.rs)（确保 `cargo` 在 `PATH` 中）。然后运行：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
 ```
@@ -90,11 +91,11 @@ cd schedule-everything
 
 安装脚本会：
 
-- 把 `rmd` 放到 `~/SCHEDULE_MANAGEMENT`：下载适用于 macOS（Apple 芯片或 Intel）或 Linux（x86_64 或 arm64）的预编译发布版本，从克隆的仓库运行时则用 `cargo` 在本地编译。`--prebuilt` 和 `--from-source` 可指定其中一种，`RMD_VERSION=x.y.z` 可固定版本；
+- 用 `cargo` 编译 `rmd`（从你克隆的仓库，或从它下载的仓库副本），并放到 `~/SCHEDULE_MANAGEMENT`。首次编译需要几分钟；
 - 在 `~/.schedule_management/config` 中创建配置根目录和第一个 `user_config_0`，并逐项询问缺少的必填设置；
 - 注册提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd 用户服务），升级时会用新的可执行文件重启它。
 
-已有配置不会被覆盖。也可以用 `pip install schedule-management`（或 `uv tool install schedule-management`）安装同一个可执行文件，但这种方式不会创建配置，也不会注册提醒服务。
+已有配置不会被覆盖。需要更新时，再运行一次安装脚本即可。
 
 ### 2. 为你的 AI 智能体添加插件
 
@@ -290,8 +291,6 @@ bun run build                   # 重新构建 crates/rmd/web-static
 JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。构建好的前端会编译进 `rmd` 可执行文件，所以修改前端时请一并提交 `crates/rmd/web-static`，并重新构建 `rmd` 才能提供新资源。需要实时刷新地开发前端时，运行 `rmd web --port 8765 --no-open` 和 `bun run dev`。
 
 黄金用例记录自 `rmd` 所取代的早先 Python 实现，固定了它的命令行输出、浏览器 API 响应和数据文件。详见 [`tests/golden/README.md`](tests/golden/README.md) 和 [`crates/rmd/PORTING.md`](crates/rmd/PORTING.md)。
-
-发布新版本时，在 `main` 上修改根目录 `Cargo.toml` 中的 `version`。Release 工作流随后会发布 `install.sh` 下载的 `rmd` 压缩包和 PyPI wheel。
 
 ## 许可证
 

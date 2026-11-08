@@ -113,7 +113,6 @@ pub(crate) static ZH_TRANSLATIONS: &[(&str, &str)] = &[
     ("Passed!", "已过期！"),
     ("Planned task", "计划任务"),
     ("Please answer with 'y' or 'n'.", "请使用 'y' 或 'n' 回答。"),
-    ("Please install the 'rich' library: pip install rich", "请安装 'rich' 库：pip install rich"),
     ("Postpone days (default 0): ", "推迟天数（默认 0）："),
     ("Previously completed: {count} habits", "之前已完成：{count} 个习惯"),
     ("Priority", "优先级"),

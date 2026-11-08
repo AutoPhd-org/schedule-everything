@@ -14,10 +14,10 @@ reminder service, then adds the plugin to your AI agent.
 
 ## Prerequisites
 
-*   **curl and tar, or Git**: to fetch the installer and the config templates
+*   **[Rust](https://rustup.rs)**: the installer builds `rmd` from source with `cargo`
+*   **curl and tar, or Git**: to fetch the installer and the repository
 *   **Terminal**: any standard terminal (Terminal.app, iTerm2, GNOME Terminal, …)
 *   **An AI coding agent** (optional): Claude Code, OpenAI Codex, or Google Antigravity, to build schedules and plan days with the Schedule Everything plugin
-*   **Rust** (optional): only needed to build `rmd` from source ([rustup.rs](https://rustup.rs)); the installer otherwise downloads a prebuilt binary
 *   **Node.js**: only needed to rebuild the browser assets from source; the binary includes them
 
 No Python is required. `rmd` is a single binary with the browser workspace built in.
@@ -43,7 +43,8 @@ cd schedule-everything
 The script:
 
 *   downloads the repository to a temporary directory when run through `curl`;
-*   installs the `rmd` binary in `~/SCHEDULE_MANAGEMENT` — a prebuilt release for your platform (macOS arm64/x86_64, Linux x86_64/arm64), or built with `cargo` when you run the script from a clone (`--prebuilt` and `--from-source` force one or the other; `RMD_VERSION=x.y.z` pins a release) — together with logs and a copy of the agent plugin;
+*   checks that `cargo` is available before changing anything, then builds `rmd` with it (the first build takes a few minutes);
+*   installs the binary in `~/SCHEDULE_MANAGEMENT`, together with logs and a copy of the agent plugin;
 *   stops a running reminder service first and starts it again on the new binary, so upgrading from an older (Python-based) installation keeps the service running;
 *   creates your config root in `~/.schedule_management/config` with a first `user_config_0` version (an existing config is kept);
 *   prompts for missing required config values one by one (time blocks, reminders, and task types are your own lists, so entries you removed are not asked for again; their examples are offered only when a whole section is missing);
@@ -95,18 +96,6 @@ method does not register the background service; use the installer for that.
     ```bash
     rmd check
     ```
-
-## Method 3: PyPI
-
-The `schedule-management` package on PyPI ships the same `rmd` binary as a
-wheel. It installs the command, without configuration or the background
-service:
-
-```bash
-pip install schedule-management        # or: uv tool install schedule-management
-```
-
-Then follow steps 2–4 of the manual installation.
 
 ## Add the AI agent plugin (optional)
 

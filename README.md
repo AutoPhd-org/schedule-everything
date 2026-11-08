@@ -12,7 +12,6 @@
 <p align="center">
   <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/rust.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/rust.yml/badge.svg" alt="Rust"></a>
   <a href="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml"><img src="https://github.com/AutoPhd-org/schedule-everything/actions/workflows/browser-tests.yml/badge.svg" alt="Browser tests"></a>
-  <a href="https://pypi.org/project/schedule-management"><img src="https://badge.fury.io/py/schedule-management.svg" alt="PyPI version"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-6250d6.svg" alt="MIT license"></a>
 </p>
 
@@ -87,6 +86,9 @@ everything in the browser.
 
 ### 1. Install Schedule Everything
 
+The installer builds `rmd` from source, so you need
+[Rust](https://rustup.rs) first (`cargo` on your `PATH`). Then:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
 ```
@@ -101,18 +103,16 @@ cd schedule-everything
 
 The installer:
 
-- puts `rmd` in `~/SCHEDULE_MANAGEMENT`, either a prebuilt release for macOS
-  (Apple silicon or Intel) or Linux (x86_64 or arm64), or built with `cargo`
-  when you run it from a clone. `--prebuilt` and `--from-source` force one or
-  the other, and `RMD_VERSION=x.y.z` pins a release;
+- builds `rmd` with `cargo` (from your clone, or from a copy of the
+  repository it downloads) and puts it in `~/SCHEDULE_MANAGEMENT`. The first
+  build takes a few minutes;
 - creates your config root in `~/.schedule_management/config` with a first
   `user_config_0`, and asks for any required settings that are missing;
 - registers the reminder service (a LaunchAgent on macOS, a systemd user
   service on Linux) and restarts it on the new binary when you upgrade.
 
-Existing configuration is never overwritten. `pip install schedule-management`
-(or `uv tool install schedule-management`) installs the same binary, without
-the configuration or the reminder service.
+Existing configuration is never overwritten. To update, run the installer
+again.
 
 ### 2. Add the plugin to your AI agent
 
@@ -355,10 +355,6 @@ The golden cases were recorded from an earlier Python implementation that
 `rmd` replaced, and they pin its CLI output, browser API responses, and data
 files. See [`tests/golden/README.md`](tests/golden/README.md) and
 [`crates/rmd/PORTING.md`](crates/rmd/PORTING.md).
-
-To release, bump `version` in the root `Cargo.toml` on `main`. The Release
-workflow then publishes the `rmd` archives that `install.sh` downloads and the
-PyPI wheels.
 
 ## License
 

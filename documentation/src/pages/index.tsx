@@ -630,8 +630,9 @@ function Install(): ReactNode {
               </Heading>
               <p>
                 <Translate id="homepage.install.step1.body">
-                  The installer sets up the rmd binary, your configuration, and
-                  the reminder service (LaunchAgent on macOS, systemd on Linux).
+                  The installer builds the rmd binary (it needs Rust), then sets
+                  up your configuration and the reminder service (LaunchAgent on
+                  macOS, systemd on Linux).
                 </Translate>
               </p>
               <CodeBlock language="bash">{INSTALL_COMMAND}</CodeBlock>

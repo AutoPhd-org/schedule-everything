@@ -11,7 +11,7 @@ Comprehensive guide for setting up and using Schedule Management on macOS.
 
 ### Prerequisites
 - macOS 11 (Big Sur) or later, Apple silicon or Intel
-- No Python or other runtime: `rmd` is a single binary
+- [Rust](https://rustup.rs), to build `rmd`; no other runtime is needed
 
 ### Using the Installation Script
 
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/mai
 ```
 
 The script will:
-1. Install the `rmd` binary in `~/SCHEDULE_MANAGEMENT/` (a prebuilt release, or built with `cargo` from a clone)
+1. Build the `rmd` binary with `cargo` and install it in `~/SCHEDULE_MANAGEMENT/`
 2. Create your config root in `~/.schedule_management/config/`
 3. Install the LaunchAgent for auto-start (`rmd daemon`)
 4. Create the `reminder` alias and convenience scripts

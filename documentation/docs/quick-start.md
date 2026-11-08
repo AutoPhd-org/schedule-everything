@@ -22,6 +22,8 @@ is further down this page.
 
 ### 1. Install Schedule Everything
 
+The installer builds `rmd` from source, so install [Rust](https://rustup.rs) first. Then:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
 ```
@@ -34,7 +36,7 @@ cd schedule-everything
 ./install.sh
 ```
 
-The installer puts the `rmd` binary in `~/SCHEDULE_MANAGEMENT`, scaffolds your configuration in
+The installer builds `rmd` and puts it in `~/SCHEDULE_MANAGEMENT`, scaffolds your configuration in
 `~/.schedule_management/config`, and registers the reminder service. See
 [Installation](installation.md) for details.
 
