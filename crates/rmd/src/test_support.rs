@@ -7,8 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Variables every test starts without.
-const MANAGED_VARS: [&str; 5] =
-    ["REMINDER_CONFIG_DIR", "RMD_NOW", "REMINDER_LANG", "REMINDER_SYNCED_SCHEDULE_PATH", "REMINDER_CONFERENCE_CACHE_PATH"];
+const MANAGED_VARS: [&str; 5] = [
+    "REMINDER_CONFIG_DIR",
+    "RMD_NOW",
+    "REMINDER_LANG",
+    "REMINDER_SYNCED_SCHEDULE_PATH",
+    "REMINDER_CONFERENCE_CACHE_PATH",
+];
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

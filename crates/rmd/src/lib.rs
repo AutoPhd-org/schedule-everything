@@ -3,9 +3,9 @@
 //! Python `schedule_management` package; modules mirror the Python ones.
 
 pub mod clock;
+pub mod py;
 #[cfg(test)]
 pub mod test_support;
-pub mod py;
 
 // Core data and configuration.
 pub mod config;
