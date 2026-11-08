@@ -1,9 +1,11 @@
 """
-Weekly insight statistics for the browser Activity page.
+Weekly and daily insight statistics for the browser workspace.
 
-Summarizes one Monday-Sunday week of task outcomes and habit records, and
-compares it with the previous week and a short baseline of earlier weeks so the
-browser can draw trends without generating report files.
+The weekly overview (Activity page) summarizes one Monday-Sunday week of task
+outcomes and habit records, and compares it with the previous week and a short
+baseline of earlier weeks. The daily overview (Overview page) does the same for
+one day: what was finished and when, against yesterday and the usual day.
+The browser draws both without generating report files.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from schedule_management.web import services
 TREND_WEEKS = 8
 BASELINE_WEEKS = 4
 HIGHLIGHT_COUNT = 3
+# The usual day is the average of this many days before the one shown.
+USUAL_DAYS = 28
 _NUMERIC_KEYS = ("completed", "cancelled", "dropped", "added", "habitRate", "avgPriority", "medianLeadHours")
 
 
@@ -175,25 +179,79 @@ def _baseline(weeks: list[dict[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _target_date(payload: dict[str, Any], today: date) -> date:
+    raw_date = payload.get("date")
+    if raw_date in (None, ""):
+        return today
+    try:
+        return date.fromisoformat(str(raw_date))
+    except ValueError:
+        raise services.WebError("invalid_input", "date must be YYYY-MM-DD.") from None
+
+
+def _highlight_rows(completed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The most important completions, latest first among equals."""
+    best = sorted(completed, key=lambda a: (-a["priority"], -a["ended_at"].timestamp()))[:HIGHLIGHT_COUNT]
+    return [
+        {"description": a["description"], "priority": a["priority"], "type": a["type"], "endedAt": a["ended_at"].isoformat()}
+        for a in best
+    ]
+
+
+def daily_overview(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return statistics for the day ``payload['date']`` (default today).
+
+    ``hours`` holds the day's completions per hour, by task type. ``yesterday``
+    and ``usual`` (the average of the 28 days before, counting only days since
+    the history began) are None while there is no history to compare with.
+    """
+    today = services._today()
+    target = _target_date(payload, today)
+    history = _History(today)
+    activities = history.in_range(target, target)
+    completed = [a for a in activities if a["status"] == "completed"]
+    hours: list[Counter[str]] = [Counter() for _ in range(24)]
+    for activity in completed:
+        hours[activity["ended_at"].hour][activity["type"]] += 1
+    done_days = Counter(a["ended_at"].date() for a in history.activities if a["status"] == "completed")
+    first = history.first_day
+    earlier = [target - timedelta(days=offset) for offset in range(1, USUAL_DAYS + 1)]
+    counted = [day for day in earlier if first is not None and day >= first]
+    yesterday = target - timedelta(days=1)
+    leads = [max(0.0, (a["ended_at"] - a["started_at"]).total_seconds() / 3600) for a in completed]
+    return {
+        "date": target.isoformat(),
+        "today": today.isoformat(),
+        "isToday": target == today,
+        "firstActivity": first.isoformat() if first else None,
+        "taskTypes": history.task_types,
+        "completed": len(completed),
+        "cancelled": sum(a["status"] == "cancelled" for a in activities),
+        "dropped": sum(a["status"] == "dropped" for a in activities),
+        "added": sum(day == target for day in history.added_days),
+        "byType": dict(Counter(a["type"] for a in completed)),
+        "hours": [dict(counts) for counts in hours],
+        "yesterday": done_days[yesterday] if first is not None and yesterday >= first else None,
+        "usual": round(mean(done_days[day] for day in counted), 2) if counted else None,
+        "usualDays": len(counted),
+        "habitsDone": history.habit_count(target),
+        "habitsTotal": len(history.habits),
+        "streak": history.streak(target),
+        "medianLeadHours": round(median(leads), 2) if leads else None,
+        "highlights": _highlight_rows(completed),
+    }
+
+
 def weekly_overview(payload: dict[str, Any]) -> dict[str, Any]:
     """Return statistics for the week containing ``payload['date']`` (default today)."""
     today = services._today()
-    raw_date = payload.get("date")
-    if raw_date in (None, ""):
-        target = today
-    else:
-        try:
-            target = date.fromisoformat(str(raw_date))
-        except ValueError:
-            raise services.WebError("invalid_input", "date must be YYYY-MM-DD.") from None
-
+    target = _target_date(payload, today)
     history = _History(today)
     start = _week_start(target)
     end = start + timedelta(days=6)
     trend = [history.week_stats(start - timedelta(weeks=offset)) for offset in reversed(range(TREND_WEEKS))]
     current, previous = trend[-1], trend[-2]
     completed = [a for a in history.in_range(start, end) if a["status"] == "completed"]
-    highlights = sorted(completed, key=lambda a: (-a["priority"], -a["ended_at"].timestamp()))[:HIGHLIGHT_COUNT]
 
     return {
         "weekStart": start.isoformat(),
@@ -210,14 +268,6 @@ def weekly_overview(payload: dict[str, Any]) -> dict[str, Any]:
         "previousDays": history.day_rows(start - timedelta(days=7)),
         "habits": history.habit_rows(start),
         "streak": history.streak(end),
-        "highlights": [
-            {
-                "description": a["description"],
-                "priority": a["priority"],
-                "type": a["type"],
-                "endedAt": a["ended_at"].isoformat(),
-            }
-            for a in highlights
-        ],
+        "highlights": _highlight_rows(completed),
     }
 

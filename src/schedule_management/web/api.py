@@ -26,12 +26,13 @@ from schedule_management.web.services import (
     task_history,
     task_progress,
     task_restore,
+    task_subtasks,
     task_type_delete,
     task_type_save,
     task_update,
 )
 from schedule_management.conferences import conference_calendar
-from schedule_management.web.insights import weekly_overview
+from schedule_management.web.insights import daily_overview, weekly_overview
 from schedule_management.web.workspace import (
     config_read, config_save, export_pdf, service_action, workspace_info,
 )
@@ -48,12 +49,14 @@ COMMANDS: dict[str, BridgeHandler] = {
     "task_add": task_add,
     "task_update": task_update,
     "task_progress": task_progress,
+    "task_subtasks": task_subtasks,
     "task_delete": task_delete,
     "task_restore": task_restore,
     "task_history": task_history,
     "task_type_save": task_type_save,
     "task_type_delete": task_type_delete,
     "weekly_overview": weekly_overview,
+    "daily_overview": daily_overview,
     "conference_calendar": conference_calendar,
     "deadline_add": deadline_add,
     "deadline_update": deadline_update,

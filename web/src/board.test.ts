@@ -1,8 +1,8 @@
 // Tests for the tasks-by-type board: every configured group, their order, folding, and adding tasks inline.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { groupTasks } from "./board";
+import { boardGroups, boardOrder, groupTasks } from "./board";
 import { renderApp } from "./render";
-import type { BridgeClient, Snapshot, TaskItem } from "./types";
+import type { BridgeClient, Snapshot, Subtask, TaskItem } from "./types";
 
 const task = (description: string, priority: number, type: string, extra: Partial<TaskItem> = {}): TaskItem =>
   ({description, priority, type, typeName: "", alarmFrom: null, procrastinated: false, procrastinateDays: null, ...extra});
@@ -45,6 +45,12 @@ beforeEach(() => {
     if (command === "status_snapshot") return structuredClone(data);
     if (command === "workspace_info") return {configIds: [0], activeId: 0, mode: "p", rootDir: "/local/config"};
     if (command === "task_add") data.tasks.push(task(String(payload.description), Number(payload.priority), String(payload.type)));
+    if (command === "task_delete") data.tasks = data.tasks.filter(item => item.description !== payload.description);
+    if (command === "task_subtasks") {
+      const item = data.tasks.find(entry => entry.description === payload.description)!;
+      item.subtasks = structuredClone(payload.subtasks as Subtask[]);
+      return {description: item.description, subtasks: item.subtasks};
+    }
     if (command === "task_type_save") {
       const id = payload.id ? String(payload.id) : String(Math.max(...Object.keys(data.taskTypes).map(Number)) + 1);
       data.taskTypes[id] = String(payload.name);
@@ -194,14 +200,19 @@ describe("adding a task inline", () => {
     await flush(); await flush();
     expect(send).toHaveBeenCalledWith("task_add", {description: "Morning run", priority: 8, type: "4", postpone: 0});
     expect(root.querySelector("#notice")?.textContent).toContain("Added “Morning run” to Exercise.");
-    // The new task is greeted, its group moves up to second (average 8, after Reading's 9), and the form
-    // waits for another task.
-    expect(names().slice(0, 3)).toEqual(["Reading", "Exercise", "Coding"]);
+    // The new task is greeted and the form waits for another task. The other groups stay where they were, and
+    // Exercise joins the board at the end, right above the shelf it came from.
+    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired", "Exercise"]);
+    expect(shelfNames()).toEqual([]);
     expect(group("Exercise").querySelector(".task-card.just-added h4")?.textContent).toBe("Morning run");
     expect(form().dataset.composer).toBe("4");
     expect(form().querySelector<HTMLInputElement>('[name="composerText"]')!.value).toBe("");
     expect(form().querySelector<HTMLInputElement>('[name="composerPriority"]')!.value).toBe("8");
     expect(document.activeElement?.getAttribute("name")).toBe("composerText");
+    // Opening the page again sorts the groups afresh: Exercise (average 8) comes second, after Reading's 9.
+    click('[data-page="settings"]');
+    click('[data-page="today"]');
+    expect(names().slice(0, 3)).toEqual(["Reading", "Exercise", "Coding"]);
   });
 
   it("keeps an unsent draft across redraws and closes with Escape", async () => {
@@ -407,5 +418,183 @@ describe("type colors", () => {
     data.tasks = data.tasks.filter(item => item.type !== "2");
     await renderApp(root, client);
     expect(group("Reading").classList.contains("sw-red")).toBe(true);
+  });
+});
+
+describe("keeping the board in place", () => {
+  const compose = (name: string) => group(name).querySelector<HTMLButtonElement>("[data-compose]")!.click();
+  const add = async (text: string, priority: number) => {
+    const form = root.querySelector<HTMLFormElement>("form.composer")!;
+    form.querySelector<HTMLInputElement>('[name="composerText"]')!.value = text;
+    const range = form.querySelector<HTMLInputElement>('[name="composerPriority"]')!;
+    range.value = String(priority); range.dispatchEvent(new Event("input", {bubbles: true}));
+    form.dispatchEvent(new Event("submit", {cancelable: true}));
+    await flush(); await flush();
+  };
+
+  it("leaves every group in its place while the page stays open, and sorts them again on Refresh", async () => {
+    await renderApp(root, client);
+    compose("Retired");
+    await add("Renew passport", 10);
+    // Retired now averages 6 with two tasks, which would put it second, but nothing moves under the cursor.
+    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired"]);
+    expect(document.activeElement?.getAttribute("name")).toBe("composerText");
+    click('[data-action="refresh"]');
+    await flush(); await flush();
+    expect(names()).toEqual(["Reading", "Coding", "Retired", "Writing"]);
+  });
+
+  it("keeps a finished group on the board until the page is opened again", async () => {
+    await renderApp(root, client);
+    group("Reading").querySelector<HTMLButtonElement>('[data-operation="deleted"]')!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_delete", {description: "Read paper", action: "deleted"});
+    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired"]);
+    expect(group("Reading").classList.contains("is-cleared")).toBe(true);
+    expect(group("Reading").textContent).toContain("All done here.");
+    expect(group("Reading").querySelector("[data-compose]")).not.toBeNull();
+    expect(shelfNames()).toEqual(["Exercise"]);
+    click('[data-page="activity"]');
+    click('[data-page="today"]');
+    expect(names()).toEqual(["Coding", "Writing", "Retired"]);
+    // The shelf lists types in their configured order.
+    expect(shelfNames()).toEqual(["Reading", "Exercise"]);
+  });
+
+  it("orders the board as the page opens, then keeps that order", () => {
+    expect(boardOrder(snapshot)).toEqual(["3", "1", "2", "9"]);
+    // Spread puts the heaviest workload first: Reading 0.9, Writing 0.6, Coding 0.3 (one task done, one half), Retired 0.2.
+    expect(boardOrder(snapshot, "spread")).toEqual(["3", "2", "1", "9"]);
+    const later = structuredClone(snapshot);
+    later.tasks = later.tasks.filter(item => item.type !== "3");
+    later.tasks.push(task("Stretch", 10, "4"));
+    // Reading keeps its place though its task is done; Exercise, new to the board, joins at the end.
+    expect(boardGroups(later, ["3", "1", "2", "9"]).map(item => item.name)).toEqual(["Reading", "Coding", "Writing", "Retired", "Exercise"]);
+    expect(boardGroups(later, null).map(item => item.name)).toEqual(["Exercise", "Coding", "Writing", "Retired"]);
+  });
+});
+
+describe("subtasks", () => {
+  const card = (name: string) => [...root.querySelectorAll<HTMLElement>("#board-area .task-card")].find(el => el.querySelector("h4")?.textContent === name)!;
+  const field = () => root.querySelector<HTMLInputElement>('#board-area form.subtask-form [name="subtaskText"]')!;
+  const write = (text: string) => {
+    field().value = text;
+    field().dispatchEvent(new Event("input", {bubbles: true}));
+    field().form!.dispatchEvent(new Event("submit", {cancelable: true}));
+  };
+  const steps = (name: string) => [...card(name).querySelectorAll(".subtask-text")].map(el => el.textContent);
+  const shown = (name: string) => card(name).querySelector(".task-progress-row .progress-control b")?.textContent;
+  const settle = () => new Promise(resolve => setTimeout(resolve, 300));
+
+  it("breaks a task into subtasks, whose completion sets its progress", async () => {
+    await renderApp(root, client);
+    expect(card("Read paper").querySelector("input[data-progress]")).not.toBeNull();
+    card("Read paper").querySelector<HTMLButtonElement>("[data-subtask-open]")!.click();
+    expect(document.activeElement).toBe(field());
+    write("Skim the abstract");
+    // The field stays open, empty, for the next one; the slider gives way to a meter that follows the subtasks.
+    expect(document.activeElement).toBe(field());
+    expect(field().value).toBe("");
+    write("Take notes");
+    expect(steps("Read paper")).toEqual(["Skim the abstract", "Take notes"]);
+    expect(card("Read paper").querySelector("input[data-progress]")).toBeNull();
+    expect(shown("Read paper")).toBe("0%");
+    const box = card("Read paper").querySelector<HTMLInputElement>('input[data-subtask][data-step="0"]')!;
+    box.checked = true; box.dispatchEvent(new Event("change"));
+    expect(shown("Read paper")).toBe("50%");
+    expect(card("Read paper").querySelector(".progress-meter")?.getAttribute("aria-valuetext")).toBe("50%, 1 of 2 subtasks done");
+    expect(card("Read paper").querySelector(".subtask.is-done .subtask-text")?.textContent).toBe("Skim the abstract");
+    expect(document.activeElement?.getAttribute("data-step")).toBe("0");
+    // The saves wait for the clicks to settle and send the whole list once.
+    expect(send).not.toHaveBeenCalledWith("task_subtasks", expect.anything());
+    await settle();
+    expect(send.mock.calls.filter(([command]) => command === "task_subtasks")).toHaveLength(1);
+    expect(send).toHaveBeenCalledWith("task_subtasks", {description: "Read paper", subtasks: [{text: "Skim the abstract", done: true}, {text: "Take notes", done: false}]});
+    // A redraw from the server keeps them, and Escape closes the field.
+    await renderApp(root, client);
+    expect(steps("Read paper")).toEqual(["Skim the abstract", "Take notes"]);
+    expect(shown("Read paper")).toBe("50%");
+  });
+
+  it("closes the field with Escape and ignores empty subtasks", async () => {
+    await renderApp(root, client);
+    card("Draft essay").querySelector<HTMLButtonElement>("[data-subtask-open]")!.click();
+    write("  ");
+    expect(field().form!.classList.contains("shake")).toBe(true);
+    field().dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(root.querySelector("form.subtask-form")).toBeNull();
+    expect(document.activeElement?.getAttribute("data-subtask-open")).toBe(card("Draft essay").querySelector("[data-subtask-open]")?.getAttribute("data-subtask-open"));
+    await settle();
+    expect(send).not.toHaveBeenCalledWith("task_subtasks", expect.anything());
+  });
+
+  it("removes a subtask, and Undo brings it back", async () => {
+    data.tasks[3].subtasks = [{text: "Find the PDF", done: true}, {text: "Read it", done: false}];
+    await renderApp(root, client);
+    expect(shown("Read paper")).toBe("50%");
+    card("Read paper").querySelector<HTMLButtonElement>('[data-subtask-remove][data-step="0"]')!.click();
+    expect(steps("Read paper")).toEqual(["Read it"]);
+    expect(shown("Read paper")).toBe("0%");
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("Removed the subtask “Find the PDF”.");
+    root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.click();
+    await flush();
+    expect(steps("Read paper")).toEqual(["Find the PDF", "Read it"]);
+    expect(shown("Read paper")).toBe("50%");
+    await settle();
+    expect(send).toHaveBeenLastCalledWith("task_subtasks", {description: "Read paper", subtasks: [{text: "Find the PDF", done: true}, {text: "Read it", done: false}]});
+  });
+
+  it("sums subtasks up in folded groups and offers the next one on the timer", async () => {
+    data.tasks[1].subtasks = [{text: "Write tests", done: true}, {text: "Fix the edge case", done: false}];
+    await renderApp(root, client);
+    const timer = root.querySelector<HTMLElement>("#timer-strip .timer-task")!;
+    expect(timer.querySelector(".timer-steps-count")?.textContent).toBe("1/2");
+    expect(timer.querySelector(".timer-next-text")?.textContent).toBe("NextFix the edge case");
+    const next = timer.querySelector<HTMLInputElement>("input[data-subtask]")!;
+    next.checked = true; next.dispatchEvent(new Event("change"));
+    expect(root.querySelector("#timer-strip .timer-next-done")?.textContent).toBe("Every subtask is done");
+    expect(shown("Refactor parser")).toBe("100%");
+    expect(card("Refactor parser").classList.contains("is-full")).toBe(true);
+    click('[data-board-view="folded"]');
+    expect(group("Coding").querySelector(".tg-chip.steps")?.textContent).toBe("2/2 subtasks");
+    // Fix build is 100% and Refactor parser now too.
+    expect(group("Coding").querySelector(".tg-progress b")?.textContent).toBe("100%");
+    await settle();
+    expect(send).toHaveBeenCalledWith("task_subtasks", {description: "Refactor parser", subtasks: [{text: "Write tests", done: true}, {text: "Fix the edge case", done: true}]});
+  });
+
+  it("saves a waiting change before the task is completed", async () => {
+    data.tasks[3].subtasks = [{text: "Read it", done: false}];
+    await renderApp(root, client);
+    const box = card("Read paper").querySelector<HTMLInputElement>("input[data-subtask]")!;
+    box.checked = true; box.dispatchEvent(new Event("change"));
+    card("Read paper").querySelector<HTMLButtonElement>('[data-operation="deleted"]')!.click();
+    await flush(); await flush(); await flush();
+    const commands = send.mock.calls.map(([command]) => command).filter(command => command === "task_subtasks" || command === "task_delete");
+    expect(commands).toEqual(["task_subtasks", "task_delete"]);
+  });
+});
+
+describe("spread layout", () => {
+  it("places groups by workload and remembers the choice", async () => {
+    await renderApp(root, client);
+    expect(root.querySelector("#task-board.spread-board")).toBeNull();
+    click('[data-board-layout="spread"]');
+    expect(root.querySelector('[data-board-layout="spread"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector("#task-board.spread-board")).not.toBeNull();
+    expect(root.querySelector(".spread-legend")?.textContent).toContain("the heaviest group sits in the middle");
+    expect(names()).toEqual(["Reading", "Writing", "Coding", "Retired"]);
+    expect([...root.querySelectorAll(".task-group .group-load b")].map(el => el.textContent)).toEqual(["0.9", "0.6", "0.3", "0.2"]);
+    expect(group("Reading").dataset.load).toBe("0.9");
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-display")!).layout).toBe("spread");
+    // Folded groups keep their places instead of lining up in rows.
+    click('[data-board-view="folded"]');
+    expect(root.querySelector("#task-board")?.classList.contains("is-uniform")).toBe(false);
+
+    await renderApp(root, client);
+    expect(root.querySelector("#task-board.spread-board")).not.toBeNull();
+    click('[data-board-layout="compact"]');
+    expect(root.querySelector(".group-load")).toBeNull();
+    expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired"]);
   });
 });

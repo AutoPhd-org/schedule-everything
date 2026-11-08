@@ -147,11 +147,18 @@ tasks, habit progress, the current and next block, upcoming deadlines, and
 today's timeline. **P mode** is for flexible days: alarms for selected events
 pause and the overview keeps only your tasks, grouped by type, as a loose
 collage. Flip the **J / P** switch in the header, or run `rmd mode j|p`. In
-both modes, groups with more important work come first, you can add a task
+both modes, groups with more important work come first (the **compact**
+layout), or switch to **spread** to place them by workload: the heaviest group
+in the middle and lighter ones farther out. Groups keep their places while you
+work and are arranged anew when you come back to the page. You can add a task
 right inside its group, and **Fold** turns each group into a summary of its
-importance, progress, and size. Every task has a progress slider, and above the
-board, timers count down to today's timed tasks (overdue ones turn red) and to
-deadlines in their last 24 hours, under one bar for today's timed work.
+importance, progress, and size. Every task has a progress slider, or a
+checklist of subtasks that sets its progress. Above the board, timers with
+dials count down to today's timed tasks (overdue ones turn red) and to
+deadlines in their last 24 hours, under one bar for today's timed work that can
+weigh tasks by importance. The **daily overview** sums up your day, and the
+theme's colors follow your **workload**: every open task's importance, times
+the share of it still left.
 
 ### Plan with your agent
 

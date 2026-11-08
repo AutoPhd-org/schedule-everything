@@ -1,7 +1,7 @@
 // Tests for the timers above the task board, today's timed-work bar, and task progress.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "./render";
-import { clock, collectTimers, pruneClosed, span, timerKey, todayProgress } from "./timers";
+import { clock, collectTimers, progressOf, pruneClosed, runway, span, timerKey, todayProgress, urgency } from "./timers";
 import type { BridgeClient, DeadlineItem, Snapshot, TaskItem } from "./types";
 
 const task = (description: string, extra: Partial<TaskItem> = {}): TaskItem =>
@@ -56,6 +56,43 @@ describe("which timers run", () => {
     expect(today).toMatchObject({done: 1, overdue: 1});
     // Finished work from another day does not count today.
     expect(todayProgress({...snapshot, timedDone: [{...snapshot.timedDone![0], endedAt: "2026-11-04T09:50:00"}]}, NOW).done).toBe(0);
+  });
+
+  it("weighs today's timed work by importance when asked", () => {
+    const weighted = structuredClone(snapshot);
+    weighted.tasks[0].priority = 9;
+    weighted.tasks[1].priority = 3;
+    weighted.timedDone![0].priority = 6;
+    // Every task the same: (100 + 20 + 40) / 3. By importance: (6 × 100 + 3 × 20 + 9 × 40) / (18 × 100).
+    expect(Math.round(todayProgress(weighted, NOW).value * 100)).toBe(53);
+    expect(todayProgress(weighted, NOW, true)).toMatchObject({weighted: true, done: 1, overdue: 1});
+    expect(Math.round(todayProgress(weighted, NOW, true).value * 100)).toBe(57);
+    // A task finished before its importance was recorded counts as 5.
+    delete weighted.timedDone![0].priority;
+    expect(todayProgress(weighted, NOW, true).parts[0].priority).toBe(5);
+  });
+
+  it("tells how close a timer is and how much of its runway is left", () => {
+    const HOUR = 3_600_000;
+    expect(urgency("task", NOW + 4 * HOUR, NOW)).toBe("calm");
+    expect(urgency("task", NOW + 2 * HOUR, NOW)).toBe("soon");
+    expect(urgency("task", NOW + 30 * 60_000, NOW)).toBe("close");
+    expect(urgency("task", NOW, NOW)).toBe("overdue");
+    expect(urgency("task", NOW + 2 * HOUR, NOW, true)).toBe("ready");
+    expect(urgency("task", NOW - 1, NOW, true)).toBe("overdue");
+    expect(urgency("deadline", NOW + 5 * HOUR, NOW)).toBe("soon");
+    expect(urgency("deadline", NOW + 7 * HOUR, NOW)).toBe("calm");
+    // A task's runway is its day up to its finish time; a deadline's is its last 24 hours.
+    expect(runway("task", new Date(2026, 10, 5, 18, 0).getTime(), NOW)).toBeCloseTo(3 / 18);
+    expect(runway("deadline", NOW + 6 * HOUR, NOW)).toBe(0.25);
+    expect(runway("task", NOW - HOUR, NOW)).toBe(0);
+  });
+
+  it("measures progress by subtasks while a task has them", () => {
+    expect(progressOf({progress: 30})).toBe(30);
+    expect(progressOf({progress: 30, subtasks: [{text: "a", done: true}, {text: "b", done: false}, {text: "c", done: false}]})).toBe(33);
+    expect(progressOf({subtasks: Array.from({length: 8}, (_, i) => ({text: String(i), done: i === 0}))})).toBe(13);
+    expect(progressOf({progress: 30, subtasks: []})).toBe(30);
   });
 
   it("formats running clocks", () => {
@@ -185,6 +222,69 @@ describe("timer strip", () => {
     expect(send).toHaveBeenCalledWith("task_update", {originalDescription: "Ship slides", description: "Ship slides", priority: 5, type: "1", due: ""});
     expect(titles()).not.toContain("Ship slides");
     expect(card("Ship slides").classList.contains("is-timed")).toBe(false);
+  });
+
+  it("gives every timer a dial for how close it is", async () => {
+    await renderApp(root, client);
+    const [overdue, running, ending] = timers();
+    expect(overdue.classList.contains("urgency-overdue")).toBe(true);
+    expect(overdue.querySelector(".timer-flag")?.textContent).toBe("Overdue");
+    expect(overdue.querySelector("[data-dial]")?.getAttribute("stroke-dasharray")).toBe("0.00 100");
+    // Three hours before 6 pm: an hourglass, with 3 of the day's 18 hours to go.
+    expect(running.classList.contains("urgency-soon")).toBe(true);
+    expect(running.querySelector(".timer-flag")).toBeNull();
+    expect(running.querySelector("[data-dial]")?.getAttribute("stroke-dasharray")).toBe("16.67 100");
+    // The deadline ends at midnight: 9 of its last 24 hours left, and a flag.
+    expect(ending.classList.contains("urgency-calm")).toBe(true);
+    expect(ending.querySelector("[data-dial]")?.getAttribute("stroke-dasharray")).toBe("37.50 100");
+    expect(root.querySelector(".today-meta")?.querySelectorAll("svg")).toHaveLength(2);
+  });
+
+  it("moves a timer on to its next stage as time passes", async () => {
+    data.tasks[2].due = "2026-11-05T20:00";
+    await renderApp(root, client);
+    const find = (name: string) => timers().find(timer => timer.querySelector("h4")?.textContent === name)!;
+    expect(find("Plan trip").classList.contains("urgency-calm")).toBe(true);
+    expect(find("Plan trip").querySelector(".live-clock")).not.toBeNull();
+    vi.setSystemTime(new Date(2026, 10, 5, 17, 30));
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    expect(find("Ship slides").classList.contains("urgency-close")).toBe(true);
+    expect(find("Ship slides").querySelector(".timer-flag")?.textContent).toBe("Last hour");
+    expect(find("Plan trip").classList.contains("urgency-soon")).toBe(true);
+  });
+
+  it("offers to complete a task whose work is all done", async () => {
+    data.tasks[0].progress = 100;
+    await renderApp(root, client);
+    const ready = timers().find(timer => timer.querySelector("h4")?.textContent === "Ship slides")!;
+    expect(ready.classList.contains("urgency-ready")).toBe(true);
+    expect(ready.querySelector(".timer-flag")?.textContent).toBe("All done");
+    // Overdue work stays overdue, done or not.
+    expect(timers()[0].querySelector(".timer-complete")).toBeNull();
+    ready.querySelector<HTMLButtonElement>(".timer-complete")!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("task_delete", {description: "Ship slides", action: "deleted"});
+  });
+
+  it("weighs today's bar by importance once that is turned on in Settings", async () => {
+    data.tasks[0].priority = 9;
+    data.tasks[1].priority = 3;
+    data.timedDone![0].priority = 6;
+    await renderApp(root, client);
+    expect(root.querySelector(".today-bar")?.getAttribute("aria-valuenow")).toBe("53");
+    expect(root.querySelector(".today-weighted")).toBeNull();
+    root.querySelector<HTMLButtonElement>('[data-page="settings"]')!.click();
+    const toggle = root.querySelector<HTMLInputElement>('[data-pref="weighted"]')!;
+    expect(toggle.checked).toBe(false);
+    toggle.checked = true; toggle.dispatchEvent(new Event("change"));
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("Today’s progress now weighs each task by its importance.");
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-display")!).weighted).toBe(true);
+    root.querySelector<HTMLButtonElement>('[data-page="today"]')!.click();
+    const bar = root.querySelector(".today-bar")!;
+    expect(bar.getAttribute("aria-valuenow")).toBe("57");
+    expect(bar.getAttribute("aria-valuetext")).toContain("weighted by importance");
+    expect([...bar.querySelectorAll<HTMLElement>("i")].map(segment => segment.style.flexGrow)).toEqual(["6", "3", "9"]);
+    expect(root.querySelector(".today-weighted")?.textContent).toBe("By importance");
   });
 
   it("explains itself when nothing is timed", async () => {

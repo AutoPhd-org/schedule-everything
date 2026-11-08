@@ -30,11 +30,11 @@ files can be repaired in the browser.
 
 | Area | Operations |
 | --- | --- |
-| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, and today's timeline. **P mode:** only the tasks-by-type board. In both modes, follow timers for today's timed tasks and for deadlines in their last 24 hours, with today's timed work as one progress bar; search all tasks grouped by type; add a task right inside its group or from **New task**; add, rename, or delete task types; fold the groups into summaries; set each task's progress; make a task timed; edit, complete, cancel, or drop tasks |
+| Overview | **J mode:** see overdue and due-today counts, available high-importance tasks, habit progress, the current/next schedule blocks, nearest deadlines, the daily overview, and today's timeline. **P mode:** the tasks-by-type board, with the daily overview below it. In both modes, follow timers for today's timed tasks and for deadlines in their last 24 hours, with today's timed work as one progress bar; search all tasks grouped by type; lay the groups out compactly or spread by workload; add a task right inside its group or from **New task**; add, rename, or delete task types; fold the groups into summaries; set each task's progress or break it into subtasks; make a task timed; edit, complete, cancel, or drop tasks |
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
-| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders |
+| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; choose the board layout, whether the theme follows your workload, and whether today's progress weighs tasks by importance |
 
 ## J mode and P mode
 
@@ -42,9 +42,9 @@ The **J / P** toggle in the header (or `rmd mode j|p`) switches modes for the
 reminder service and the browser together. J mode is the structured day: the
 overview shows status counts, the current and next schedule blocks, upcoming
 deadlines, the task board, and today's timeline. P mode is flexible and
-task-first: the overview keeps only the tasks-by-type board, laid out as a loose
-collage, and the workspace uses a warmer palette. Other pages are the same in
-both modes.
+task-first: the overview keeps the tasks-by-type board, laid out as a loose
+collage, with the daily overview below it, and the workspace uses a warmer
+palette. Other pages are the same in both modes.
 
 <Figure
   src="img/modes.webp"
@@ -218,11 +218,19 @@ an icon rail and cards stack.
 </FigureRow>
 
 Tasks preserve their importance (1–10), type, progress, finish-by time (for timed
-tasks), postponed reminder date (set with `rmd add`), and procrastination status. The board groups the same tasks returned by `rmd ls`
-without imposing a display limit. Groups with more important work come first:
-they are ordered by the average importance of their tasks, then by how many
-tasks they hold. Types without tasks stay off the board, on a quieter shelf
-below it; add a task to one with its **+** button and it moves up to the board.
+tasks), subtasks, postponed reminder date (set with `rmd add`), and procrastination status. The board groups the same tasks returned by `rmd ls`
+without imposing a display limit. In the **compact** layout, groups with more
+important work come first: they are ordered by the average importance of their
+tasks, then by how many tasks they hold. Types without tasks stay off the board,
+on a quieter shelf below it; add a task to one with its **+** button and it
+moves up to the board.
+
+The groups keep their places while you stay on the page, so the group you are
+typing in never jumps away: a task you add appears in its group, a type that
+gets its first task joins the end of the board, and a group whose tasks are all
+done stays put with **All done here** instead of leaving. Opening the page
+again (from the sidebar), switching mode or layout, or **Refresh** arranges the
+board anew.
 Inside each group, the existing ordering is preserved: procrastinated tasks,
 available tasks, then postponed tasks, with importance descending within each
 section. The overview refreshes every 30 seconds when you are not editing.
@@ -241,10 +249,17 @@ it, set its importance, and press **Enter**. The form stays open for the next
 task; **Esc** closes it. **New task** in the heading still opens the full form,
 where you can also make the task timed.
 
-### Progress and timers
+### Progress, subtasks, and timers
 
 Every task has a **Progress** slider from 0 to 100%. Drag it, or focus it and use
 the arrow keys, whenever the work moves on; it saves as you let go.
+
+To break a task down, click the checklist button beside its slider, type a
+subtask, and press **Enter**; the field stays open for the next one, and **Esc**
+closes it. From then on the task's progress follows its subtasks (two of four
+checked is 50%), and the slider gives way to a meter. Check subtasks off on the
+card, or remove one with its **×** (**Undo** in the notice brings it back).
+Removing every subtask keeps the last progress as the task's own.
 
 A **timed task** has a time it should be finished by. Turn on **Timed task** in
 the task form (**New task** or **Edit**), or choose **Make it a timed task…**
@@ -254,9 +269,16 @@ makes it a normal task again; normal tasks never affect the timers.
 
 Above the board, a row of timers runs, soonest first:
 
-- **Task timers** (solid cards in the task's type color, with its progress
-  slider) count down to the finish time of every unfinished timed task due by
-  tonight. At midnight the row starts over with the next day's timed tasks.
+- **Task timers** (solid cards in the task's type color, with its progress)
+  count down to the finish time of every unfinished timed task due by tonight.
+  At midnight the row starts over with the next day's timed tasks. A task with
+  subtasks shows how many are done and its next one, which you can check off
+  right on the timer.
+- Each timer has a **dial**: a ring that drains as its time runs out, around an
+  icon for how close it is. A clock sweeps its hands while there is time; an
+  hourglass turns in the last three hours (six for a deadline); an alarm clock
+  rings in the last hour; a bell swings once a task is overdue. When all of a
+  task's work is done, a party popper appears with a **Complete** button.
 - **Overdue tasks** turn red: the timer counts up from the finish time, the
   card on the board gets a red edge, and the group's summary counts it as
   overdue. An overdue task keeps its timer until you finish it or change its
@@ -270,7 +292,10 @@ Above the board, a row of timers runs, soonest first:
 On top, **Today's timed work** is one bar for the day: each timed task due by
 tonight is a segment filled as far as it has come, finished ones in green and
 overdue ones in red. The percentage is their average progress. Tasks you finish
-today count as 100%, so completing one never lowers the bar.
+today count as 100%, so completing one never lowers the bar. Turn on **Weigh
+today's progress by importance** in Settings to count each task by its
+importance instead: an importance-9 task then moves the bar three times as much
+as an importance-3 one, and its segment is wider.
 
 **Fold** in the board's heading turns each group into a summary: its average
 importance as a ring, every task as a dot on a 1–10 scale, its average progress
@@ -295,6 +320,45 @@ Task types, which deadlines share, are managed on the board too:
 A new type never reuses the ID of a type you deleted earlier, so it doesn't
 inherit that type's finished tasks. Each type keeps its color: deleting one
 never recolors the others, and a new type takes the color used least.
+
+### Workload, layouts, and the daily overview
+
+**Workload** is how much open work you have, weighted by importance: every
+open task counts its importance out of 10, times the share of it still left. An
+importance-8 task counts 0.8 untouched, 0.4 half done, and nothing at 100%.
+Tasks postponed to a later day wait until then. The total falls into one of
+five levels:
+
+| Level | Workload |
+| --- | --- |
+| All clear | 0 |
+| Light | under 2.5 |
+| Steady | 2.5 to 5.5 |
+| Busy | 5.5 to 9 |
+| Heavy | 9 and up |
+
+The level shows in the header on every page (select it to open the daily
+overview), and the workspace's theme follows it: the background, its color
+blobs, and the glass surfaces shift from cool greens and blues when your plate
+is clear to warm oranges and reds when it is heavy. Turn this off with **Theme
+follows your workload** in Settings.
+
+The board has two layouts; switch with **Compact** / **Spread** beside **Fold**,
+or in Settings. **Compact** packs the groups in rows, those with more important
+work first. **Spread** places them by workload: the heaviest group sits in the
+middle, and every other group sits farther out the lighter it is, so the
+distance between two groups shows how different their loads are. Rings behind
+the groups mark the distances, and each group wears its workload on a badge. On
+narrow screens the spread groups stack in one column, the gap before each one
+growing with how much lighter it is.
+
+The **daily overview** on the Overview page (below the right-now card in J
+mode, below the board in P mode) sums up your day: how many tasks you finished
+against yesterday and your usual day, when you finished them hour by hour,
+your workload as a gauge with its split by type, how far along today's timed
+work and all your open tasks are, your streak and habits, and the most
+important things you finished. Fold it into one line with the arrow in its
+corner; the choice is remembered in this browser.
 
 ## AI agent plugins
 

@@ -167,7 +167,34 @@ def _require_due(payload: dict[str, Any]) -> str | None:
     return due.strftime("%Y-%m-%dT%H:%M")
 
 
+SUBTASK_LIMIT = 50
+SUBTASK_TEXT_LIMIT = 200
+
+
+def _subtasks_of(task: dict[str, Any]) -> list[dict[str, Any]]:
+    """A task's subtasks as ``{"text", "done"}`` pairs; unreadable entries are skipped."""
+    raw = task.get("subtasks")
+    if not isinstance(raw, list):
+        return []
+    return [
+        {"text": item["text"].strip(), "done": item.get("done") is True}
+        for item in raw
+        if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"].strip()
+    ]
+
+
+def _subtask_progress(subtasks: list[dict[str, Any]]) -> int:
+    """The share of subtasks done, in whole percent, rounding halves up like the browser does."""
+    total = len(subtasks)
+    done = sum(1 for item in subtasks if item["done"])
+    return (200 * done + total) // (2 * total)
+
+
 def _task_progress(task: dict[str, Any]) -> int:
+    """How far along a task is: the share of its subtasks done, or else its own progress."""
+    subtasks = _subtasks_of(task)
+    if subtasks:
+        return _subtask_progress(subtasks)
     try:
         progress = int(task.get("progress", 0))
     except (TypeError, ValueError):
@@ -302,6 +329,7 @@ def _sorted_tasks() -> list[dict[str, Any]]:
                 "procrastinateDays": procrastinate_days,
                 "due": due.strftime("%Y-%m-%dT%H:%M") if due else None,
                 "progress": _task_progress(task),
+                "subtasks": _subtasks_of(task),
                 "_section": section,
             }
         )
@@ -502,8 +530,13 @@ def _timed_done_today(current_date: date) -> list[dict[str, Any]]:
             continue
         if ended.date() != current_date or due.date() > current_date or description in open_descriptions:
             continue
+        try:
+            priority = int(task.get("priority", 0))
+        except (TypeError, ValueError):
+            priority = 0
         done[description] = {
             "description": description,
+            "priority": priority,
             "type": str(task.get("type")) if task.get("type") is not None else None,
             "due": due.strftime("%Y-%m-%dT%H:%M"),
             "endedAt": ended.isoformat(),
@@ -649,12 +682,60 @@ def task_progress(payload: dict[str, Any]) -> dict[str, Any]:
     tasks = load_tasks()
     for task in tasks:
         if task.get("description") == description:
+            if _subtasks_of(task):
+                raise WebError("invalid_input", "this task's progress follows its subtasks.")
             if progress:
                 task["progress"] = progress
             else:
                 task.pop("progress", None)
             _save_tasks_or_error(tasks)
             return {"description": description, "progress": progress}
+    raise WebError("not_found", f"task not found: {description}")
+
+
+def _require_subtasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = payload.get("subtasks")
+    if not isinstance(raw, list):
+        raise WebError("invalid_input", "subtasks must be a list.")
+    if len(raw) > SUBTASK_LIMIT:
+        raise WebError("invalid_input", f"a task can have at most {SUBTASK_LIMIT} subtasks.")
+    subtasks: list[dict[str, Any]] = []
+    for item in raw:
+        text = item.get("text") if isinstance(item, dict) else None
+        if not isinstance(text, str) or not text.strip():
+            raise WebError("invalid_input", "every subtask needs text.")
+        if len(text.strip()) > SUBTASK_TEXT_LIMIT:
+            raise WebError("invalid_input", f"subtasks can be at most {SUBTASK_TEXT_LIMIT} characters.")
+        done = item.get("done", False)
+        if not isinstance(done, bool):
+            raise WebError("invalid_input", "a subtask is either done or not: use true or false.")
+        subtasks.append({"text": text.strip(), "done": done})
+    return subtasks
+
+
+def task_subtasks(payload: dict[str, Any]) -> dict[str, Any]:
+    """Replace a task's subtasks, each ``{"text", "done"}``; the task's progress then follows them.
+
+    The share of subtasks done is saved as the task's progress, so everything that reads progress agrees.
+    Clearing every subtask keeps the last progress as the task's own. Like progress, subtasks change often,
+    so no history entry is written.
+    """
+    description = _require_text(payload, "description")
+    subtasks = _require_subtasks(payload)
+    tasks = load_tasks()
+    for task in tasks:
+        if task.get("description") == description:
+            if subtasks:
+                task["subtasks"] = subtasks
+                progress = _subtask_progress(subtasks)
+                if progress:
+                    task["progress"] = progress
+                else:
+                    task.pop("progress", None)
+            else:
+                task.pop("subtasks", None)
+            _save_tasks_or_error(tasks)
+            return {"description": description, "subtasks": subtasks, "progress": _task_progress(task)}
     raise WebError("not_found", f"task not found: {description}")
 
 

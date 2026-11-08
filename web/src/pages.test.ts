@@ -4,7 +4,7 @@ import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
 import { axisTones, layoutTree, packLabels, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
-import type { BridgeClient, ConferencePayload, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
+import type { BridgeClient, ConferencePayload, DailyOverview, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
 import { addDays } from "./ui";
 
 const snapshot: Snapshot = {
@@ -44,6 +44,14 @@ const overview: WeeklyOverview = {
   highlights: [{description: "Ship release", priority: 9, type: "1", endedAt: "2026-10-05T10:00:00"}]
 };
 
+const daily: DailyOverview = {
+  date: "2026-10-05", today: "2026-10-05", isToday: true, firstActivity: "2026-08-01", taskTypes: snapshot.taskTypes,
+  completed: 3, cancelled: 1, dropped: 0, added: 4, byType: {"1": 2, "2": 1},
+  hours: Array.from({length: 24}, (_, hour): Record<string, number> => hour === 9 ? {"1": 2} : hour === 11 ? {"2": 1} : {}),
+  yesterday: 1, usual: 2.5, usualDays: 28, habitsDone: 0, habitsTotal: 1, streak: 4, medianLeadHours: 5,
+  highlights: [{description: "Ship release", priority: 9, type: "1", endedAt: "2026-10-05T10:00:00"}]
+};
+
 const conferencePayload: ConferencePayload = {
   year: 2026, source: "https://github.com/huggingface/ai-deadlines", fetchedAt: "2026-10-01T10:00:00+00:00", error: null,
   conferences: [{id: "neurips", name: "NeurIPS", group: "ml"}, {id: "cvpr", name: "CVPR", group: "vision"}, {id: "icra", name: "ICRA", group: "robotics"}],
@@ -75,6 +83,7 @@ beforeEach(() => {
     if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
     if (command === "task_history") return {activities: structuredClone(history)};
     if (command === "weekly_overview") return structuredClone(overview);
+    if (command === "daily_overview") return structuredClone(daily);
     if (command === "conference_calendar") return structuredClone(conferencePayload);
     return {};
   });
@@ -111,6 +120,71 @@ describe("planning modes", () => {
     expect(send).toHaveBeenCalledWith("service_action", {action: "mode", mode: "p"});
     expect(root.querySelector(".status-grid")).toBeNull();
     expect(root.querySelector('[data-mode-choice="p"]')?.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("daily overview", () => {
+  afterEach(() => window.localStorage.removeItem("schedule-everything-display"));
+  const after = (first: Element, second: Element) => !!(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+  it("sums up the day on the J overview, between the focus row and the board", async () => {
+    await renderApp(root, client);
+    expect(send).toHaveBeenCalledWith("daily_overview", {});
+    const panel = root.querySelector<HTMLElement>("#day-panel")!;
+    expect(after(root.querySelector(".overview-grid")!, panel)).toBe(true);
+    expect(after(panel, root.querySelector("#task-board")!)).toBe(true);
+    expect(panel.querySelector(".dp-number strong")?.textContent).toBe("3");
+    expect(panel.querySelector(".dp-deltas")?.textContent).toContain("+2 vs yesterday");
+    expect(panel.querySelector(".dp-deltas")?.textContent).toContain("+0.5 vs your usual day");
+    expect(panel.querySelectorAll(".hours .hr")).toHaveLength(24);
+    expect(panel.querySelectorAll(".hours .hr i")).toHaveLength(2);
+    expect(panel.querySelector(".dp-outcomes")?.textContent).toContain("1 cancelled");
+    expect(panel.querySelector(".dp-highlights")?.textContent).toContain("Ship release");
+    expect(panel.querySelector(".dp-streak .streak-flame strong")?.textContent).toBe("4");
+    // Workload comes from the open tasks themselves: Write notes (importance 10) and Fix build (6), untouched.
+    expect(panel.querySelector(".gauge-read strong")?.textContent).toBe("1.6");
+    expect(panel.querySelector(".dp-load")?.classList.contains("load-light")).toBe(true);
+    expect(panel.querySelector(".dp-load .gauge")?.getAttribute("aria-label")).toBe("Workload 1.6 · Light. 2 open tasks, importance 8 on average, 0% done.");
+    expect(panel.querySelector(".dp-progress .dp-fine")?.textContent).toContain("Every task counts the same");
+  });
+
+  it("folds into one line, and remembers it", async () => {
+    await renderApp(root, client);
+    click("[data-day-fold]");
+    expect(root.querySelector(".day-grid")).toBeNull();
+    expect(root.querySelector("#day-panel.is-folded .day-strip")?.textContent).toContain("3 finished");
+    expect(root.querySelector("#day-panel.is-folded .day-strip")?.textContent).toContain("4-day streak");
+    expect(document.activeElement?.hasAttribute("data-day-fold")).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-display")!).dayFolded).toBe(true);
+    await renderApp(root, client);
+    expect(root.querySelector("#day-panel.is-folded")).not.toBeNull();
+    click("[data-day-fold]");
+    expect(root.querySelector(".day-grid")).not.toBeNull();
+  });
+
+  it("sits below the board in P mode, and opens from the workload in the header", async () => {
+    mode = "p";
+    await renderApp(root, client);
+    expect(after(root.querySelector("#board-area")!, root.querySelector("#day-panel")!)).toBe(true);
+    click('[data-page="routines"]');
+    expect(root.querySelector("#day-panel")).toBeNull();
+    click("[data-load-chip]");
+    await flush();
+    expect(root.querySelector('[data-page="today"]')?.getAttribute("aria-current")).toBe("page");
+    expect(root.querySelector("#day-panel .dp-number strong")?.textContent).toBe("3");
+  });
+
+  it("keeps working without its numbers", async () => {
+    send.mockImplementation(async (command: string) => {
+      if (command === "status_snapshot") return structuredClone(snapshot);
+      if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
+      if (command === "daily_overview") throw new Error("Unavailable");
+      return {};
+    });
+    await renderApp(root, client);
+    expect(root.querySelector("#day-panel .dp-hero.loading-shimmer")).not.toBeNull();
+    expect(root.querySelector("#day-panel .gauge-read strong")?.textContent).toBe("1.6");
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("");
   });
 });
 

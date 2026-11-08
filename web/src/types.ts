@@ -15,6 +15,9 @@ export type ScheduleEvent = {
   syncable: boolean;
 };
 
+/** One step of a task. While a task has subtasks, its progress is the share of them done. */
+export type Subtask = {text: string; done: boolean};
+
 export type TaskItem = {
   description: string;
   priority: number;
@@ -27,10 +30,11 @@ export type TaskItem = {
   due?: string | null;
   /** How far along the task is, 0–100. */
   progress?: number;
+  subtasks?: Subtask[];
 };
 
 /** A timed task completed today that was due by tonight; it counts as finished work in today's progress. */
-export type TimedDone = {description: string; type: string | null; due: string; endedAt: string};
+export type TimedDone = {description: string; priority?: number; type: string | null; due: string; endedAt: string};
 
 export type DeadlineItem = {
   event: string;
@@ -136,6 +140,30 @@ export type WeeklyOverview = {
   previousDays: WeekDay[];
   habits: {id: string; description: string; days: (boolean | null)[]; rate: number | null; previousRate: number | null}[];
   streak: number;
+  highlights: {description: string; priority: number; type: string; endedAt: string}[];
+};
+
+/** One day's statistics for the daily overview: what was finished, when (per hour, by type), and how that
+ *  compares with yesterday and the usual day. Comparisons are null before there is history for them. */
+export type DailyOverview = {
+  date: string;
+  today: string;
+  isToday: boolean;
+  firstActivity: string | null;
+  taskTypes: Record<string, string>;
+  completed: number;
+  cancelled: number;
+  dropped: number;
+  added: number;
+  byType: Record<string, number>;
+  hours: Record<string, number>[];
+  yesterday: number | null;
+  usual: number | null;
+  usualDays: number;
+  habitsDone: number;
+  habitsTotal: number;
+  streak: number;
+  medianLeadHours: number | null;
   highlights: {description: string; priority: number; type: string; endedAt: string}[];
 };
 

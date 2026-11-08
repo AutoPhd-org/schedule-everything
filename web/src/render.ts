@@ -1,18 +1,22 @@
 // Browser workspace shell: application state, page layouts, and event binding.
 // J mode shows the full structured overview; P mode keeps only the tasks-by-type board. In both, timers for
-// today's timed tasks and for deadlines in their last 24 hours run above the board.
+// today's timed tasks and for deadlines in their last 24 hours run above the board, and the daily overview
+// sums up the day. The theme follows the workload (workload.ts) unless that is turned off in Settings.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
-import { foldSwitch, groupTasks, masonry, taskBoard, typeShelf, type BoardView, type Composer } from "./board";
+import { boardGroups, boardOrder, foldSwitch, groupTasks, layoutSwitch, masonry, spreadOut, taskBoard, typeShelf, type BoardView, type Composer, type SubtaskComposer } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
+import { dayPanel } from "./daily";
 import { bindTilt, burst, reducedMotion } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
+import { loadPrefs, savePrefs, type BoardLayout, type Prefs } from "./prefs";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
-import { clockText, pruneClosed, timerStrip } from "./timers";
+import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { BridgeClient, ConferencePayload, DeadlineItem, HistoryItem, Snapshot, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
+import { describeLoad, LOAD_LEVELS, levelInfo, WORKLOAD_DEFINITION, workload } from "./workload";
 
 export { escapeHtml, groupTasks };
 
@@ -23,17 +27,20 @@ type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: Hi
 /** The task board: expanded or folded, groups toggled away from that view, the inline new-task form, the task
  *  to greet after it was added, and whether to put the cursor back in the form after the next draw. Types are
  *  managed here too: the open type menu, the type being renamed or deleted, the new-type form, and the group
- *  to greet after its type was added or renamed. */
+ *  to greet after its type was added or renamed. `order` holds the groups in the places they keep while the
+ *  page stays open (null places them afresh at the next draw, and `fresh` lays them out anew), and
+ *  `subtaskComposer` is the open new-subtask field. */
 type BoardState = {
   view: BoardView; flipped: Set<string>; composer: Composer | null; added: string | null; focus: boolean;
   menu: string | null; renaming: string | null; deleting: {id: string; moveTo: string} | null; newType: {draft: string} | null; greet: string | null;
+  order: string[] | null; fresh: boolean; subtaskComposer: SubtaskComposer | null;
 };
 type AgentTab = "claude" | "codex" | "antigravity";
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
 /** Deadline timers the user closed, by deadline name and date (see timerKey). */
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>};
+type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -88,6 +95,9 @@ const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string
 const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings"];
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
+const isDaily = (value: unknown): value is DailyOverview => !!value && Array.isArray((value as DailyOverview).hours) && typeof (value as DailyOverview).date === "string";
+/** Workload level ranges as the Settings page lists them. */
+const LEVEL_RANGES = ["0", "under 2.5", "2.5 – 5.5", "5.5 – 9", "9 and up"];
 const undoKey = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘Z" : "Ctrl+Z";
 
 /** Run a DOM update as a view transition, so boxes that change size or place morph instead of jumping.
@@ -125,13 +135,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
-    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null},
-    closedTimers: loadClosedTimers()
+    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null, order: null, fresh: true, subtaskComposer: null},
+    closedTimers: loadClosedTimers(),
+    prefs: loadPrefs(),
+    daily: null
   };
   bindTooltips(signal);
   let drawn: {page: Page; mode: Mode} | null = null;
-  /** Progress set on this page that the server has not confirmed yet, by task. */
+  /** Progress and subtasks set on this page that the server has not confirmed yet, by task. */
   const progressPending = new Map<string, number>();
+  const subtasksPending = new Map<string, Subtask[]>();
   root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>Opening your workspace…</p></div>`;
   const request = async <T>(command: string, payload: Record<string, unknown> = {}): Promise<T> => client.send<T>(command, payload);
   const modeOf = (): Mode => state.workspace?.mode === "p" ? "p" : "j";
@@ -140,17 +153,32 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
    *  `then` runs right after the redraw. */
   async function reload(options: {morph?: boolean; then?: () => void} = {}) {
     state.snapshot = await request<Snapshot>("status_snapshot");
-    // Progress that is still on its way to the server wins over what the server had a moment ago.
+    // Progress and subtasks still on their way to the server win over what the server had a moment ago.
     for (const [description, progress] of progressPending) {
       const task = state.snapshot.tasks.find(item => item.description === description);
       if (task) task.progress = progress;
     }
-    state.workspace = await request<Workspace>("workspace_info");
+    for (const [description, steps] of subtasksPending) {
+      const task = state.snapshot.tasks.find(item => item.description === description);
+      if (task) { task.subtasks = steps.map(step => ({...step})); task.progress = progressOf(task); }
+    }
+    [state.workspace] = await Promise.all([request<Workspace>("workspace_info"), state.page === "today" ? loadDaily() : null]);
     setTypeColors(state.snapshot.taskTypeColors);
     if (!drawn) state.calendar.year = Number(state.snapshot.today.date.slice(0, 4)) || state.calendar.year;
     if (state.page === "activity") await loadActivity();
     const update = () => { draw(); options.then?.(); };
     if (options.morph) morph(update); else update();
+  }
+  /** Today's numbers for the daily overview; when they cannot be loaded, the last ones stay. */
+  async function loadDaily() {
+    try {
+      const overview = await request<DailyOverview>("daily_overview", {});
+      if (isDaily(overview)) state.daily = overview;
+    } catch { /* The panel keeps what it had. */ }
+  }
+  async function refreshDaily() {
+    await loadDaily();
+    if (state.page === "today" && root.isConnected) redrawDaily();
   }
   async function loadActivity() {
     const [history, summary] = await Promise.all([
@@ -220,12 +248,27 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function navigate(page: Page) {
     state.page = page;
-    Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null});
+    Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null, subtaskComposer: null});
+    // Opening a page, even the one already open, places the task board afresh.
+    freshBoard();
     state.calendar.day = null;
     if (page === "activity") state.activity.view = "gallery";
     draw();
     scrollTop();
     if (page === "activity") void refreshActivity();
+    if (page === "today") void refreshDaily();
+  }
+  /** Forget where the board's groups were, so the next draw orders and places them anew. Only opening a page,
+   *  switching mode or layout, and Refresh do this: changes made on the board leave every group in its place. */
+  function freshBoard() {
+    state.board.order = null;
+    state.board.fresh = true;
+  }
+  /** Take the board's order when the page opens, and add groups that got their first task since at the end. */
+  function syncBoardOrder(s: Snapshot) {
+    if (!state.board.order) { state.board.order = boardOrder(s, state.prefs.layout); return; }
+    const listed = new Set(state.board.order);
+    for (const group of boardGroups(s, state.board.order)) if (!listed.has(group.id)) state.board.order.push(group.id);
   }
 
   function draw(animate = false) {
@@ -233,23 +276,82 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const mode = modeOf();
     hidePeek();
     document.documentElement.dataset.mode = mode;
-    animate ||= !drawn || drawn.page !== state.page || drawn.mode !== mode;
+    const samePage = !!drawn && drawn.page === state.page && drawn.mode === mode;
+    animate ||= !samePage;
+    if (!samePage) freshBoard();
     drawn = {page: state.page, mode};
+    syncBoardOrder(s);
+    applyLoad(s);
+    // Redrawing the same page keeps it where it was scrolled, even if the board is briefly shorter meanwhile.
+    const scroller = document.scrollingElement;
+    const scrolled = samePage && scroller ? scroller.scrollTop : null;
     const title = PAGES.find(([id]) => id === state.page)![1];
     const page = state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : settings(s);
     root.innerHTML = `<div class="workspace mode-${mode}"><aside class="sidebar"><a class="brand" href="#" aria-label="Schedule Everything overview"><span class="brand-mark">${icons.sprout}</span><span>schedule<span class="brand-sub">everything</span></span></a><div class="workspace-label">YOUR WORKSPACE</div>
       <nav aria-label="Main navigation">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(label)}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? "P mode" : "J mode"}</strong><span>${mode === "p" ? "Flexible, task-first" : "Structured day"}</span></div></div><span class="local-dot"></span> Saved on your computer<p>One day, one thing at a time.</p></div></aside>
-      <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
+      <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}${loadChip(s)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
       <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="Undo (${undoKey()})">${icons.undo}<span>Undo</span></button><button type="button" class="notice-close" data-notice-close aria-label="Dismiss notification" title="Dismiss (Esc)">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
+    state.board.fresh = false;
+    if (scrolled !== null && scroller && Math.abs(scroller.scrollTop - scrolled) > 1) scroller.scrollTop = scrolled;
     status();
     state.board.added = null;
     state.board.greet = null;
     if (state.board.focus) {
       state.board.focus = false;
-      root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus();
+      root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')?.focus({preventScroll: true});
     }
+  }
+
+  // ----- Workload and the daily overview ------------------------------------------
+
+  /** The theme follows the workload, unless that is turned off in Settings. */
+  function applyLoad(s: Snapshot) {
+    const html = document.documentElement;
+    if (state.prefs.workloadTheme) html.dataset.load = workload(s.tasks, s.today.date).level;
+    else delete html.dataset.load;
+  }
+  /** The workload in the header, on every page; it opens the daily overview. */
+  function loadChip(s: Snapshot) {
+    const load = workload(s.tasks, s.today.date);
+    const info = levelInfo(load.level);
+    return `<button type="button" class="load-chip load-${load.level}" data-load-chip data-tip="${e(`${describeLoad(load)} ${WORKLOAD_DEFINITION}`)}" aria-label="${e(`${describeLoad(load)} Open the daily overview.`)}">${info.icon}<span class="load-name">${e(info.label)}</span><b>${load.points.toFixed(1)}</b></button>`;
+  }
+  function bindLoadChip() {
+    const chip = root.querySelector<HTMLButtonElement>("[data-load-chip]");
+    if (!chip) return;
+    chip.onclick = () => {
+      if (state.page !== "today") navigate("today");
+      if (state.prefs.dayFolded) { state.prefs.dayFolded = false; savePrefs(state.prefs); redrawDaily(); }
+      root.querySelector<HTMLElement>("#day-panel")?.scrollIntoView?.({behavior: reducedMotion() ? "auto" : "smooth", block: "start"});
+    };
+  }
+  /** After open work changes on this page: the theme and the header follow. */
+  function updateLoad(s: Snapshot) {
+    applyLoad(s);
+    const chip = root.querySelector("[data-load-chip]");
+    if (!chip) return;
+    chip.outerHTML = loadChip(s);
+    bindLoadChip();
+  }
+  const dayOptions = (s: Snapshot) => ({overview: state.daily, snapshot: s, now: Date.now(), weighted: state.prefs.weighted, folded: state.prefs.dayFolded});
+  function redrawDaily() {
+    const panel = root.querySelector("#day-panel");
+    const s = state.snapshot;
+    if (!panel || !s) return;
+    panel.outerHTML = dayPanel(dayOptions(s));
+    bindDaily();
+  }
+  function bindDaily() {
+    const fold = root.querySelector<HTMLButtonElement>("[data-day-fold]");
+    if (fold) fold.onclick = () => {
+      state.prefs.dayFolded = !state.prefs.dayFolded;
+      savePrefs(state.prefs);
+      redrawDaily();
+      root.querySelector<HTMLElement>("[data-day-fold]")?.focus({preventScroll: true});
+    };
+    root.querySelectorAll<HTMLButtonElement>("#day-panel [data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
   }
 
   function bindShell(s: Snapshot) {
@@ -280,6 +382,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const timers = root.querySelector<HTMLElement>("#timer-strip");
     if (timers) bindTimers(timers, s);
     root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
+    root.querySelectorAll<HTMLButtonElement>("[data-board-layout]").forEach(btn => btn.onclick = () => setBoardLayout(btn.dataset.boardLayout as BoardLayout));
+    root.querySelectorAll<HTMLInputElement>("[data-pref]").forEach(box => box.onchange = () => setPref(box.dataset.pref as "workloadTheme" | "weighted", box.checked, s));
+    bindLoadChip();
+    bindDaily();
     root.querySelectorAll<HTMLButtonElement>("[data-deadline]").forEach(btn => btn.onclick = () => {
       const deadline = s.deadlines[Number(btn.dataset.deadline)];
       if (btn.dataset.operation === "edit") deadlineDialog(deadline);
@@ -305,7 +411,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
 
   async function runAction(id: string) {
-    if (id === "refresh") await reload();
+    if (id === "refresh") { freshBoard(); await reload(); }
     if (id === "add-task") taskDialog();
     if (id === "add-deadline") deadlineDialog();
     if (id === "sync-clear") { if (!window.confirm("Clear today’s plan? Your weekly routine stays the same.")) return; await request("sync_clear"); await reload(); state.notice = "Today’s plan was cleared."; }
@@ -342,6 +448,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (btn.dataset.operation === "timer") { taskDialog(task, {timed: true}); return; }
       if (btn.dataset.operation === "untime") {
         void action(async () => {
+          await flushTask(task.description);
           await request("task_update", {originalDescription: task.description, description: task.description, priority: task.priority, type: task.type, due: ""});
           await reload();
           state.notice = `“${task.description}” is a normal task again.`;
@@ -354,7 +461,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         const card = btn.closest(".task-card");
         if (kind === "deleted") { burst(btn); card?.classList.add("completing"); }
         let result: {undo?: Record<string, unknown>} | undefined;
-        try { result = await request<{undo?: Record<string, unknown>}>("task_delete", {description: task.description, action: kind}); }
+        try {
+          await flushTask(task.description);
+          result = await request<{undo?: Record<string, unknown>}>("task_delete", {description: task.description, action: kind});
+        }
         catch (error) { card?.classList.remove("completing"); throw error; }
         await reload();
         const notice = kind === "deleted" ? `Completed “${task.description}”. Nice work.` : `Removed “${task.description}”.`;
@@ -371,10 +481,37 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     await reload();
     state.notice = `“${description}” is back on your list.`;
   }
-  // ----- Progress and timers ----------------------------------------------------
+  // ----- Progress, subtasks, and timers ---------------------------------------
 
-  /** Progress saves wait for the slider to settle, so a run of key presses writes once. */
-  const progressSaves = new Map<string, number>();
+  /** Saves of progress and subtasks wait a moment for clicks and key presses to settle, then go out one after
+   *  another, so a later one never lands before an earlier one. */
+  const waiting = new Map<string, {timer: number; run: () => void}>();
+  let saving: Promise<unknown> = Promise.resolve();
+  function queue<T>(work: () => Promise<T>): Promise<T> {
+    const next = saving.then(work, work);
+    saving = next.catch(() => {});
+    return next;
+  }
+  function later(key: string, run: () => void) {
+    window.clearTimeout(waiting.get(key)?.timer);
+    waiting.set(key, {timer: window.setTimeout(() => { waiting.delete(key); run(); }, 250), run});
+  }
+  /** Send what is still waiting for a task, and wait until it is saved, before the task itself changes. */
+  async function flushTask(description: string) {
+    for (const key of [`progress\n${description}`, `subtasks\n${description}`]) {
+      const entry = waiting.get(key);
+      if (!entry) continue;
+      window.clearTimeout(entry.timer);
+      waiting.delete(key);
+      entry.run();
+    }
+    await saving;
+  }
+  const failed = (error: unknown) => {
+    state.notice = error instanceof Error ? error.message : String(error);
+    status();
+    void reload().catch(() => {});
+  };
   /** Show a progress value on every copy of a task's slider, on its card and in its timer. */
   function showProgress(index: number, value: number) {
     root.querySelectorAll<HTMLInputElement>(`input[data-progress="${index}"]`).forEach(input => {
@@ -396,31 +533,121 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       input.addEventListener("change", () => setProgress(s, index, Number(input.value), input));
     });
   }
-  /** Save a task's progress, then redraw what sums it up (today's bar, a folded group), keeping the slider in hand. */
-  function setProgress(s: Snapshot, index: number, value: number, input: HTMLInputElement) {
-    const task = s.tasks[index];
-    if (!task || (task.progress ?? 0) === value) return;
-    task.progress = value;
-    const inTimers = !!input.closest("#timer-strip");
-    const focused = document.activeElement === input;
+  /** After a task's progress changes on this page: redraw what sums it up (the timers and today's bar, the
+   *  board's groups, the workload and its theme, the daily overview), then put keyboard focus back. */
+  function refreshProgress(s: Snapshot, focus?: string) {
     redrawTimers(s);
     redrawBoard(s);
-    if (focused) root.querySelector<HTMLInputElement>(`${inTimers ? "#timer-strip" : "#board-area"} input[data-progress="${index}"]`)?.focus({preventScroll: true});
+    updateLoad(s);
+    redrawDaily();
+    if (focus) root.querySelector<HTMLElement>(focus)?.focus({preventScroll: true});
+  }
+  /** Save a task's progress, keeping the slider in hand. */
+  function setProgress(s: Snapshot, index: number, value: number, input: HTMLInputElement) {
+    const task = s.tasks[index];
+    if (!task || task.subtasks?.length || (task.progress ?? 0) === value) return;
+    task.progress = value;
+    const where = input.closest("#timer-strip") ? "#timer-strip" : "#board-area";
+    refreshProgress(s, document.activeElement === input ? `${where} input[data-progress="${index}"]` : undefined);
     const {description} = task;
     progressPending.set(description, value);
-    window.clearTimeout(progressSaves.get(description));
-    progressSaves.set(description, window.setTimeout(() => {
-      progressSaves.delete(description);
+    later(`progress\n${description}`, () => {
       const settle = () => { if (progressPending.get(description) === value) progressPending.delete(description); };
-      request("task_progress", {description, progress: value}).then(settle, (error: unknown) => {
-        settle();
-        state.notice = error instanceof Error ? error.message : String(error);
-        status();
-        void reload().catch(() => {});
-      });
-    }, 250));
+      queue(() => request("task_progress", {description, progress: value})).then(settle, (error: unknown) => { settle(); failed(error); });
+    });
   }
-  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers});
+  /** Change a task's subtasks here at once (its progress follows), and save them a moment later. */
+  function changeSubtasks(s: Snapshot, index: number, change: (steps: Subtask[]) => Subtask[], focus?: string) {
+    const task = s.tasks[index];
+    if (!task) return;
+    const before = progressOf(task);
+    task.subtasks = change((task.subtasks ?? []).map(step => ({...step})));
+    task.progress = progressOf(task);
+    refreshProgress(s, focus);
+    if (before < 100 && task.subtasks.length && task.progress === 100) {
+      const card = [...root.querySelectorAll<HTMLElement>(`#board-area .task-card`)].find(el => el.querySelector(`[data-task="${index}"]`));
+      if (card) burst(card.querySelector(".complete-button") ?? card, 26);
+    }
+    const {description} = task;
+    const steps = task.subtasks.map(step => ({...step}));
+    subtasksPending.set(description, steps);
+    later(`subtasks\n${description}`, () => {
+      const settle = () => { if (subtasksPending.get(description) === steps) subtasksPending.delete(description); };
+      queue(() => request("task_subtasks", {description, subtasks: steps})).then(settle, (error: unknown) => { settle(); failed(error); });
+    });
+  }
+  /** Checking subtasks off (on a card or a timer), removing them (Undo brings one back), and adding them. */
+  function bindSubtasks(scope: ParentNode, s: Snapshot) {
+    scope.querySelectorAll<HTMLInputElement>("input[data-subtask]").forEach(box => box.onchange = () => {
+      const index = Number(box.dataset.subtask);
+      const step = Number(box.dataset.step);
+      const done = box.checked;
+      const inTimers = !!box.closest("#timer-strip");
+      if (done) burst(box.closest(".subtask, .timer-next") ?? box, 10);
+      // In a timer the next subtask takes the checked one's place, so focus moves on to it.
+      changeSubtasks(s, index, steps => steps.map((item, i) => i === step ? {...item, done} : item),
+        inTimers ? `#timer-strip input[data-subtask="${index}"]` : `#board-area input[data-subtask="${index}"][data-step="${step}"]`);
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-subtask-remove]").forEach(btn => btn.onclick = () => {
+      const index = Number(btn.dataset.subtaskRemove);
+      const step = Number(btn.dataset.step);
+      const task = s.tasks[index];
+      const removed = task?.subtasks?.[step];
+      if (!task || !removed) return;
+      const left = task.subtasks!.length - 1;
+      changeSubtasks(s, index, steps => steps.filter((_, i) => i !== step),
+        left ? `#board-area [data-subtask-remove="${index}"][data-step="${Math.min(step, left - 1)}"]` : `#board-area [data-subtask-open="${index}"]`);
+      offerUndo(`Removed the subtask “${removed.text}”.`, async () => {
+        const current = state.snapshot!;
+        const at = current.tasks.findIndex(item => item.description === task.description);
+        if (at < 0) throw new Error(`“${task.description}” is no longer on your list.`);
+        changeSubtasks(current, at, steps => [...steps.slice(0, step), removed, ...steps.slice(step)]);
+        state.notice = `“${removed.text}” is back.`;
+      });
+      status();
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-subtask-open]").forEach(btn => btn.onclick = () => {
+      const task = s.tasks[Number(btn.dataset.subtaskOpen)];
+      if (!task) return;
+      const previous = state.board.subtaskComposer;
+      state.board.subtaskComposer = {task: task.description, draft: previous?.task === task.description ? previous.draft : ""};
+      redrawBoard(s);
+      root.querySelector<HTMLInputElement>('#board-area form.subtask-form [name="subtaskText"]')?.focus();
+    });
+    scope.querySelectorAll<HTMLFormElement>("form.subtask-form").forEach(form => bindSubtaskForm(form, s));
+  }
+  function bindSubtaskForm(form: HTMLFormElement, s: Snapshot) {
+    const index = Number(form.dataset.subtaskForm);
+    const task = s.tasks[index];
+    const input = form.querySelector<HTMLInputElement>('[name="subtaskText"]')!;
+    if (!task) return;
+    const mine = () => state.board.subtaskComposer?.task === task.description ? state.board.subtaskComposer : null;
+    const close = () => {
+      state.board.subtaskComposer = null;
+      redrawBoard(s);
+      root.querySelector<HTMLElement>(`#board-area [data-subtask-open="${index}"]`)?.focus({preventScroll: true});
+    };
+    input.addEventListener("input", () => { const writing = mine(); if (writing) writing.draft = input.value; });
+    form.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); close(); } });
+    form.querySelector<HTMLButtonElement>("[data-subtask-close]")!.onclick = close;
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text || (task.subtasks?.length ?? 0) >= 50) {
+        if (text) { state.notice = "A task can have at most 50 subtasks."; status(); }
+        form.classList.remove("shake");
+        void form.offsetWidth;
+        form.classList.add("shake");
+        input.focus();
+        return;
+      }
+      const writing = mine();
+      if (writing) writing.draft = "";
+      // The field stays open for the next one.
+      changeSubtasks(s, index, steps => [...steps, {text, done: false}], '#board-area form.subtask-form [name="subtaskText"]');
+    });
+  }
+  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted});
   const timerArea = (s: Snapshot) => `<div id="timer-strip" class="timer-strip">${timerStrip(timerOptions(s))}</div>`;
   /** Redraw only the timers, keeping the row where it was scrolled. */
   function redrawTimers(s: Snapshot) {
@@ -434,6 +661,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function bindTimers(scope: HTMLElement, s: Snapshot) {
     bindProgress(scope, s);
+    bindSubtasks(scope, s);
+    bindTasks(scope, s);
     scope.querySelectorAll<HTMLButtonElement>("[data-timer-close]").forEach(btn => btn.onclick = () => {
       const key = btn.dataset.timerClose!;
       const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? "this deadline";
@@ -459,8 +688,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       window.setTimeout(finish, 360);
     });
   }
-  /** Advance every running clock once a second. A deadline that ends, a task that turns overdue, or a new day
-   *  redraws the timers, since what they show changes. */
+  /** Advance every running clock and dial once a second. A deadline that ends, a task that turns overdue, a
+   *  timer whose urgency changes, or a new day redraws the timers, since what they show changes. */
   let tickDay = "";
   function tick() {
     const s = state.snapshot;
@@ -471,11 +700,14 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     tickDay = day;
     root.querySelectorAll<HTMLElement>("[data-at]").forEach(item => {
       const at = Number(item.dataset.at);
-      if (item.dataset.kind === "deadline" && at <= now) changed = true;
-      if (item.dataset.kind === "task" && at <= now && !item.classList.contains("is-overdue")) {
+      const kind = item.dataset.kind === "deadline" ? "deadline" : "task";
+      if (kind === "deadline" && at <= now) changed = true;
+      if (kind === "task" && at <= now && !item.classList.contains("is-overdue")) {
         item.classList.add("is-overdue");
         if (item.closest("#timer-strip")) changed = true;
       }
+      if (item.dataset.urgency && item.dataset.urgency !== urgency(kind, at, now, item.hasAttribute("data-ready"))) changed = true;
+      item.querySelector("[data-dial]")?.setAttribute("stroke-dasharray", dialDash(runway(kind, at, now)));
       item.querySelectorAll<HTMLElement>("[data-clock]").forEach(el => {
         const text = clockText(el.dataset.clock, at, now);
         if (el.textContent !== text) el.textContent = text;
@@ -490,12 +722,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   const boardOptions = (s: Snapshot, opening: string | null = null) => {
     const board = state.board;
-    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet, now: Date.now()};
+    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet, now: Date.now(), order: board.order, layout: state.prefs.layout, subtaskComposer: board.subtaskComposer};
   };
+  const spread = () => state.prefs.layout === "spread";
   /** The board, and below it the shelf of types without tasks, in one area that redraws and binds together. */
-  const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area"><section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
-  /** Every group folded: the summaries line up in plain rows instead of the masonry. */
-  const uniformBoard = () => state.board.view === "folded" && !state.board.flipped.size && !state.search;
+  const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area">${spread() ? `<p class="spread-legend">${icons.orbit}<span>Spread by workload: the heaviest group sits in the middle, and the lighter a group, the farther out it sits.</span></p>` : ""}<section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${spread() ? "spread-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
+  /** Every group folded: the summaries line up in plain rows instead of the masonry (compact layout only). */
+  const uniformBoard = () => !spread() && state.board.view === "folded" && !state.board.flipped.size && !state.search;
   /** Redraw only the board, leaving the page around it as it is. `reveal` animates the contents of every
    *  group, or of one group by ID, as they appear after folding or expanding. */
   function redrawBoard(s: Snapshot, options: {opening?: string; reveal?: true | string; fresh?: boolean} = {}) {
@@ -503,6 +736,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const board = area?.querySelector<HTMLElement>("#task-board");
     const shelf = area?.querySelector<HTMLElement>("#task-shelf");
     if (!area || !board || !shelf) return;
+    syncBoardOrder(s);
     root.querySelector(".content")?.classList.remove("enter");
     board.classList.toggle("is-uniform", uniformBoard());
     board.innerHTML = taskBoard(boardOptions(s, options.opening ?? null));
@@ -513,9 +747,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   /** Bind the board area: the board's groups and the shelf's types. */
   function bindBoard(scope: HTMLElement, s: Snapshot, fresh = false) {
     const board = scope.querySelector<HTMLElement>("#task-board");
-    if (board) masonry(board, fresh);
+    if (board) (spread() ? spreadOut : masonry)(board, fresh || state.board.fresh);
     bindTasks(scope, s);
     bindProgress(scope, s);
+    bindSubtasks(scope, s);
     scope.querySelectorAll<HTMLButtonElement>("[data-group-toggle]").forEach(btn => btn.onclick = () => {
       const id = btn.dataset.groupToggle!;
       if (!state.board.flipped.delete(id)) state.board.flipped.add(id);
@@ -691,6 +926,26 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       redrawBoard(s, {reveal: true, fresh: true});
     });
   }
+  /** Compact or spread: the groups glide to their new places. */
+  function setBoardLayout(layout: BoardLayout) {
+    if (layout === state.prefs.layout) return;
+    state.prefs.layout = layout;
+    savePrefs(state.prefs);
+    freshBoard();
+    morph(() => {
+      draw();
+      root.querySelector<HTMLElement>(`[data-board-layout="${layout}"]`)?.focus({preventScroll: true});
+    });
+  }
+  function setPref(key: "workloadTheme" | "weighted", on: boolean, s: Snapshot) {
+    state.prefs[key] = on;
+    savePrefs(state.prefs);
+    if (key === "workloadTheme") applyLoad(s);
+    state.notice = key === "workloadTheme"
+      ? (on ? "The theme follows your workload again." : "The theme stays the same whatever your workload.")
+      : (on ? "Today’s progress now weighs each task by its importance." : "Today’s progress now counts every task the same.");
+    status();
+  }
   function closeComposer(s: Snapshot) {
     const type = state.board.composer?.type;
     const slot = root.querySelector<HTMLElement>("form.composer")?.closest<HTMLElement>(".compose-slot");
@@ -785,16 +1040,17 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       <section class="status-grid" aria-label="Today at a glance">${metrics.map((m, i) => `<article class="status-card status-${m.tone}" data-metric="${m.id}" style="--i:${i}${m.id === "habits" ? `; --p:${s.habits.length ? complete / s.habits.length : 0}` : ""}"><span class="orb" aria-hidden="true"></span><div class="status-label">${m.image}<span>${m.label}</span></div><strong class="status-value">${m.value}</strong><p>${m.detail}</p></article>`).join("")}</section>
       <section class="overview-grid"><article class="focus-card"><div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div><div class="focus-top"><span class="focus-label"><span class="live-dot"></span> RIGHT NOW</span><span class="pill">${s.schedule.hasSyncedOverlay ? "Your plan" : "Weekly routine"}</span></div><h2>${e(s.schedule.current ?? (s.schedule.isSkipped ? "Schedule paused today" : "No active block"))}</h2><div class="next-block"><span>${icons.clock} UP NEXT</span><strong>${e(s.schedule.next ?? "No upcoming blocks")}</strong>${s.schedule.timeToNext ? `<span class="next-time">In ${e(s.schedule.timeToNext)}</span>` : ""}</div><button class="focus-link" type="button" data-page="schedule">View today’s schedule ${icons.arrow}</button><svg class="focus-wave" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 34 C 70 4, 130 60, 210 30 S 340 6, 400 28 L400 60 L0 60Z"/></svg></article>
       <article class="card deadline-radar"><div class="section-heading compact"><h2>Next deadlines <span class="count">${s.deadlines.length}</span></h2>${button("add-deadline", "Add", icons.plus, "text-button")}</div>${deadlineList(s, 3)}<button class="text-button view-all" type="button" data-page="routines">Open the year calendar ${icons.arrow}</button></article></section>
+      ${dayPanel(dayOptions(s))}
       ${taskSection(s)}
       <article class="card timeline-card"><div class="section-heading compact"><h3>${icons.schedule} Today’s timeline</h3><button class="text-button" type="button" data-page="schedule">Full schedule ${icons.arrow}</button></div>${timeline(s)}</article>`;
   }
   const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
-    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
-      ${timerArea(s)}${boardArea(s, true)}`;
+    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
+      ${timerArea(s)}${boardArea(s, true)}${dayPanel(dayOptions(s))}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">Groups with more important work come first. Inside a group, tasks keep their order by status and importance.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
+    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">${spread() ? "Groups sit by workload: the heaviest in the middle, lighter ones farther out." : "Groups with more important work come first."} They keep their places while you work here, and are arranged anew when you come back.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -837,9 +1093,23 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.";
     return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
   }
+  /** Display choices for this browser: the board's layout, the workload theme (with what workload means and its
+   *  levels), and how today's progress counts tasks. */
+  function displayCard(s: Snapshot) {
+    const load = workload(s.tasks, s.today.date);
+    const {prefs} = state;
+    const toggle = (key: "workloadTheme" | "weighted", title: string, detail: string) => `<label class="setting-toggle"><input type="checkbox" data-pref="${key}" ${prefs[key] ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="setting-copy"><strong>${title}</strong><small>${detail}</small></span></label>`;
+    return `<article class="card display-card"><h2>${icons.palette} Board, workload & progress</h2><p class="muted">Saved in this browser.</p>
+      <div class="setting-block"><div class="setting-copy"><strong>Task board layout</strong><small>Compact packs the groups in rows, those with more important work first. Spread places them by workload: the heaviest in the middle, lighter ones farther out.</small></div>${layoutSwitch(prefs.layout)}</div>
+      ${toggle("workloadTheme", "Theme follows your workload", "Colors and the background shift from cool and calm to warm as open work piles up.")}
+      <div class="load-scale" role="list" aria-label="Workload levels">${LOAD_LEVELS.map((level, i) => `<span role="listitem" class="load-step load-${level.id} ${level.id === load.level ? "is-now" : ""}">${level.icon}<b>${e(level.label)}</b><small>${LEVEL_RANGES[i]}</small></span>`).join("")}</div>
+      <p class="muted">${e(WORKLOAD_DEFINITION)} Right now it is <b>${load.points.toFixed(1)}</b>: ${e(levelInfo(load.level).label.toLowerCase())}.</p>
+      ${toggle("weighted", "Weigh today’s progress by importance", "An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same.")}
+    </article>`;
+  }
   function settings(s: Snapshot) {
     const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
-    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><div><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -1147,6 +1417,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">Timer</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}Timed task</strong><small>Set when it should be finished. Due by tonight, it gets a timer above the board.</small></span></label><label class="timed-due">Finish by<input type="datetime-local" name="due" value="${e(task?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
     dialog(task ? "Edit task" : "A new thing to work on", `${field("description", "Task", "text", task?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(task?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, task?.type)}</select></label>${timer}`, async data => {
       const due = data.get("timed") ? String(data.get("due") ?? "") : "";
+      if (task) await flushTask(task.description);
       await request(task ? "task_update" : "task_add", {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due, originalDescription: task?.description});
       await reload();
       if (due && due !== task?.due) { state.notice = `“${data.get("description")}” is timed: finish by ${formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}.`; status(); }
@@ -1182,7 +1453,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = "Your existing workspace is ready."; status(); }, {signal});
   root.addEventListener("pointerdown", event => {
     if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();

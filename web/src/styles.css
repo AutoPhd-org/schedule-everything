@@ -6,6 +6,8 @@
 @property --blob-2 { syntax: "<color>"; inherits: true; initial-value: #ff8fb1; }
 @property --blob-3 { syntax: "<color>"; inherits: true; initial-value: #5fd4b0; }
 @property --blob-4 { syntax: "<color>"; inherits: true; initial-value: #ffd166; }
+@property --bg { syntax: "<color>"; inherits: true; initial-value: #f6f3ff; }
+@property --blob-opacity { syntax: "<number>"; inherits: true; initial-value: .55; }
 
 :root {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -41,7 +43,7 @@
   --c: var(--accent);
   --blob-1: #8f7bff; --blob-2: #ff8fb1; --blob-3: #5fd4b0; --blob-4: #ffd166;
   --blob-opacity: .55;
-  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease);
+  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease);
   color: var(--text);
   background: var(--bg);
 }
@@ -85,6 +87,25 @@
   --accent-ink: #ffb0c8;
   --blob-1: #9a3d1c; --blob-2: #a32a62; --blob-3: #8a6a12; --blob-4: #5b3fb0;
 }
+/* Workload themes (workload.ts): the page tint, the backdrop, glass surfaces, and the dot grid follow how much
+   open work there is, from cool and airy when the plate is clear to warm and dense when it is heavy. Steady keeps
+   each mode's own backdrop. Accents stay with the planning mode. --load-c is the level's color for highlights. */
+:root[data-load] { --glass: color-mix(in oklab, var(--load-c) 5%, rgba(255, 255, 255, .72)); }
+:root[data-load][data-theme="dark"] { --glass: color-mix(in oklab, var(--load-c) 9%, rgba(26, 21, 46, .74)); }
+:root[data-load="clear"] { --load-c: #16a374; --bg: #effaf5; --blob-1: #7fe3c4; --blob-2: #9fd3ff; --blob-3: #c6f09b; --blob-4: #ffe08f; --blob-opacity: .5; --dots: 34px; }
+:root[data-load="light"] { --load-c: #2a7fd6; --bg: #f2f7ff; --blob-1: #8fbcff; --blob-2: #7fe0c8; --blob-3: #b6a6ff; --blob-4: #ffe1a8; --blob-opacity: .52; --dots: 30px; }
+:root[data-load="steady"] { --load-c: #6250d6; }
+:root[data-load="busy"] { --load-c: #d9670d; --bg: #fff5ea; --blob-1: #ffb26b; --blob-2: #ff8fa6; --blob-3: #ffd166; --blob-4: #c79cff; --blob-opacity: .6; --dots: 22px; }
+:root[data-load="heavy"] { --load-c: #d33245; --bg: #fff0ee; --blob-1: #ff6b6b; --blob-2: #ff9b5c; --blob-3: #ec5f9e; --blob-4: #ffb54d; --blob-opacity: .64; --dots: 18px; }
+:root[data-load="clear"][data-theme="dark"] { --load-c: #3fd9a4; --bg: #0a1613; --blob-1: #137a5e; --blob-2: #1e5c8c; --blob-3: #3f7a1c; --blob-4: #7a6514; --blob-opacity: .42; }
+:root[data-load="light"][data-theme="dark"] { --load-c: #6fb3ff; --bg: #0c1222; --blob-1: #2a5fb0; --blob-2: #137a62; --blob-3: #4c3db0; --blob-4: #6a5a20; --blob-opacity: .42; }
+:root[data-load="steady"][data-theme="dark"] { --load-c: #9085e9; }
+:root[data-load="busy"][data-theme="dark"] { --load-c: #ffa04d; --bg: #170f09; --blob-1: #9a4d12; --blob-2: #a32a52; --blob-3: #8a6a12; --blob-4: #5b3fb0; --blob-opacity: .46; }
+:root[data-load="heavy"][data-theme="dark"] { --load-c: #ff7a85; --bg: #1a0a0d; --blob-1: #a3222f; --blob-2: #9a3d1c; --blob-3: #8f1f5c; --blob-4: #8a5a12; --blob-opacity: .5; }
+/* Each level's own color, for the header chip, gauges, and badges, whether or not the theme follows it. */
+.load-clear { --lc: #16a374; } .load-light { --lc: #2a7fd6; } .load-steady { --lc: #6250d6; } .load-busy { --lc: #d9670d; } .load-heavy { --lc: #d33245; }
+:root[data-theme="dark"] .load-clear { --lc: #3fd9a4; } :root[data-theme="dark"] .load-light { --lc: #6fb3ff; } :root[data-theme="dark"] .load-steady { --lc: #a99ff0; }
+:root[data-theme="dark"] .load-busy { --lc: #ffa04d; } :root[data-theme="dark"] .load-heavy { --lc: #ff7a85; }
 
 .sw-blue { --c: var(--c-blue); } .sw-orange { --c: var(--c-orange); } .sw-aqua { --c: var(--c-aqua); } .sw-yellow { --c: var(--c-yellow); }
 .sw-magenta { --c: var(--c-magenta); } .sw-green { --c: var(--c-green); } .sw-violet { --c: var(--c-violet); } .sw-red { --c: var(--c-red); }
@@ -111,7 +132,11 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .backdrop i:nth-child(2) { background: radial-gradient(circle, var(--blob-2) 0%, transparent 64%); top: -12vmax; right: -20vmax; animation-duration: 34s; animation-delay: -8s; }
 .backdrop i:nth-child(3) { background: radial-gradient(circle, var(--blob-3) 0%, transparent 64%); bottom: -26vmax; left: 18vw; animation-duration: 31s; animation-delay: -16s; }
 .backdrop i:nth-child(4) { background: radial-gradient(circle, var(--blob-4) 0%, transparent 64%); bottom: -18vmax; right: -8vmax; width: 40vmax; height: 40vmax; animation-duration: 25s; animation-delay: -4s; }
-.backdrop::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1px, transparent 1.2px); background-size: 26px 26px; mask-image: linear-gradient(to bottom, #000, transparent 70%); opacity: .7; }
+.backdrop::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1px, transparent 1.2px); background-size: var(--dots, 26px) var(--dots, 26px); mask-image: linear-gradient(to bottom, #000, transparent 70%); opacity: .7; }
+.backdrop::before { content: ""; position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 90% 60% at 50% 115%, color-mix(in oklab, var(--load-c, transparent) 32%, transparent), transparent 70%); transition: opacity 1.2s var(--ease); }
+:root[data-load="busy"] .backdrop::before { opacity: .55; }
+:root[data-load="heavy"] .backdrop::before { opacity: .85; animation: breathe 7s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .45; } }
 
 /* ----- Shell -------------------------------------------------------------- */
 .workspace { display: flex; min-height: 100vh; }
@@ -150,6 +175,11 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .mode-switch button[aria-pressed="true"] { color: var(--on-grad); }
 .mode-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--grad); box-shadow: 0 6px 14px -6px var(--accent); transition: transform .6s var(--spring); }
 .mode-switch.is-p .mode-thumb { transform: translateX(100%); }
+.load-chip { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; height: 36px; padding: 0 5px 0 10px; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--lc) 40%, var(--line)); background: color-mix(in oklab, var(--lc) 13%, var(--surface-solid)); color: var(--text); font: 720 12px/1 var(--display); transition: transform .35s var(--spring), box-shadow .3s, background .6s, border-color .6s; }
+.load-chip svg { width: 16px; height: 16px; color: var(--lc); }
+.load-chip b { padding: 5px 8px; border-radius: 999px; background: var(--surface-solid); color: color-mix(in oklab, var(--lc) 70%, var(--text)); font-variant-numeric: tabular-nums; }
+.load-chip:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -12px var(--lc); }
+.load-chip.load-heavy svg, .load-chip.load-busy svg { animation: flicker 1.8s ease-in-out infinite; transform-origin: bottom; }
 .theme-controls { display: flex; gap: 2px; background: var(--surface-sunk); padding: 3px; border: 1px solid var(--line); border-radius: 999px; flex-shrink: 0; }
 .theme-controls button { display: grid; place-items: center; width: 30px; height: 30px; padding: 5px; color: var(--muted); background: transparent; border: 0; border-radius: 50%; transition: color .2s, background .2s, transform .3s var(--spring); }
 .theme-controls button[aria-pressed="true"] { color: var(--accent-ink); background: var(--surface-solid); box-shadow: var(--shadow); }
@@ -414,7 +444,7 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-card.is-full .complete-button { color: var(--good-strong); border-color: var(--good-strong); animation: count-pulse .9s var(--spring); }
 
 /* Progress: a slider on every task (and on each task timer), 0–100%. */
-.progress-control { flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 0 32px; font-size: 11px; font-weight: 650; color: var(--muted); cursor: pointer; }
+.progress-control { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 0 32px; font-size: 11px; font-weight: 650; color: var(--muted); cursor: pointer; }
 .progress-control b { min-width: 4.2ch; font: 760 12px/1 var(--display); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 .progress-range { -webkit-appearance: none; appearance: none; flex: 1; width: auto; min-width: 48px; height: 7px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 45%, var(--surface-solid)), var(--c)) 0 0 / calc(var(--p, 0) * 100%) 100% no-repeat, var(--surface-sunk); cursor: pointer; }
 .progress-range:focus { box-shadow: none; }
@@ -424,6 +454,55 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .progress-range:active::-webkit-slider-thumb, .progress-range:hover::-webkit-slider-thumb { transform: scale(1.18); }
 .progress-control.is-full { --c: var(--good-strong); }
 .progress-control.is-full b { color: var(--good-ink); }
+/* On a card the progress sits in a row with the button that breaks the task into subtasks. With subtasks the
+   slider gives way to a meter that follows them. */
+.task-progress-row { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 32px; }
+.task-progress-row .progress-control { flex: 1; min-width: 0; margin: 0; }
+.subtask-start { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1.5px dashed color-mix(in oklab, var(--c) 45%, var(--line-strong)); border-radius: 10px; background: transparent; color: var(--muted); transition: color .2s, background .2s, border-color .2s, transform .35s var(--spring); }
+.subtask-start svg { width: 15px; height: 15px; }
+.subtask-start:hover { color: var(--text); border-style: solid; border-color: var(--c); background: color-mix(in oklab, var(--c) 12%, var(--surface-solid)); transform: translateY(-1px) rotate(-5deg); }
+.progress-control.is-auto { cursor: default; }
+.progress-meter { position: relative; flex: 1; min-width: 48px; height: 7px; border-radius: 99px; background: var(--surface-sunk); overflow: hidden; }
+.progress-meter::after { content: ""; position: absolute; inset: 0 auto 0 0; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 45%, var(--surface-solid)), var(--c)); }
+.progress-auto { display: inline-grid; place-items: center; flex-shrink: 0; width: 22px; height: 22px; border-radius: 8px; background: color-mix(in oklab, var(--c) 15%, var(--surface-solid)); cursor: help; }
+.progress-auto svg { width: 13px; height: 13px; color: var(--c); }
+/* A task's checklist. */
+.subtasks { display: grid; gap: 4px; margin: 10px 0 0 32px; }
+.subtask-list { list-style: none; display: grid; gap: 1px; margin: 0; padding: 4px; border-radius: 16px; background: color-mix(in oklab, var(--c) 6%, var(--surface-alt)); }
+.subtask { position: relative; display: flex; align-items: center; border-radius: 12px; transition: background .2s; }
+.subtask:hover { background: var(--surface-solid); }
+.subtask-label { position: relative; flex: 1; min-width: 0; flex-direction: row; align-items: flex-start; gap: 9px; margin: 0; padding: 6px 4px 6px 8px; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.subtask-label input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.subtask-box { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; border-radius: 6px; border: 2px solid color-mix(in oklab, var(--c) 55%, var(--line-strong)); background: var(--surface-solid); color: transparent; transition: background .25s, border-color .25s, color .2s, transform .4s var(--spring); }
+.subtask-box svg { width: 12px; height: 12px; stroke-width: 3.2; }
+.subtask-label input:checked + .subtask-box { background: var(--c); border-color: var(--c); color: #fff; transform: rotate(-6deg) scale(1.06); }
+.subtask-label input:focus-visible + .subtask-box { outline: 3px solid var(--accent); outline-offset: 2px; }
+.subtask-label:hover .subtask-box { border-color: var(--c); }
+.subtask-text { line-height: 1.45; overflow-wrap: anywhere; transition: color .25s; }
+.subtask.is-done .subtask-text { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: color-mix(in oklab, var(--c) 60%, var(--muted)); }
+.subtask-remove { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; margin-right: 3px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); opacity: 0; transition: opacity .2s, background .2s, color .2s; }
+.subtask-remove svg { width: 13px; height: 13px; }
+.subtask:hover .subtask-remove, .subtask-remove:focus-visible { opacity: 1; }
+.subtask-remove:hover { background: color-mix(in oklab, var(--critical) 12%, var(--surface-solid)); color: var(--critical-ink); }
+@media (hover: none) { .subtask-remove { opacity: .65; } }
+.subtasks.is-done .subtask-list { background: color-mix(in oklab, var(--good-strong) 9%, var(--surface-alt)); }
+.subtask-add { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 5px 10px 5px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 650; transition: background .2s, color .2s; }
+.subtask-add svg { width: 14px; height: 14px; color: var(--c); transition: transform .45s var(--spring); }
+.subtask-add:hover { background: color-mix(in oklab, var(--c) 12%, var(--surface-solid)); color: var(--text); }
+.subtask-add:hover svg { transform: rotate(90deg); }
+.subtask-form { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px; border-radius: 14px; background: var(--surface-solid); border: 1.5px solid color-mix(in oklab, var(--c) 55%, var(--line)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--c) 12%, transparent); animation: panel-in .35s var(--spring); }
+.subtask-form.shake { animation: shake .42s var(--ease); }
+.subtask-form-icon { display: grid; color: var(--c); }
+.subtask-form-icon svg { width: 14px; height: 14px; }
+.subtask-form input { flex: 1; min-width: 0; padding: 5px 4px; border: 0; border-radius: 8px; background: transparent; font-size: 12.5px; box-shadow: none; }
+.subtask-form input:focus { box-shadow: none; }
+.subtask-submit, .subtask-close { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; transition: background .2s, color .2s, transform .35s var(--spring); }
+.subtask-submit { background: var(--c); color: #fff; }
+.subtask-submit:hover { transform: scale(1.08); }
+.subtask-close { background: transparent; color: var(--muted); }
+.subtask-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
+.subtask-submit svg, .subtask-close svg { width: 14px; height: 14px; }
+.content.enter .subtask, .task-group.reveal .subtask { animation: rise .45s var(--ease) both; animation-delay: calc(.25s + var(--s, 0) * 30ms); }
 
 /* Timers above the board: today's timed work on top, then a row of timers, soonest first. Task timers are
    solid cards in their type's color with a progress slider; deadline timers are striped tickets with a
@@ -453,7 +532,7 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .today-bar i.is-overdue::after { background: var(--critical); }
 .content.enter .today-bar i::after { animation: grow-x .9s var(--spring) .15s both; transform-origin: left; }
 .timer-row { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: 4px 2px 8px; margin: 0 -2px -6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-.timer { position: relative; flex: 1 0 214px; max-width: 320px; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); scroll-snap-align: start; transition: transform .4s var(--spring), box-shadow .3s; }
+.timer { position: relative; flex: 1 0 238px; max-width: 340px; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); scroll-snap-align: start; transition: transform .4s var(--spring), box-shadow .3s; }
 .timer:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .content.enter .timer { animation: rise .5s var(--ease) both; animation-delay: calc(.15s + var(--i, 0) * 50ms); }
 .timer.is-leaving { animation: timer-leave .34s var(--ease) forwards; }
@@ -481,11 +560,75 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .timer-close { display: grid; place-items: center; width: 26px; height: 26px; margin: -3px -5px -3px auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
 .timer-close svg { width: 14px; height: 14px; }
 .timer-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
-.timer-empty { display: flex; align-items: center; gap: 9px; padding: 10px 6px 2px; border-top: 1px dashed var(--line-strong); font-size: 12px; color: var(--muted); }
+.timer-empty { display: flex; align-items: center; gap: 12px; padding: 12px 6px 2px; border-top: 1px dashed var(--line-strong); font-size: 12px; color: var(--muted); }
 .timer-empty svg { flex-shrink: 0; width: 16px; height: 16px; }
 .timer-empty b { color: var(--text); font-weight: 650; }
 @keyframes timer-leave { to { opacity: 0; transform: scale(.9) translateY(-6px); } }
 @keyframes overdue-wobble { 0%, 70%, 100% { transform: none; } 78% { transform: rotate(-14deg); } 86% { transform: rotate(12deg); } 94% { transform: rotate(-6deg); } }
+/* Each timer's dial: a ring that drains as its time runs out, around an icon for how close it is. A running
+   clock sweeps its hands; with three hours (six for a deadline) left an hourglass turns; in the last hour an alarm
+   clock rings; once overdue a bell swings and the dial pings; when every bit of the work is done a party popper
+   pops and Complete waits beside the progress. */
+.timer-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.timer-heading { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.timer-dial { position: relative; flex-shrink: 0; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle, color-mix(in oklab, var(--c) 17%, var(--surface-solid)) 0 57%, transparent 59%); }
+.timer-dial > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.dial-track { fill: none; stroke: color-mix(in oklab, var(--c) 14%, var(--surface-sunk)); stroke-width: 4.5; }
+.dial-time { fill: none; stroke: var(--c); stroke-width: 4.5; stroke-linecap: round; transition: stroke-dasharray 1s linear; filter: drop-shadow(0 0 3px color-mix(in oklab, var(--c) 50%, transparent)); }
+.content.enter .dial-time { animation: ring-draw 1.2s var(--ease) .2s both; }
+.dial-icon { position: relative; display: grid; place-items: center; color: var(--c); }
+.dial-icon svg { width: 23px; height: 23px; }
+.live-clock .hand { transform-box: view-box; transform-origin: 12px 12px; }
+.live-clock .hand-minute { animation: spin 4s linear infinite; }
+.live-clock .hand-hour { animation: spin 48s linear infinite; }
+.timer.urgency-soon .dial-icon svg { animation: hourglass-turn 3.4s var(--ease) infinite; }
+.timer.urgency-close .timer-dial { --c: var(--c-orange); }
+.timer.urgency-close .dial-icon svg { animation: alarm-ring 1.6s ease-in-out infinite; }
+.timer.urgency-overdue .dial-icon svg { animation: overdue-wobble 2.4s var(--ease) infinite; transform-origin: 50% 10%; }
+.timer.urgency-overdue .timer-dial::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 2px solid var(--critical); animation: ping 2s var(--ease) infinite; }
+.timer.urgency-ready .timer-dial { --c: var(--good-strong); }
+.timer.urgency-ready .dial-icon svg { animation: party-pop 2.6s var(--spring) infinite; }
+.timer-deadline.urgency-calm .dial-icon svg, .timer-deadline.urgency-soon .dial-icon svg { animation: flag-wave 2.8s ease-in-out infinite; transform-origin: 20% 90%; }
+.timer-deadline.urgency-close .timer-dial { --c: var(--critical); }
+.timer-flag { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 3px 8px 3px 6px; border-radius: 999px; color: #fff; background: var(--c-orange); font-size: 9.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.timer-flag svg { width: 11px; height: 11px; }
+.urgency-overdue .timer-flag { background: var(--critical); }
+.urgency-ready .timer-flag { background: var(--good-strong); }
+.timer-sub svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; color: var(--c); }
+.timer-task.is-overdue .timer-sub svg { color: var(--critical-ink); }
+/* The task's subtasks: how many are done, and the next one, ready to check off right here. */
+.timer-steps { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 6px 9px; border-radius: 14px; background: color-mix(in oklab, var(--c) 8%, var(--surface-solid)); border: 1px dashed color-mix(in oklab, var(--c) 38%, var(--line)); }
+.timer-steps-count { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; font: 760 11.5px/1 var(--display); color: var(--text); }
+.timer-steps-count svg { width: 14px; height: 14px; color: var(--c); }
+.timer-next { position: relative; flex: 1; min-width: 0; flex-direction: row; align-items: center; gap: 7px; margin: 0; font-size: 12px; color: var(--text); cursor: pointer; }
+.timer-next input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.timer-next input:focus-visible + .subtask-box { outline: 3px solid var(--accent); outline-offset: 2px; }
+.timer-next:hover .subtask-box { border-color: var(--c); transform: scale(1.12) rotate(-6deg); }
+.timer-next-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-next-text small { margin-right: 6px; font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.timer-steps.is-done { border-style: solid; background: color-mix(in oklab, var(--good-strong) 10%, var(--surface-solid)); }
+.timer-steps.is-done .timer-steps-count svg { color: var(--good-strong); }
+.timer-next-done { font-size: 12px; font-weight: 650; color: var(--good-ink); }
+.timer-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.timer-foot .progress-control { flex: 1; margin: 0; min-width: 0; }
+.timer-complete { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; height: 30px; padding: 0 12px 0 9px; border: 0; border-radius: 999px; background: var(--good-strong); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 8px 16px -10px var(--good-strong); --c: var(--good-strong); animation: count-pulse 2.2s var(--spring) infinite; transition: transform .3s var(--spring); }
+.timer-complete svg { width: 14px; height: 14px; stroke-width: 3; }
+.timer-complete:hover { transform: translateY(-1px) scale(1.04); }
+/* Today's bar: a check for what is done, a bell for what is overdue, a trophy once it is all done, and a note
+   when tasks count by their importance (each segment then grows with it). */
+.today-meta svg { width: 13px; height: 13px; margin-right: 3px; vertical-align: -2px; }
+.today-done svg { color: var(--good-strong); }
+.today-overdue svg { color: var(--critical); }
+.today-weighted { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 999px; background: var(--grad-soft); color: var(--accent-ink); font-size: 11px; font-weight: 700; cursor: help; }
+.today-weighted svg { width: 13px; height: 13px; }
+.today-progress.is-complete .today-label svg { color: var(--c-yellow); animation: party-pop 2.8s var(--spring) infinite; }
+.timer-empty-icon { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; background: var(--grad-soft); color: var(--accent); }
+.timer-empty .timer-empty-icon svg { width: 18px; height: 18px; animation: sway 4s ease-in-out infinite; transform-origin: 50% 90%; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes hourglass-turn { 0%, 62% { transform: rotate(0); } 82%, 100% { transform: rotate(180deg); } }
+@keyframes alarm-ring { 0%, 55%, 100% { transform: rotate(0); } 8% { transform: rotate(-16deg); } 16% { transform: rotate(14deg); } 24% { transform: rotate(-12deg); } 32% { transform: rotate(9deg); } 40% { transform: rotate(-5deg); } }
+@keyframes party-pop { 0%, 58%, 100% { transform: none; } 68% { transform: scale(1.25) rotate(-12deg); } 80% { transform: scale(.94) rotate(6deg); } }
+@keyframes flag-wave { 0%, 100% { transform: skewY(0) scaleX(1); } 50% { transform: skewY(-7deg) scaleX(.94); } }
 
 /* The timed-task switch in the task form. */
 .timed-field { margin: 18px 0 6px; padding: 12px 14px 2px; border: 1px dashed var(--line-strong); border-radius: 20px; transition: background .25s, border-color .25s; }
@@ -514,6 +657,14 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .fold-switch button[aria-pressed="true"] { color: var(--on-grad); }
 .fold-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--grad); box-shadow: 0 6px 14px -6px var(--accent); transition: transform .6s var(--spring); }
 .fold-switch.is-folded .fold-thumb { transform: translateX(100%); }
+/* Compact or spread: the same two-way switch. */
+.layout-toggle { position: relative; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; background: var(--surface-sunk); border: 1px solid var(--line); flex-shrink: 0; }
+.layout-toggle button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; background: transparent; color: var(--muted); font: 720 12px/1 var(--display); padding: 9px 13px 9px 11px; border-radius: 999px; transition: color .3s; }
+.layout-toggle button svg { width: 15px; height: 15px; transition: transform .6s var(--spring); }
+.layout-toggle button:hover { color: var(--text); }
+.layout-toggle button:hover svg { transform: rotate(-20deg) scale(1.1); }
+.layout-toggle button[aria-pressed="true"] { color: var(--on-grad); }
+.layout-toggle.is-spread .fold-thumb { transform: translateX(100%); }
 
 /* Managing types on the board. The task count gives way to a menu button on hover or focus (both show on
    touch screens); the menu renames or deletes the type. */
@@ -717,6 +868,35 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .flow-board .task-group:hover { transform: rotate(0deg) translateY(-4px); }
 .flow-board .task-group::before { content: ""; position: absolute; z-index: -1; width: 90px; height: 90px; top: -18px; right: -14px; border-radius: 50%; background: radial-gradient(circle, color-mix(in oklab, var(--c) 40%, transparent), transparent 70%); animation: float 7s ease-in-out infinite; }
 .flow-board .task-card { border-radius: 26px 26px 26px 10px; }
+
+/* A group whose tasks were all finished since the page opened stays put, celebrating, until the page is opened again. */
+.task-group.is-cleared { border-style: dashed; background: color-mix(in oklab, var(--good-strong) 6%, var(--surface)); }
+.group-cleared { display: flex; align-items: center; gap: 12px; margin: 0 2px; padding: 14px; border-radius: 20px; background: color-mix(in oklab, var(--good-strong) 10%, var(--surface-solid)); border: 1px dashed color-mix(in oklab, var(--good-strong) 45%, var(--line)); }
+.cleared-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; background: var(--good-strong); color: #fff; box-shadow: 0 8px 16px -8px var(--good-strong); }
+.cleared-icon svg { width: 20px; height: 20px; animation: party-pop 2.8s var(--spring) infinite; }
+.group-cleared p { display: grid; gap: 2px; font-size: 12px; line-height: 1.45; color: var(--muted); }
+.group-cleared strong { font: 720 14px/1.3 var(--display); color: var(--text); }
+
+/* Spread layout (spreadOut in board.ts): groups sit by workload around the heaviest, on rings that mark a third,
+   two thirds, and all of the reach; a soft glow marks the middle. Each group wears its workload on a badge.
+   Narrow boards stack the groups instead, the gap before each growing with how much lighter it is. */
+.spread-legend { display: flex; align-items: center; gap: 8px; margin: -2px 4px 18px; font-size: 12px; color: var(--muted); }
+.spread-legend svg { flex-shrink: 0; width: 17px; height: 17px; color: var(--accent); animation: spin 24s linear infinite; }
+.task-board.spread-board { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 22px; --ring: color-mix(in oklab, var(--line-strong) 85%, transparent); }
+.spread-board > .task-group { width: clamp(260px, 30%, 340px); margin-top: 14px; transition: left .6s var(--ease), top .6s var(--ease), transform .5s var(--spring), box-shadow .4s; }
+.spread-board.is-placed:not(.is-stacked) { display: block; position: relative; transition: height .5s var(--ease);
+  background:
+    radial-gradient(circle at var(--cx) var(--cy), color-mix(in oklab, var(--load-c, var(--accent)) 18%, transparent) 0, transparent 220px),
+    radial-gradient(circle at var(--cx) var(--cy), transparent calc(var(--reach) / 3 - 1px), var(--ring) calc(var(--reach) / 3), transparent calc(var(--reach) / 3 + 1.5px)),
+    radial-gradient(circle at var(--cx) var(--cy), transparent calc(var(--reach) * 2 / 3 - 1px), var(--ring) calc(var(--reach) * 2 / 3), transparent calc(var(--reach) * 2 / 3 + 1.5px)),
+    radial-gradient(circle at var(--cx) var(--cy), transparent calc(var(--reach) - 1px), var(--ring) var(--reach), transparent calc(var(--reach) + 1.5px)); }
+.spread-board.is-placed:not(.is-stacked) > .task-group { position: absolute; margin: 0; }
+.spread-board.is-stacked { display: block; }
+.spread-board.is-stacked > .task-group { width: auto; margin-top: calc(14px + var(--gap-before, 0px)); }
+.spread-board > .empty { flex-basis: 100%; }
+.group-load { position: absolute; top: -12px; left: 50%; z-index: 2; translate: -50% 0; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px 4px 7px; border-radius: 999px; background: var(--surface-solid); border: 1px solid color-mix(in oklab, var(--lc) 45%, var(--line)); box-shadow: var(--shadow); font: 760 11px/1 var(--display); color: var(--text); white-space: nowrap; cursor: help; }
+.group-load svg { width: 13px; height: 13px; color: var(--lc); }
+.spread-board .task-group { padding-top: 18px; }
 
 /* Timeline. */
 .timeline-card { border-radius: 14px 40px 40px 40px; }
@@ -1295,6 +1475,100 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .hl-art { position: relative; width: 64px; height: 64px; flex-shrink: 0; border-radius: 46% 54% 50% 50% / 52% 46% 54% 48%; overflow: hidden; }
 .hl-rank { position: absolute; right: 2px; bottom: 2px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-solid); font: 800 11px/1 var(--display); }
 
+/* ----- Overview: daily overview ------------------------------------------------ */
+/* Your day so far (daily.ts): finished today with an hour-by-hour chart, the workload gauge, progress rings,
+   streak and habits, and today's highlights. Charts only animate when the page opens, not on every redraw. */
+.day-panel { position: relative; margin: 0 0 34px; padding: 22px; border-radius: 40px 40px 40px 14px; background: linear-gradient(160deg, color-mix(in oklab, var(--load-c, var(--accent)) 9%, var(--surface)), var(--surface) 60%); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.day-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.day-title { flex: 1; min-width: 0; }
+.day-title .eyebrow { margin-bottom: 6px; }
+.day-title h2 { font-size: 22px; }
+.day-fold svg { transition: transform .45s var(--spring); }
+.day-panel.is-folded { padding-block: 16px; }
+.day-panel.is-folded .day-head { margin-bottom: 10px; }
+.day-panel.is-folded .day-fold svg { transform: rotate(-90deg); }
+.day-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.day-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 9px; border-radius: 999px; background: var(--surface-solid); border: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.day-chip b { font: 780 13px/1 var(--display); color: var(--text); }
+.day-chip svg { width: 15px; height: 15px; color: var(--accent); }
+.day-chip[class*="load-"] svg { color: var(--lc); }
+.day-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+.dp-tile { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 18px; border-radius: 28px 28px 28px 10px; background: var(--surface-solid); border: 1px solid var(--line); }
+.dp-tile:nth-child(2) { border-radius: 10px 28px 28px 28px; } .dp-tile:nth-child(3) { border-radius: 28px 10px 28px 28px; } .dp-tile:nth-child(5) { border-radius: 28px 28px 10px 28px; }
+.dp-hero { grid-column: span 6; } .dp-load { grid-column: span 3; } .dp-progress { grid-column: span 3; } .dp-highlights { grid-column: span 8; } .dp-streak { grid-column: span 4; }
+.dp-label { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.dp-label svg { width: 15px; height: 15px; color: var(--accent); }
+.dp-help { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: auto; border-radius: 50%; background: var(--surface-alt); color: var(--muted); font: 800 10px/1 var(--display); letter-spacing: 0; cursor: help; }
+.dp-number { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.dp-number strong { font: 840 64px/1 var(--display); letter-spacing: -.06em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.content.enter .dp-number strong { animation: pop .9s var(--spring) both; }
+.dp-deltas { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.hours { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); align-items: end; gap: 3px; height: 92px; margin-top: 16px; }
+.hr { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; border-radius: 5px; background: linear-gradient(to top, var(--surface-sunk) 0 4px, transparent 4px); }
+.hr i { display: block; height: calc(var(--h) * (100% - 8px)); min-height: 6px; border-radius: 5px; background: var(--c); transform-origin: bottom; }
+.content.enter .hr i { animation: grow-y .7s var(--spring) both; animation-delay: calc(.2s + var(--i, 0) * 18ms); }
+.hr.future { opacity: .35; }
+.hr.is-now { background: linear-gradient(to top, var(--accent) 0 4px, transparent 4px); outline: 1.5px dashed color-mix(in oklab, var(--accent) 45%, transparent); outline-offset: 1px; }
+.hours-axis { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 6px; font-size: 10px; font-weight: 650; color: var(--muted); }
+.dp-hero .legend { margin-top: 10px; }
+.dp-outcomes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 12px; }
+.dp-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px 4px 7px; border-radius: 999px; background: var(--surface-alt); font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.dp-chip svg { width: 13px; height: 13px; color: var(--c); }
+.gauge { position: relative; width: 100%; max-width: 230px; margin: 0 auto; }
+.gauge svg { display: block; width: 100%; height: auto; overflow: visible; }
+.gauge-track { fill: none; stroke: var(--surface-sunk); stroke-width: 10; stroke-linecap: round; }
+.gauge-fill { fill: none; stroke: var(--lc); stroke-width: 10; stroke-linecap: round; filter: drop-shadow(0 4px 8px color-mix(in oklab, var(--lc) 40%, transparent)); transition: stroke-dasharray .8s var(--spring); }
+.content.enter .gauge-fill { animation: ring-draw 1.3s var(--ease) .15s both; }
+.gauge-tick { stroke: var(--surface-solid); stroke-width: 2.5; }
+.gauge-read { position: absolute; left: 0; right: 0; bottom: 0; display: grid; justify-items: center; gap: 2px; }
+.gauge-icon { display: grid; color: var(--lc); }
+.gauge-icon svg { width: 18px; height: 18px; }
+.gauge-read strong { font: 820 28px/1 var(--display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.gauge-read > span:last-child { font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--lc); }
+.dp-load.load-heavy .gauge-icon svg, .dp-load.load-busy .gauge-icon svg { animation: flicker 1.8s ease-in-out infinite; transform-origin: bottom; }
+.dp-note { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.dp-note svg { flex-shrink: 0; width: 14px; height: 14px; color: var(--accent); }
+.dp-fine { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.dp-fine svg { width: 13px; height: 13px; color: var(--accent); }
+.dp-fine .text-button { padding: 2px 6px; font-size: 11.5px; }
+.dp-progress .dp-fine, .dp-load .dp-fine { margin-top: auto; padding-top: 8px; }
+.load-split { display: flex; gap: 3px; height: 10px; margin-top: 12px; }
+.load-split i { min-width: 6px; border-radius: 6px; background: var(--c); }
+.dp-load .legend { margin-top: 8px; gap: 4px 12px; }
+.dp-rings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 2px 0 4px; }
+.dp-ring { display: grid; justify-items: center; align-content: start; gap: 6px; text-align: center; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.dp-ring .ring figcaption { font-size: 18px; }
+.day-panel .ring .ring-value, .day-panel .ring .ring-compare { animation: none; }
+.content.enter .day-panel .ring .ring-value { animation: ring-draw 1.4s var(--ease) .1s both; }
+.dp-streak .streak-flame svg { width: 46px; height: 46px; color: var(--muted); }
+.dp-streak .streak-flame strong { font-size: 52px; }
+.dp-streak.lit .streak-flame svg { color: var(--c-orange); fill: color-mix(in oklab, var(--c-yellow) 60%, transparent); animation: flicker 1.6s ease-in-out infinite; transform-origin: bottom; filter: drop-shadow(0 6px 12px color-mix(in oklab, var(--c-orange) 50%, transparent)); }
+.dp-habits { display: flex; align-items: center; gap: 10px; margin-top: auto; padding-top: 12px; font-size: 12px; color: var(--muted); }
+.dp-habits .ring figcaption { font-size: 12px; }
+.dp-empty { padding: 8px 0; font-size: 12.5px; color: var(--muted); }
+.dp-highlights .highlights { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.day-panel .highlight { animation: none; }
+.content.enter .day-panel .highlight { animation: rise .6s var(--ease) both; animation-delay: calc(.2s + var(--i) * 90ms); }
+
+/* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
+.display-card h2 { display: flex; align-items: center; gap: 8px; }
+.display-card h2 svg { color: var(--accent); }
+.setting-block { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 18px 0 6px; }
+.setting-copy { display: grid; gap: 3px; min-width: 0; flex: 1 1 240px; }
+.setting-copy strong { font-size: 13px; color: var(--text); }
+.setting-copy small { font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.setting-toggle { position: relative; flex-direction: row; align-items: flex-start; gap: 12px; margin: 20px 0 10px; cursor: pointer; }
+.setting-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.setting-toggle input:checked + .timed-switch { background: var(--grad); border-color: transparent; }
+.setting-toggle input:checked + .timed-switch::after { transform: translateX(16px); }
+.setting-toggle input:focus-visible + .timed-switch { outline: 3px solid var(--accent); outline-offset: 3px; }
+.load-scale { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 4px 0 10px; }
+.load-step { display: grid; justify-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 16px; background: color-mix(in oklab, var(--lc) 12%, var(--surface-solid)); border: 1px solid color-mix(in oklab, var(--lc) 30%, transparent); text-align: center; }
+.load-step svg { width: 17px; height: 17px; color: var(--lc); }
+.load-step b { font: 750 11.5px/1.2 var(--display); color: var(--text); }
+.load-step small { font-size: 10px; color: var(--muted); }
+.load-step.is-now { box-shadow: 0 0 0 2px var(--lc), 0 10px 20px -14px var(--lc); }
+
 /* ----- Dialogs, settings, misc ---------------------------------------------- */
 .editor-dialog { background: var(--surface-solid); color: var(--text); border: 1px solid var(--line); border-radius: 36px 36px 36px 14px; padding: 28px; width: min(500px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); }
 .editor-dialog[open] { animation: zoom-in .4s var(--spring); }
@@ -1342,6 +1616,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 /* ----- Responsive -------------------------------------------------------------- */
 @media (min-width: 1500px) { .task-board:not(.flow-board) { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 1280px) {
+  .dp-hero { grid-column: span 12; } .dp-load, .dp-progress { grid-column: span 6; } .dp-highlights { grid-column: span 7; } .dp-streak { grid-column: span 5; }
   .cal-body { grid-template-columns: 1fr; }
   .cal-side { position: static; max-height: none; }
   .ddl-chips { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
@@ -1349,6 +1624,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
   .wk-daily, .wk-mix, .wk-outcomes, .wk-habit-grid, .wk-pace, .wk-highlights { grid-column: span 12; }
 }
 @media (max-width: 1200px) {
+  .load-chip .load-name { display: none; }
   .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .status-card:nth-child(even) { margin-top: 0; }
   .status-card:nth-child(4n+2), .status-card:nth-child(4n+3) { margin-top: 18px; }
@@ -1376,6 +1652,8 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
   .lb-art { max-width: 280px; width: 100%; margin: 0 auto; }
 }
 @media (max-width: 700px) {
+  .dp-load, .dp-progress, .dp-highlights, .dp-streak { grid-column: span 12; }
+  .load-scale { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .day-popover { position: fixed; left: 12px !important; right: 12px; top: auto !important; bottom: 12px; width: auto; max-height: 70vh; overflow: auto; z-index: 80; }
   .day-popover::before { display: none; }
   .cal-hint { margin-left: 0; }
@@ -1428,8 +1706,15 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
   .flow-board { grid-template-columns: 1fr; }
   .flow-board .task-group { transform: none; }
   /* Icons only, so the switch and the new-task button share a row; the words stay for screen readers. */
-  .fold-switch button { padding: 9px 14px; }
-  .fold-switch button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  .fold-switch button, .layout-toggle button { padding: 9px 14px; }
+  .fold-switch button span, .layout-toggle button span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  /* Icon only: its color and icon still tell the level, and it opens the daily overview with the number. */
+  .load-chip { height: 34px; padding: 0 8px; }
+  .load-chip b { display: none; }
+  .day-panel { padding: 16px; border-radius: 30px 30px 30px 12px; }
+  .day-head .pill { display: none; }
+  .dp-number strong { font-size: 52px; }
+  .hours { gap: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
