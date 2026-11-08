@@ -70,15 +70,28 @@ pub fn open_file(path: &Path) -> bool {
 // Sound
 // =============================================================================
 
+/// Wait for a detached child on a background thread so it does not linger as
+/// a zombie in the long-running reminder service.
+fn reap_in_background(mut child: std::process::Child) {
+    let _ = std::thread::Builder::new().spawn(move || child.wait());
+}
+
 /// Play a sound without waiting for it to finish.
 pub fn play_sound(sound_file: &str) {
     match get_platform() {
         "macos" => {
-            let _ = Command::new("afplay").arg(sound_file).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+            if let Ok(child) =
+                Command::new("afplay").arg(sound_file).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+            {
+                reap_in_background(child);
+            }
         }
         "linux" => {
             for player in ["paplay", "aplay", "play"] {
-                if Command::new(player).arg(sound_file).stdout(Stdio::null()).stderr(Stdio::null()).spawn().is_ok() {
+                if let Ok(child) =
+                    Command::new(player).arg(sound_file).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+                {
+                    reap_in_background(child);
                     return;
                 }
             }
