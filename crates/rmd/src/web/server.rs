@@ -144,7 +144,12 @@ impl BrowserServer {
         let Ok(authorization) = headers.get(header::AUTHORIZATION).map_or(Ok(""), HeaderValue::to_str) else {
             return false;
         };
-        let mut token = authorization.strip_prefix("Bearer ").unwrap_or(authorization);
+        // `Bearer ` with an empty token arrives as `Bearer` (trailing space trimmed); like the
+        // Python server, it falls back to the session cookie.
+        let mut token = match authorization {
+            "Bearer" => "",
+            other => other.strip_prefix("Bearer ").unwrap_or(other),
+        };
         if token.is_empty() {
             token = self.cookie_token(headers);
         }
@@ -691,6 +696,14 @@ mod tests {
         let reply = request(server.port(), "POST", "/api", Some(body), &[("Cookie", session), ("Origin", &origin)]);
         assert_eq!(reply.status, 200);
         assert_eq!(reply.json()["ok"], json!(true));
+        let cookies = format!("a=b; {session}; c=d");
+        let reply =
+            request(server.port(), "POST", "/api", Some(body), &[("Authorization", "Bearer "), ("Cookie", &cookies)]);
+        assert_eq!(reply.status, 200, "an empty bearer token falls back to the cookie");
+        let reply = request(server.port(), "POST", "/api", Some(body), &[("Authorization", "test-token")]);
+        assert_eq!(reply.status, 200, "the Bearer prefix is optional, as in the Python server");
+        let wrong = format!("rmd_{}=wrong", server.port());
+        assert_eq!(request(server.port(), "POST", "/api", Some(body), &[("Cookie", &wrong)]).status, 403);
         assert_eq!(reply.header("Content-Type"), Some("application/json; charset=utf-8"));
     }
 
