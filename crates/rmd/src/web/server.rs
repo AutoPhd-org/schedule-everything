@@ -511,11 +511,28 @@ pub fn run(root: &Path, port: u16) -> i32 {
             eprintln!("Could not write {}: {e}", registry.display());
             return 1;
         }
+        // Ctrl-C, or SIGTERM from a launcher replacing this server: shut down
+        // cleanly so open tabs are told and `.browser.json` is removed.
         let interrupt = server.clone();
         tokio::spawn(async move {
-            if tokio::signal::ctrl_c().await.is_ok() {
-                interrupt.shutdown();
+            #[cfg(unix)]
+            {
+                use tokio::signal::unix::{SignalKind, signal};
+                match signal(SignalKind::terminate()) {
+                    Ok(mut terminate) => {
+                        tokio::select! {
+                            _ = tokio::signal::ctrl_c() => {}
+                            _ = terminate.recv() => {}
+                        }
+                    }
+                    Err(_) => {
+                        let _ = tokio::signal::ctrl_c().await;
+                    }
+                }
             }
+            #[cfg(not(unix))]
+            let _ = tokio::signal::ctrl_c().await;
+            interrupt.shutdown();
         });
         let result = serve(server.clone(), listener).await;
         server.close_tabs();
