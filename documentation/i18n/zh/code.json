@@ -234,7 +234,7 @@
     "message": "安装 Schedule Everything"
   },
   "homepage.install.step1.body": {
-    "message": "安装脚本会安装 rmd 可执行文件，并配置你的配置文件和提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd）。"
+    "message": "安装脚本会编译 rmd 可执行文件（需要 Rust），然后配置你的配置文件和提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd）。"
   },
   "homepage.install.step2": {
     "message": "为智能体添加插件"

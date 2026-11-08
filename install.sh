@@ -4,10 +4,11 @@
 # root, and the background reminder service. No Python is needed.
 #
 #   curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
-#   ./install.sh [-y|--yes] [--from-source | --prebuilt]
+#   ./install.sh [-y|--yes]
 #
-# The binary is a prebuilt release download, or built with cargo from a source
-# checkout. Existing configuration is never overwritten.
+# `rmd` is built with cargo from the source (this checkout, or a copy of the
+# repository the script downloads), so Rust is required: https://rustup.rs.
+# Existing configuration is never overwritten.
 
 set -euo pipefail
 
@@ -144,19 +145,6 @@ check_os() {
     log_success "$OS_TYPE detected"
 }
 
-# Rust target triple of the prebuilt binary for this machine.
-detect_target() {
-    local arch
-    arch="$(uname -m)"
-    case "$OS_TYPE-$arch" in
-        macos-arm64) echo "aarch64-apple-darwin" ;;
-        macos-x86_64) echo "x86_64-apple-darwin" ;;
-        linux-x86_64) echo "x86_64-unknown-linux-musl" ;;
-        linux-aarch64 | linux-arm64) echo "aarch64-unknown-linux-musl" ;;
-        *) echo "" ;;
-    esac
-}
-
 # Stop a running reminder service (from a Python-based or an earlier Rust
 # release) so the new binary takes over; it is started again at the end.
 stop_existing_service() {
@@ -238,105 +226,33 @@ setup_install_dir() {
     log_success "Installation directory ready"
 }
 
-# Build rmd with cargo from the source checkout in $SCRIPT_DIR.
-build_from_source() {
-    if [[ ! -f "$SCRIPT_DIR/Cargo.toml" || ! -d "$SCRIPT_DIR/crates/rmd" ]]; then
-        return 1
-    fi
+# Check for cargo before anything is changed, so a missing toolchain never
+# leaves the service stopped or the installation half replaced.
+require_cargo() {
     if ! command -v cargo &>/dev/null; then
-        return 1
+        log_error "Building rmd needs cargo, which was not found."
+        log_info "Install Rust from https://rustup.rs (it provides cargo), then run this installer again."
+        exit 1
+    fi
+}
+
+# Build rmd with cargo from the source in $SCRIPT_DIR. This runs before the
+# service is stopped, so reminders keep working during the build.
+build_rmd() {
+    if [[ ! -f "$SCRIPT_DIR/Cargo.toml" || ! -d "$SCRIPT_DIR/crates/rmd" ]]; then
+        log_error "No Rust source found in $SCRIPT_DIR."
+        exit 1
     fi
     log_info "Building rmd with cargo (the first build takes a few minutes)..."
     (cd "$SCRIPT_DIR" && cargo build --release --locked -p rmd)
-    local target_dir="${CARGO_TARGET_DIR:-$SCRIPT_DIR/target}"
-    install -m 755 "$target_dir/release/rmd" "$RMD_BIN"
-    log_success "Built rmd from source"
-}
-
-sha256_of() {
-    if command -v sha256sum &>/dev/null; then
-        sha256sum "$1" | awk '{print $1}'
-    else
-        shasum -a 256 "$1" | awk '{print $1}'
-    fi
-}
-
-# Download the prebuilt binary for this machine from GitHub Releases.
-download_prebuilt() {
-    local target
-    target="$(detect_target)"
-    if [[ -z "$target" ]]; then
-        log_warning "No prebuilt binary for $(uname -s) $(uname -m)."
-        return 1
-    fi
-    if ! command -v curl &>/dev/null || ! command -v tar &>/dev/null; then
-        log_warning "curl and tar are needed to download the prebuilt binary."
-        return 1
-    fi
-    local base
-    if [[ -n "${RMD_VERSION:-}" ]]; then
-        base="$REPO_URL/releases/download/v${RMD_VERSION#v}"
-    else
-        base="$REPO_URL/releases/latest/download"
-    fi
-    local archive="rmd-$target.tar.gz"
-    local work
-    work="$(mktemp -d -t rmd-download-XXXXXX)"
-    log_info "Downloading $base/$archive..."
-    if ! curl -fsSL "$base/$archive" -o "$work/$archive"; then
-        rm -rf "$work"
-        log_warning "Could not download $archive."
-        return 1
-    fi
-    if curl -fsSL "$base/$archive.sha256" -o "$work/$archive.sha256"; then
-        local expected actual
-        expected="$(awk '{print $1}' "$work/$archive.sha256")"
-        actual="$(sha256_of "$work/$archive")"
-        if [[ "$expected" != "$actual" ]]; then
-            rm -rf "$work"
-            log_error "Checksum mismatch for $archive (expected $expected, got $actual)."
-            exit 1
-        fi
-        log_success "Checksum verified"
-    else
-        log_warning "No checksum published for $archive; skipping verification."
-    fi
-    tar -xzf "$work/$archive" -C "$work"
-    install -m 755 "$work/rmd" "$RMD_BIN"
-    rm -rf "$work"
-    log_success "Installed prebuilt rmd ($target)"
+    BUILT_RMD="${CARGO_TARGET_DIR:-$SCRIPT_DIR/target}/release/rmd"
+    log_success "Built rmd"
 }
 
 install_binary() {
-    case "$BUILD_MODE" in
-        source)
-            build_from_source || {
-                log_error "Building from source needs cargo and a source checkout. Install Rust from https://rustup.rs and run this script from a clone."
-                exit 1
-            }
-            ;;
-        prebuilt)
-            download_prebuilt || {
-                log_error "Could not install the prebuilt binary."
-                exit 1
-            }
-            ;;
-        *)
-            # A clone with cargo builds its own code; otherwise use a release.
-            if [[ "$SCRIPT_DIR" != "$TEMP_DIR" ]] && build_from_source; then
-                :
-            elif download_prebuilt; then
-                :
-            elif build_from_source; then
-                :
-            else
-                log_error "Could not install rmd: no prebuilt binary was available and cargo was not found."
-                log_info "Install Rust from https://rustup.rs (it provides cargo), then run this installer again."
-                exit 1
-            fi
-            ;;
-    esac
+    install -m 755 "$BUILT_RMD" "$RMD_BIN"
     ln -sf "rmd" "$INSTALL_DIR/reminder"
+    log_success "Installed rmd in $INSTALL_DIR"
 }
 
 # Validate and complete missing configuration values
@@ -624,9 +540,12 @@ main() {
     echo "=== $SCRIPT_NAME ==="
     trap cleanup EXIT
 
-    # Outside a checkout, fetch the repository for config templates and plugins.
-    if [[ ! -d "$SCRIPT_DIR/config" || ! -d "$SCRIPT_DIR/plugins" ]]; then
-        log_info "Downloading the repository for config templates and agent plugins..."
+    check_os
+    require_cargo
+
+    # Outside a checkout, fetch the repository: the source, config templates, and plugins.
+    if [[ ! -f "$SCRIPT_DIR/Cargo.toml" || ! -d "$SCRIPT_DIR/config" || ! -d "$SCRIPT_DIR/plugins" ]]; then
+        log_info "Downloading the repository..."
         TEMP_DIR=$(mktemp -d -t schedule-installer-XXXXXX)
         if command -v git &>/dev/null; then
             git clone --depth 1 "${REPO_URL}.git" "${TEMP_DIR}"
@@ -640,7 +559,7 @@ main() {
         SCRIPT_DIR="${TEMP_DIR}"
     fi
 
-    check_os
+    build_rmd
     stop_existing_service
     setup_install_dir
     install_binary
@@ -665,26 +584,17 @@ main() {
 
 # Parse args
 AUTO_YES="false"
-BUILD_MODE="auto"
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
-            echo "Usage: $0 [-y|--yes] [--from-source | --prebuilt]"
+            echo "Usage: $0 [-y|--yes]"
             echo "  -y, --yes       Accept defaults without prompting"
-            echo "  --from-source   Build rmd with cargo from this checkout"
-            echo "  --prebuilt      Download the release binary (RMD_VERSION=x.y.z pins a version)"
+            echo
+            echo "Builds rmd with cargo (install Rust from https://rustup.rs)."
             exit 0
             ;;
         -y|--yes)
             AUTO_YES="true"
-            shift
-            ;;
-        --from-source)
-            BUILD_MODE="source"
-            shift
-            ;;
-        --prebuilt)
-            BUILD_MODE="prebuilt"
             shift
             ;;
         *)

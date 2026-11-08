@@ -1,8 +1,5 @@
-.venv
-build/
 .worktrees/
 /docs/
-dist/
 node_modules/
 
 schedule_visualization/

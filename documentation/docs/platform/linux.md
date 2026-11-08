@@ -14,8 +14,8 @@ Comprehensive guide for setting up and using Schedule Management on Linux.
 
 ### Prerequisites
 - A modern Linux distribution (Ubuntu/Debian, Fedora, or Arch are detected automatically by the installer)
-- `curl` and `tar` (or `git`); no Python or other runtime is needed
-- x86_64 or arm64 (prebuilt static binaries), or [Rust](https://rustup.rs) to build from source
+- [Rust](https://rustup.rs), to build `rmd`; no other runtime is needed
+- `curl` and `tar` (or `git`)
 - A notification daemon and a sound theme for full popup/audio behavior (see below)
 
 ### Using the Installation Script
@@ -32,7 +32,7 @@ cd schedule-everything
 ```
 
 The script will:
-1. Install the `rmd` binary in `~/SCHEDULE_MANAGEMENT/` (a prebuilt static release, or built with `cargo` from a clone).
+1. Build the `rmd` binary with `cargo` and install it in `~/SCHEDULE_MANAGEMENT/`.
 2. Scaffold the versioned config layout (`user_config_0`, shared `tasks/`).
 3. Install and enable a `systemd` **user** service for auto-start (`rmd daemon`).
 4. Create the `reminder` alias and `start|stop|restart_reminders.sh` convenience scripts.

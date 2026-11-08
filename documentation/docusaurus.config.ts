@@ -164,7 +164,6 @@ const config: Config = {
           items: [
             {label: 'GitHub', href: repoUrl},
             {label: 'Issues', href: `${repoUrl}/issues`},
-            {label: 'PyPI package', href: 'https://pypi.org/project/schedule-management/'},
           ],
         },
       ],
