@@ -264,6 +264,13 @@ mod tests {
         assert_eq!(parse_outcome("timeout", &["OK"], "Later").as_deref(), Some("Later"));
     }
 
+    /// Without a large-font backend callers fall back to zenity/kdialog.
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn no_large_dialog_off_macos() {
+        assert_eq!(show_large_dialog("Time for a break!", &["OK"], "OK", "Reminder", Some(1)), None);
+    }
+
     /// Shows a real dialog on this Mac; it closes itself after two seconds.
     #[test]
     #[ignore = "opens a GUI dialog"]
