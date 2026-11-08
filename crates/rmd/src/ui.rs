@@ -2125,7 +2125,9 @@ impl Console {
         }
     }
 
-    fn markup_text(&self, markup: &str) -> Text {
+    /// Parse markup the way `console.print(str)` does: with rich's default
+    /// highlighting (numbers, quoted strings, ...) when output is coloured.
+    pub fn markup(&self, markup: &str) -> Text {
         let mut text = Text::from_markup(markup);
         if self.color.is_some() {
             highlight(&mut text);
@@ -2135,13 +2137,13 @@ impl Console {
 
     /// rich's `console.print(markup)`: markup, wrapped at the console width.
     pub fn print(&mut self, markup: &str) {
-        let text = self.markup_text(markup);
+        let text = self.markup(markup);
         self.render(&text);
     }
 
     /// rich's `console.print(markup, justify=...)`.
     pub fn print_justified(&mut self, markup: &str, justify: Justify) {
-        let text = self.markup_text(markup);
+        let text = self.markup(markup);
         self.render_justified(&text, justify);
     }
 

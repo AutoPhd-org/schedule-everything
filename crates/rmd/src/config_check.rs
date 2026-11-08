@@ -50,6 +50,26 @@ fn valid_time(value: &str) -> bool {
         && parts[1].parse::<u32>().is_ok_and(|m| m < 60)
 }
 
+/// Python's `date.fromisoformat` error for a string it rejects: range errors
+/// for well-formed dates, "Invalid isoformat string" otherwise.
+fn fromisoformat_error(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let (year, month, day) = match bytes.len() {
+        10 if bytes[4] == b'-' && bytes[7] == b'-' => (&text[0..4], &text[5..7], &text[8..10]),
+        8 => (&text[0..4], &text[4..6], &text[6..8]),
+        _ => ("", "", ""),
+    };
+    let number = |part: &str| {
+        (!part.is_empty() && part.bytes().all(|b| b.is_ascii_digit())).then(|| part.parse::<u32>().ok()).flatten()
+    };
+    match (number(year), number(month), number(day)) {
+        (Some(year), _, _) if year < 1 => format!("year {year} is out of range"),
+        (Some(_), Some(month), Some(_)) if !(1..=12).contains(&month) => "month must be in 1..12".to_string(),
+        (Some(_), Some(_), Some(_)) => "day is out of range for month".to_string(),
+        _ => format!("Invalid isoformat string: {}", py::repr_str(text)),
+    }
+}
+
 fn err(message: impl Into<String>) -> ConfigCheckError {
     ConfigCheckError(message.into())
 }
@@ -72,7 +92,7 @@ pub fn validate_content(key: &str, content: &str) -> Result<(), ConfigCheckError
         for item in items {
             let deadline = item["deadline"].as_str().unwrap_or_default();
             if py::parse_iso_date(deadline).is_none() {
-                return Err(err(format!("Invalid isoformat string: {}", py::repr_str(deadline))));
+                return Err(err(fromisoformat_error(deadline)));
             }
             match item.get("repeat") {
                 None | Some(Value::Null) => {}

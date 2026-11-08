@@ -106,7 +106,7 @@ fn open_tasks(today: NaiveDate, task_types: &Dict) -> Vec<Value> {
             }),
         ));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
@@ -303,3 +303,310 @@ pub fn read_plan(source: &str) -> Result<Value, SyncError> {
 }
 
 // --- CLI command (`rmd sync [--json | --apply FILE | --clear]`) is added below. ---
+
+use crate::i18n::{t, tf};
+use crate::ui::{BoxStyle, Column, Console, Justify, Table, Text};
+
+/// An `OSError` message the way Python words it (`[Errno 2] No such file or
+/// directory: 'plan.json'`).
+fn os_error_message(error: &std::io::Error, path: &str) -> String {
+    match error.raw_os_error() {
+        Some(code) => {
+            let text = error.to_string();
+            let reason = text.split(" (os error").next().unwrap_or(&text).to_string();
+            format!("[Errno {code}] {reason}: {}", py::repr_str(path))
+        }
+        None => error.to_string(),
+    }
+}
+
+fn print_plan(console: &mut Console, context: &Value) {
+    if context["skipped"].as_bool() == Some(true) {
+        console.print(&format!("[bold yellow]{}[/]", t("Today is a skipped day. Nothing to sync.")));
+        return;
+    }
+    let slots = context["slots"].as_array().cloned().unwrap_or_default();
+    if slots.is_empty() {
+        console.print(&format!("[bold yellow]{}[/]", t("No untitled pomodoro/potato blocks need syncing today.")));
+        return;
+    }
+    let mut table = Table::new()
+        .title(&format!("[bold]{}[/bold]", t("Today's focus blocks")))
+        .box_style(BoxStyle::Rounded)
+        .header_style("bold cyan");
+    table.add_column(Column::new(&t("Time")).justify(Justify::Right).style("cyan").no_wrap());
+    table.add_column(Column::new(&t("Block")));
+    table.add_column(Column::new(&t("Planned task")));
+    for slot in &slots {
+        let title = match &slot["title"] {
+            Value::String(title) if !title.is_empty() => title.clone(),
+            _ => "[dim]—[/dim]".to_string(),
+        };
+        table.add_row([
+            Text::from(py::py_str(&slot["time"])),
+            Text::from(py::py_str(&slot["block"])),
+            Text::from(title),
+        ]);
+    }
+    console.render(&table);
+    if !py::truthy(&context["plan"]) {
+        console.print(&t(
+            "No plan yet. Ask your AI agent to plan today with the Schedule Everything plugin, or apply a plan with `rmd sync --apply plan.json`.",
+        ));
+    }
+}
+
+/// `rmd sync [--json | --apply FILE | --clear]`.
+pub fn sync_command(json: bool, apply: Option<&str>, clear: bool) -> i32 {
+    sync_command_with(&mut Console::stdout(), json, apply, clear)
+}
+
+/// [`sync_command`] writing to a given console.
+pub fn sync_command_with(console: &mut Console, json: bool, apply: Option<&str>, clear: bool) -> i32 {
+    let load_failed = |console: &mut Console, error: &dyn std::fmt::Display| {
+        console.eprintln(&format!("❌ {} {error}", t("Failed to load today's schedule:")));
+        1
+    };
+    if clear {
+        return match clear_sync_plan() {
+            Ok(result) => {
+                let cleared = result["cleared"].as_bool() == Some(true);
+                console.println(&if cleared { t("Cleared today's plan.") } else { t("There was no saved plan.") });
+                0
+            }
+            Err(e) => load_failed(console, &e),
+        };
+    }
+    if json {
+        return match sync_context() {
+            Ok(context) => {
+                console.println(&py::dumps_pretty(&context));
+                0
+            }
+            Err(e) => load_failed(console, &e),
+        };
+    }
+    if load_mode() == "p" {
+        console.println(&format!("❌ {}", t(P_MODE_MESSAGE)));
+        return 1;
+    }
+    if let Some(source) = apply.filter(|s| !s.is_empty()) {
+        let result = read_plan(source).and_then(|plan| apply_sync_plan(&plan));
+        return match result {
+            Ok(result) => {
+                console.println(&tf(
+                    "Saved today's plan with {count} focus blocks to {path}.",
+                    &[("count", &py::py_str(&result["assigned"])), ("path", &py::py_str(&result["savedPath"]))],
+                ));
+                0
+            }
+            Err(SyncError::Plan(e)) => {
+                console.eprintln(&format!("❌ {e}"));
+                1
+            }
+            Err(SyncError::Io(e)) if source != "-" => load_failed(console, &os_error_message(&e, source)),
+            Err(e) => load_failed(console, &e),
+        };
+    }
+    match sync_context() {
+        Ok(context) => {
+            print_plan(console, &context);
+            0
+        }
+        Err(e) => load_failed(console, &e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    const SETTINGS: &str = "[settings]\nlanguage = \"en\"\nskip_days = [\"sunday\"]\n\n[time_blocks]\npomodoro = 25\npotato = 50\n\n[task_types]\n1 = \"Work\"\n";
+    const WEEK: &str = "[wednesday]\n\"09:00\" = \"pomodoro\"\n\"10:00\" = \"potato\"\n\"11:00\" = { block = \"pomodoro\", title = \"Fixed review\" }\n\"12:00\" = \"lunch\"\n";
+
+    /// Wednesday 2026-11-04 (ISO week 45, odd), like the Python fixture's date.
+    fn env() -> TestEnv {
+        let mut env = TestEnv::new();
+        env.set_now("2026-11-04T08:00:00");
+        env.write("user_config_0/settings.toml", SETTINGS);
+        env.write("user_config_0/odd_weeks.toml", WEEK);
+        env.write("user_config_0/even_weeks.toml", WEEK);
+        env.write(
+            "tasks/tasks.json",
+            r#"[{"description": "Release notes", "priority": 9, "type": "1"}, {"description": "Later idea", "priority": 4, "alarm_from": "2026-11-20"}]"#,
+        );
+        env.write(
+            "user_config_0/ddl.json",
+            r#"[{"event": "Launch", "deadline": "2026-11-06"}, {"event": "Past", "deadline": "2026-11-01"}]"#,
+        );
+        let overlay = env.root().join("synced_schedule.toml").display().to_string();
+        env.set_var("REMINDER_SYNCED_SCHEDULE_PATH", &overlay);
+        env
+    }
+
+    fn json_output(console: &Console) -> Value {
+        serde_json::from_str(console.output()).expect("JSON output")
+    }
+
+    #[test]
+    fn json_lists_slots_tasks_and_deadlines() {
+        let _env = env();
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, true, None, false), 0);
+        let context = json_output(&console);
+        let slots: Vec<(String, String, Value)> = context["slots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| (py::py_str(&s["time"]), py::py_str(&s["block"]), s["minutes"].clone()))
+            .collect();
+        assert_eq!(
+            slots,
+            [
+                ("09:00".to_string(), "pomodoro".to_string(), json!(25)),
+                ("10:00".to_string(), "potato".to_string(), json!(50))
+            ]
+        );
+        assert_eq!(
+            context["tasks"][0],
+            json!({"description": "Release notes", "priority": 9, "type": "1", "typeName": "Work",
+                   "alarmFrom": null, "postponed": false, "procrastinated": false, "procrastinateDays": null})
+        );
+        assert_eq!(context["tasks"][1]["postponed"], true);
+        assert_eq!(context["deadlines"], json!([{"event": "Launch", "deadline": "2026-11-06", "daysLeft": 2}]));
+        assert_eq!(context["plan"], Value::Null);
+    }
+
+    #[test]
+    fn apply_saves_a_plan_that_json_then_reports() {
+        let env = env();
+        let plan = env.write("plan.json", r#"{"date": "2026-11-04", "assignments": {"09:00": "  Release   notes "}}"#);
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, Some(plan.to_str().unwrap()), false), 0);
+        let overlay = env.root().join("synced_schedule.toml");
+        assert_eq!(
+            console.output(),
+            format!("Saved today's plan with 1 focus blocks to {}.\n", crate::paths::resolve(&overlay).display())
+        );
+        let saved = load_synced_schedule(Some(&overlay)).unwrap();
+        assert_eq!(
+            (saved.target_date.as_str(), saved.parity.as_str(), saved.weekday.as_str()),
+            ("2026-11-04", "odd", "wednesday")
+        );
+        assert_eq!(saved.assignments["09:00"].title, "Release notes");
+
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, true, None, false), 0);
+        let context = json_output(&console);
+        assert_eq!(context["plan"], json!({"date": "2026-11-04", "assignments": {"09:00": "Release notes"}}));
+        assert_eq!(context["slots"][0]["title"], "Release notes");
+        assert!(
+            context["events"]
+                .as_array()
+                .unwrap()
+                .contains(&json!({"time": "09:00", "label": "pomodoro: Release notes", "block": "pomodoro"}))
+        );
+    }
+
+    #[test]
+    fn apply_rejects_invalid_plans_without_writing() {
+        let env = env();
+        for (payload, message) in [
+            (json!({"date": "2026-11-05", "assignments": {"09:00": "A"}}), "today is 2026-11-04"),
+            (json!({"assignments": {"11:00": "Fixed slot"}}), "not one of today's focus slots"),
+            (json!({"assignments": {"12:00": "Lunch"}}), "not one of today's focus slots"),
+            (json!({"assignments": {"09:00": "   "}}), "needs a title"),
+            (json!({"assignments": {"09:00": "x".repeat(121)}}), "longer than 120"),
+            (json!({"assignments": {}}), "no assignments"),
+            (json!({"plan": []}), "assignments"),
+        ] {
+            let error = apply_sync_plan(&payload).expect_err("rejected");
+            assert!(error.to_string().contains(message), "{error} vs {message}");
+        }
+        assert!(!env.root().join("synced_schedule.toml").exists());
+        let plan = env.write("plan.json", "[1, 2]");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, Some(plan.to_str().unwrap()), false), 1);
+        assert_eq!(console.error_output(), "❌ The plan must be a JSON object.\n");
+        assert_eq!(console.output(), "");
+    }
+
+    #[test]
+    fn p_mode_refuses_apply_but_allows_json_and_clear() {
+        let env = env();
+        env.write("tasks/mode.txt", "p");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, Some("-"), false), 1);
+        assert_eq!(console.output(), "❌ Currently in p mode. Switch back to j mode to execute this command.\n");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, false), 1);
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, true, None, false), 0);
+        assert_eq!(json_output(&console)["mode"], "p");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, true), 0);
+        assert_eq!(console.output(), "There was no saved plan.\n");
+    }
+
+    #[test]
+    fn clear_removes_todays_plan() {
+        let env = env();
+        apply_sync_plan(&json!({"assignments": {"09:00": "Release notes"}})).unwrap();
+        assert!(env.root().join("synced_schedule.toml").exists());
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, true), 0);
+        assert_eq!(console.output(), "Cleared today's plan.\n");
+        assert!(!env.root().join("synced_schedule.toml").exists());
+        assert_eq!(clear_sync_plan().unwrap(), json!({"cleared": false}));
+    }
+
+    #[test]
+    fn bare_sync_shows_blocks_and_bad_input_fails() {
+        let env = env();
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, false), 0);
+        let expected = [
+            "       Today's focus blocks        ",
+            "╭───────┬──────────┬──────────────╮",
+            "│  Time │ Block    │ Planned task │",
+            "├───────┼──────────┼──────────────┤",
+            "│ 09:00 │ pomodoro │ —            │",
+            "│ 10:00 │ potato   │ —            │",
+            "╰───────┴──────────┴──────────────╯",
+            "No plan yet. Ask your AI agent to plan today with the Schedule Everything ",
+            "plugin, or apply a plan with `rmd sync --apply plan.json`.",
+            "",
+        ];
+        assert_eq!(console.output(), expected.join("\n"));
+
+        let bad = env.write("bad.json", "{not json");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, Some(bad.to_str().unwrap()), false), 1);
+        assert!(console.error_output().contains("not valid JSON"));
+
+        let missing = env.root().join("missing.json");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, Some(missing.to_str().unwrap()), false), 1);
+        assert_eq!(
+            console.error_output(),
+            format!(
+                "❌ Failed to load today's schedule: [Errno 2] No such file or directory: '{}'\n",
+                missing.display()
+            )
+        );
+    }
+
+    #[test]
+    fn skip_day_and_no_slots_messages() {
+        let mut env = env();
+        env.set_now("2026-11-08T08:00:00");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, false), 0);
+        assert_eq!(console.output(), "Today is a skipped day. Nothing to sync.\n");
+        env.set_now("2026-11-05T08:00:00");
+        let mut console = Console::capture(80);
+        assert_eq!(sync_command_with(&mut console, false, None, false), 0);
+        assert_eq!(console.output(), "No untitled pomodoro/potato blocks need syncing today.\n");
+    }
+}
