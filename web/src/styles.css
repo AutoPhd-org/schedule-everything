@@ -8,6 +8,8 @@
 @property --blob-4 { syntax: "<color>"; inherits: true; initial-value: #ffd166; }
 @property --bg { syntax: "<color>"; inherits: true; initial-value: #f6f3ff; }
 @property --blob-opacity { syntax: "<number>"; inherits: true; initial-value: .55; }
+/* Today's progress bar, 0 to 1, set by render.ts (applyLoad) while the theme follows the workload. */
+@property --day-progress { syntax: "<number>"; inherits: true; initial-value: 0; }
 
 :root {
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -43,9 +45,13 @@
   --c: var(--accent);
   --blob-1: #8f7bff; --blob-2: #ff8fb1; --blob-3: #5fd4b0; --blob-4: #ffd166;
   --blob-opacity: .55;
-  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease);
+  /* All clear's palette, which today's progress pulls the workload theme toward: up to 40% of the way once
+     today's timed work is all done, so the workload still sets the tone. */
+  --done-bg: #effaf5; --done-1: #7fe3c4; --done-2: #9fd3ff; --done-3: #c6f09b; --done-4: #ffe08f;
+  --pull: calc(var(--day-progress) * 40%);
+  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease), --day-progress 1.2s var(--ease);
   color: var(--text);
-  background: var(--bg);
+  background: color-mix(in oklab, var(--bg), var(--done-bg) var(--pull));
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -73,6 +79,7 @@
   --c-magenta: #d55181; --c-green: #008300; --c-violet: #9085e9; --c-red: #e66767;
   --blob-1: #5b46d6; --blob-2: #b03f86; --blob-3: #137a62; --blob-4: #8a5a12;
   --blob-opacity: .42;
+  --done-bg: #0a1613; --done-1: #137a5e; --done-2: #1e5c8c; --done-3: #3f7a1c; --done-4: #7a6514;
 }
 /* P mode: a warmer, looser palette for flexible days. */
 :root[data-mode="p"] {
@@ -89,7 +96,8 @@
 }
 /* Workload themes (workload.ts): the page tint, the backdrop, glass surfaces, and the dot grid follow how much
    open work there is, from cool and airy when the plate is clear to warm and dense when it is heavy. Steady keeps
-   each mode's own backdrop. Accents stay with the planning mode. --load-c is the level's color for highlights. */
+   each mode's own backdrop. Accents stay with the planning mode. --load-c is the level's color for highlights.
+   Today's progress bar then eases the page and the backdrop part of the way toward All clear (--pull, on :root). */
 :root[data-load] { --glass: color-mix(in oklab, var(--load-c) 5%, rgba(255, 255, 255, .72)); }
 :root[data-load][data-theme="dark"] { --glass: color-mix(in oklab, var(--load-c) 9%, rgba(26, 21, 46, .74)); }
 :root[data-load="clear"] { --load-c: #16a374; --bg: #effaf5; --blob-1: #7fe3c4; --blob-2: #9fd3ff; --blob-3: #c6f09b; --blob-4: #ffe08f; --blob-opacity: .5; --dots: 34px; }
@@ -128,15 +136,16 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 /* ----- Living backdrop --------------------------------------------------- */
 .backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
 .backdrop i { position: absolute; width: 52vmax; height: 52vmax; border-radius: 50%; opacity: var(--blob-opacity); animation: drift 28s ease-in-out infinite alternate; }
-.backdrop i:nth-child(1) { background: radial-gradient(circle, var(--blob-1) 0%, transparent 64%); top: -22vmax; left: -14vmax; }
-.backdrop i:nth-child(2) { background: radial-gradient(circle, var(--blob-2) 0%, transparent 64%); top: -12vmax; right: -20vmax; animation-duration: 34s; animation-delay: -8s; }
-.backdrop i:nth-child(3) { background: radial-gradient(circle, var(--blob-3) 0%, transparent 64%); bottom: -26vmax; left: 18vw; animation-duration: 31s; animation-delay: -16s; }
-.backdrop i:nth-child(4) { background: radial-gradient(circle, var(--blob-4) 0%, transparent 64%); bottom: -18vmax; right: -8vmax; width: 40vmax; height: 40vmax; animation-duration: 25s; animation-delay: -4s; }
+.backdrop i:nth-child(1) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-1), var(--done-1) var(--pull)) 0%, transparent 64%); top: -22vmax; left: -14vmax; }
+.backdrop i:nth-child(2) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-2), var(--done-2) var(--pull)) 0%, transparent 64%); top: -12vmax; right: -20vmax; animation-duration: 34s; animation-delay: -8s; }
+.backdrop i:nth-child(3) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-3), var(--done-3) var(--pull)) 0%, transparent 64%); bottom: -26vmax; left: 18vw; animation-duration: 31s; animation-delay: -16s; }
+.backdrop i:nth-child(4) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-4), var(--done-4) var(--pull)) 0%, transparent 64%); bottom: -18vmax; right: -8vmax; width: 40vmax; height: 40vmax; animation-duration: 25s; animation-delay: -4s; }
 .backdrop::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1px, transparent 1.2px); background-size: var(--dots, 26px) var(--dots, 26px); mask-image: linear-gradient(to bottom, #000, transparent 70%); opacity: .7; }
 .backdrop::before { content: ""; position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 90% 60% at 50% 115%, color-mix(in oklab, var(--load-c, transparent) 32%, transparent), transparent 70%); transition: opacity 1.2s var(--ease); }
-:root[data-load="busy"] .backdrop::before { opacity: .55; }
-:root[data-load="heavy"] .backdrop::before { opacity: .85; animation: breathe 7s ease-in-out infinite; }
-@keyframes breathe { 50% { opacity: .45; } }
+/* The warm glow of a busy or heavy day fades as today's progress bar fills: by up to 60% once it is full. */
+:root[data-load="busy"] .backdrop::before { opacity: calc(.55 * (1 - var(--day-progress) * .6)); }
+:root[data-load="heavy"] .backdrop::before { opacity: calc(.85 * (1 - var(--day-progress) * .6)); animation: breathe 7s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: calc(.45 * (1 - var(--day-progress) * .6)); } }
 
 /* ----- Shell -------------------------------------------------------------- */
 .workspace { display: flex; min-height: 100vh; }
@@ -408,12 +417,12 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .group-icon svg { width: 17px; height: 17px; }
 .group-heading h3 { font-size: 14px; color: var(--text); flex: 1; overflow-wrap: anywhere; }
 .group-count { font: 750 12px/1 var(--display); color: var(--text); border-radius: 999px; padding: 5px 9px; background: color-mix(in oklab, var(--c) 22%, var(--surface-solid)); }
-.task-cards { display: grid; gap: 9px; }
+/* One column that never grows past the group, whatever a card holds. */
+.task-cards { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
 .task-card { position: relative; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 22px; padding: 14px 14px 12px; transition: transform .4s var(--spring), box-shadow .3s, opacity .4s; }
 .task-card:hover { transform: translateY(-3px) rotate(-.4deg); box-shadow: var(--shadow); }
 .task-card.high-priority { box-shadow: inset 4px 0 0 var(--c); }
 .task-card.deferred { box-shadow: inset 4px 0 0 var(--warning); }
-.task-card.completing { animation: complete .8s var(--ease) forwards; }
 .task-main { display: flex; align-items: flex-start; gap: 10px; }
 .complete-button { width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center; border: 2px solid color-mix(in oklab, var(--c) 60%, var(--muted)); border-radius: 50%; background: var(--surface-solid); margin-top: 1px; padding: 0; color: transparent; transition: transform .35s var(--spring), background .25s, color .2s, border-color .2s; }
 .complete-button svg { width: 13px; height: 13px; stroke-width: 3; }
@@ -443,10 +452,31 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-card.is-overdue .task-timer svg { animation: overdue-wobble 2.4s var(--ease) infinite; }
 .task-card.is-full .complete-button { color: var(--good-strong); border-color: var(--good-strong); animation: count-pulse .9s var(--spring); }
 
+/* A task leaving the board (effects.ts, farewell): its look changes here, and script moves it away and closes
+   the space it took. Completed tasks turn green, are checked and struck through, and catch a sheen of light;
+   cancelled ones go grey and are struck through in red; dropped ones fade to grey and swing from one corner. */
+.task-title { background: linear-gradient(var(--strike, var(--good-strong)), var(--strike, var(--good-strong))) no-repeat 0 calc(50% + 1px) / 0 2px; transition: background-size .4s var(--ease), color .3s; }
+.task-card.farewell, .timer.farewell { z-index: 4; pointer-events: none; transition: transform .4s var(--spring), box-shadow .3s, background-color .3s, border-color .3s, filter .3s; }
+.task-group:has(.farewell), .timer-row:has(.farewell) { z-index: 3; }
+.farewell button:disabled { opacity: 1; }
+.task-card.farewell .task-title { background-size: 100% 2px; color: var(--muted); }
+.task-card.farewell-deleted, .timer.farewell-deleted { border-color: color-mix(in oklab, var(--good-strong) 60%, var(--line)); background: color-mix(in oklab, var(--good-strong) 10%, var(--surface-solid)); box-shadow: 0 0 0 4px color-mix(in oklab, var(--good-strong) 22%, transparent), 0 18px 34px -20px var(--good-strong); }
+.task-card.farewell-deleted .complete-button { color: #fff; background: var(--good-strong); border-color: var(--good-strong); animation: check-pop .5s var(--spring); }
+.task-card.farewell-deleted::after, .timer.farewell-deleted::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(105deg, transparent 32%, color-mix(in oklab, white 42%, transparent) 50%, transparent 68%) no-repeat; background-size: 260% 100%; animation: sheen .75s var(--ease) .08s both; }
+.task-card.farewell-cancelled { --strike: var(--critical); border-color: color-mix(in oklab, var(--critical) 45%, var(--line)); background: color-mix(in oklab, var(--critical) 6%, var(--surface-solid)); box-shadow: none; }
+.task-card.farewell-cancelled :is(.complete-button, .task-meta, .task-detail, .subtasks, .task-progress-row, .task-more) { filter: grayscale(1); opacity: .7; transition: filter .3s, opacity .3s; }
+.task-card.farewell-dropped { --strike: var(--muted); filter: grayscale(.75); transform-origin: 16px 10px; box-shadow: var(--shadow); }
+@keyframes check-pop { 0% { transform: scale(.7); } 45% { transform: scale(1.5) rotate(-10deg); } 100% { transform: scale(1); } }
+@keyframes sheen { from { background-position: 115% 0; } to { background-position: -15% 0; } }
+@keyframes tick { 0% { transform: translateY(-5px) scale(1.35); } 100% { transform: none; } }
+.group-count.tick, .nav-count.tick { display: inline-block; animation: tick .6s var(--spring); }
+
 /* Progress: a slider on every task (and on each task timer), 0–100%. */
 .progress-control { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 10px 0 0 32px; font-size: 11px; font-weight: 650; color: var(--muted); cursor: pointer; }
 .progress-control b { min-width: 4.2ch; font: 760 12px/1 var(--display); color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
-.progress-range { -webkit-appearance: none; appearance: none; flex: 1; width: auto; min-width: 48px; height: 7px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 45%, var(--surface-solid)), var(--c)) 0 0 / calc(var(--p, 0) * 100%) 100% no-repeat, var(--surface-sunk); cursor: pointer; }
+/* A width of 0 drops the slider's built-in width (about 129px), so a narrow card can shrink it; it still grows to
+   fill the row. */
+.progress-range { -webkit-appearance: none; appearance: none; flex: 1; width: 0; min-width: 48px; height: 7px; margin: 0; padding: 0; border: 0; border-radius: 99px; background: linear-gradient(90deg, color-mix(in oklab, var(--c) 45%, var(--surface-solid)), var(--c)) 0 0 / calc(var(--p, 0) * 100%) 100% no-repeat, var(--surface-sunk); cursor: pointer; }
 .progress-range:focus { box-shadow: none; }
 .progress-range:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
 .progress-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-solid); border: 3px solid var(--c); box-shadow: 0 3px 8px -2px var(--c); transition: transform .3s var(--spring); }
@@ -458,6 +488,11 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
    slider gives way to a meter that follows them. */
 .task-progress-row { display: flex; align-items: center; gap: 6px; margin: 10px 0 0 32px; }
 .task-progress-row .progress-control { flex: 1; min-width: 0; margin: 0; }
+/* In a narrow card the word "Progress" makes way for the slider (which keeps its own label for screen readers). */
+.task-progress-row { container: progress-row / inline-size; }
+@container progress-row (max-width: 210px) {
+  .task-progress-row .progress-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+}
 .subtask-start { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 1.5px dashed color-mix(in oklab, var(--c) 45%, var(--line-strong)); border-radius: 10px; background: transparent; color: var(--muted); transition: color .2s, background .2s, border-color .2s, transform .35s var(--spring); }
 .subtask-start svg { width: 15px; height: 15px; }
 .subtask-start:hover { color: var(--text); border-style: solid; border-color: var(--c); background: color-mix(in oklab, var(--c) 12%, var(--surface-solid)); transform: translateY(-1px) rotate(-5deg); }
@@ -536,10 +571,20 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .timer:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .content.enter .timer { animation: rise .5s var(--ease) both; animation-delay: calc(.15s + var(--i, 0) * 50ms); }
 .timer.is-leaving { animation: timer-leave .34s var(--ease) forwards; }
-.timer-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+/* The chips and the type share a row; when they do not all fit, the type (or a chip) wraps to the next line
+   instead of running past the card's edge. */
+.timer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 22px; }
 .timer-kind { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .timer-kind svg { width: 12px; height: 12px; }
 .timer-type { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 650; color: var(--muted); }
+.timer-head .timer-type { flex: 1 1 0; min-width: min(6em, 100%); max-width: 100%; text-align: right; }
+/* In a narrow task card, a flag (Overdue, Last hour, All done) leaves the kind chip just its icon, so the chips
+   keep to one line; the word stays for screen readers. */
+.timer { container: timer / inline-size; }
+@container timer (max-width: 290px) {
+  .timer-task .timer-head:has(.timer-flag) .timer-kind { padding: 3px 6px; }
+  .timer-task .timer-head:has(.timer-flag) .timer-kind > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+}
 .timer h4 { font: 700 13.5px/1.35 var(--display); color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .timer-clock { display: flex; flex-direction: column; gap: 1px; margin-top: auto; }
 .timer-clock time { font: 800 24px/1.1 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text); }
@@ -557,7 +602,9 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .timer-deadline { border: 1.5px dashed color-mix(in oklab, var(--c) 60%, var(--line-strong)); background: repeating-linear-gradient(135deg, color-mix(in oklab, var(--c) 9%, var(--surface-solid)) 0 10px, var(--surface-solid) 10px 20px); }
 .timer-deadline .timer-kind { color: var(--on-grad); background: var(--c); }
 .timer-deadline .timer-type { margin-left: 0; }
-.timer-close { display: grid; place-items: center; width: 26px; height: 26px; margin: -3px -5px -3px auto; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
+/* Pinned to the end of the first line, so it stays put when the chips beside it wrap. */
+.timer-deadline .timer-head { position: relative; padding-right: 22px; }
+.timer-close { position: absolute; top: -2px; right: -8px; display: grid; place-items: center; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .4s var(--spring); }
 .timer-close svg { width: 14px; height: 14px; }
 .timer-close:hover { background: var(--surface-alt); color: var(--text); transform: rotate(90deg); }
 .timer-empty { display: flex; align-items: center; gap: 12px; padding: 12px 6px 2px; border-top: 1px dashed var(--line-strong); font-size: 12px; color: var(--muted); }
@@ -570,7 +617,7 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
    clock rings; once overdue a bell swings and the dial pings; when every bit of the work is done a party popper
    pops and Complete waits beside the progress. */
 .timer-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.timer-heading { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.timer-heading { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .timer-dial { position: relative; flex-shrink: 0; display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle, color-mix(in oklab, var(--c) 17%, var(--surface-solid)) 0 57%, transparent 59%); }
 .timer-dial > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
 .dial-track { fill: none; stroke: color-mix(in oklab, var(--c) 14%, var(--surface-sunk)); stroke-width: 4.5; }
@@ -1568,6 +1615,26 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .load-step b { font: 750 11.5px/1.2 var(--display); color: var(--text); }
 .load-step small { font-size: 10px; color: var(--muted); }
 .load-step.is-now { box-shadow: 0 0 0 2px var(--lc), 0 10px 20px -14px var(--lc); }
+/* Where each workload level starts: a number for Steady, Busy, and Heavy, each in its level's color. */
+.load-thresholds { container-type: inline-size; margin: 0 0 12px; padding: 14px 14px 12px; border-radius: 20px; border: 1px solid var(--line); background: color-mix(in oklab, var(--surface-sunk) 55%, transparent); }
+.threshold-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.threshold { margin: 0; gap: 6px; }
+.threshold-name { display: inline-flex; align-items: center; gap: 5px; font: 700 11.5px/1.2 var(--display); color: var(--text); white-space: nowrap; }
+.threshold-name svg { width: 14px; height: 14px; color: var(--lc); }
+.threshold input { padding: 7px 12px; border-radius: 12px; font-variant-numeric: tabular-nums; border-color: color-mix(in oklab, var(--lc) 40%, var(--line-strong)); }
+.threshold input:focus { border-color: var(--lc); box-shadow: 0 0 0 4px color-mix(in oklab, var(--lc) 20%, transparent); }
+.threshold input[aria-invalid="true"] { border-color: var(--critical); box-shadow: 0 0 0 4px color-mix(in oklab, var(--critical) 16%, transparent); }
+.threshold-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 10px; }
+.threshold-problem { flex: 1 1 200px; font-size: 11.5px; font-weight: 600; color: var(--critical-ink); }
+.threshold-foot .text-button { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; }
+.threshold-foot .text-button svg { width: 13px; height: 13px; }
+.threshold-foot .text-button:disabled { opacity: .45; cursor: default; }
+/* Too narrow for three side by side: one level per row, its name beside its number. */
+@container (max-width: 360px) {
+  .threshold-fields { grid-template-columns: 1fr; gap: 6px; }
+  .threshold { flex-direction: row; align-items: center; justify-content: space-between; }
+  .threshold input { width: 96px; flex: none; }
+}
 
 /* ----- Dialogs, settings, misc ---------------------------------------------- */
 .editor-dialog { background: var(--surface-solid); color: var(--text); border: 1px solid var(--line); border-radius: 36px 36px 36px 14px; padding: 28px; width: min(500px, calc(100vw - 32px)); box-shadow: var(--shadow-lg); }
@@ -1585,6 +1652,15 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .burst { position: fixed; z-index: 1000; width: 0; height: 0; pointer-events: none; }
 .burst i { position: absolute; left: 0; top: 0; width: 7px; height: 12px; border-radius: 2px; background: var(--c); animation: burst .95s cubic-bezier(.15, .75, .3, 1) forwards; }
 .burst i.round { width: 8px; height: 8px; border-radius: 50%; }
+.burst.dust i { width: var(--s, 8px); height: var(--s, 8px); border-radius: 50%; background: color-mix(in oklab, var(--muted) 70%, transparent); box-shadow: 0 0 8px 1px color-mix(in oklab, var(--muted) 35%, transparent); animation: dust .85s cubic-bezier(.2, .7, .35, 1) forwards; }
+/* A ripple of two rings, as a task is checked off. */
+.shockwave { position: fixed; z-index: 1000; width: 0; height: 0; pointer-events: none; }
+.shockwave i { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 2.5px solid var(--good-strong); animation: shockwave .7s cubic-bezier(.2, .7, .3, 1) forwards; }
+.shockwave i + i { border-width: 1.5px; animation-delay: .12s; opacity: 0; }
+/* A label that floats up from a task as it leaves, saying what happened to it. */
+.float-tag { position: fixed; z-index: 1001; pointer-events: none; display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px 6px 8px; border-radius: 999px; font: 750 12px/1 var(--display); color: #fff; background: var(--good-strong); box-shadow: 0 10px 22px -10px var(--good-strong); white-space: nowrap; animation: tag-rise 1.1s cubic-bezier(.2, .8, .3, 1) forwards; }
+.float-tag svg { width: 13px; height: 13px; stroke-width: 3; }
+.float-tag.tone-cancelled, .float-tag.tone-dropped { color: var(--surface-solid); background: var(--text); box-shadow: 0 10px 22px -12px var(--text); }
 
 /* ----- Motion ------------------------------------------------------------------ */
 @keyframes drift { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(6vw, 4vh) scale(1.08); } 100% { transform: translate(-4vw, 8vh) scale(.95); } }
@@ -1610,7 +1686,9 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 @keyframes flash { 0% { transform: scale(1); } 30% { transform: scale(1.7) rotate(-10deg); } 60% { transform: scale(.9); } 100% { transform: scale(1); } }
 @keyframes flicker { 0%, 100% { transform: scale(1) rotate(-2deg); } 40% { transform: scale(1.06, .96) rotate(2deg); } 70% { transform: scale(.97, 1.04) rotate(-1deg); } }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
-@keyframes complete { 0% { transform: scale(1); } 30% { transform: scale(1.03); box-shadow: 0 0 0 4px color-mix(in oklab, var(--good-strong) 40%, transparent); } 100% { transform: scale(.9) translateX(30px); opacity: 0; } }
+@keyframes dust { 0% { transform: translate(-50%, -50%) scale(.4); opacity: .9; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.6); opacity: 0; } }
+@keyframes shockwave { 0% { transform: scale(.35); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes tag-rise { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 18% { opacity: 1; transform: translate(-50%, -85%) scale(1.06); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -260%) scale(.96); } }
 @keyframes burst { 0% { transform: translate(-50%, -50%) scale(.3) rotate(0); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 46px)) scale(1) rotate(var(--rot)); opacity: 0; } }
 
 /* ----- Responsive -------------------------------------------------------------- */

@@ -34,7 +34,7 @@ files can be repaired in the browser.
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
-| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; choose the board layout, whether the theme follows your workload, and whether today's progress weighs tasks by importance |
+| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
 
 ## J mode and P mode
 
@@ -337,10 +337,20 @@ five levels:
 | Busy | 5.5 to 9 |
 | Heavy | 9 and up |
 
+These are the defaults. To make the levels fit your days, set where Steady,
+Busy, and Heavy start under **Where each level starts** in Settings; each must
+be above 0 and higher than the one before it, and Light covers everything
+between 0 and Steady. **Reset** brings the defaults back. Like the other
+display choices, the numbers are saved in your browser.
+
 The level shows in the header on every page (select it to open the daily
 overview), and the workspace's theme follows it: the background, its color
 blobs, and the glass surfaces shift from cool greens and blues when your plate
-is clear to warm oranges and reds when it is heavy. Turn this off with **Theme
+is clear to warm oranges and reds when it is heavy. Your progress tempers it:
+as today's timed work bar fills, the colors ease part of the way back toward
+the calm of All clear (up to 40% of the way once the bar is full), and the warm
+glow of a busy or heavy day fades. The workload still sets the tone; with no
+timed work due today, only the workload counts. Turn this off with **Theme
 follows your workload** in Settings.
 
 The board has two layouts; switch with **Compact** / **Spread** beside **Fold**,

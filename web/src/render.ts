@@ -7,16 +7,16 @@ import { boardGroups, boardOrder, foldSwitch, groupTasks, layoutSwitch, masonry,
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { dayPanel } from "./daily";
-import { bindTilt, burst, reducedMotion } from "./effects";
+import { bindTilt, burst, farewell, reducedMotion, type Farewell } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
 import { loadPrefs, savePrefs, type BoardLayout, type Prefs } from "./prefs";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
-import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
+import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, todayProgress, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
-import { describeLoad, LOAD_LEVELS, levelInfo, WORKLOAD_DEFINITION, workload } from "./workload";
+import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
 
 export { escapeHtml, groupTasks };
 
@@ -96,8 +96,6 @@ const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for tod
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
 const isDaily = (value: unknown): value is DailyOverview => !!value && Array.isArray((value as DailyOverview).hours) && typeof (value as DailyOverview).date === "string";
-/** Workload level ranges as the Settings page lists them. */
-const LEVEL_RANGES = ["0", "under 2.5", "2.5 – 5.5", "5.5 – 9", "9 and up"];
 const undoKey = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘Z" : "Ctrl+Z";
 
 /** Run a DOM update as a view transition, so boxes that change size or place morph instead of jumping.
@@ -140,6 +138,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     prefs: loadPrefs(),
     daily: null
   };
+  setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
   let drawn: {page: Page; mode: Mode} | null = null;
   /** Progress and subtasks set on this page that the server has not confirmed yet, by task. */
@@ -306,11 +305,19 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   // ----- Workload and the daily overview ------------------------------------------
 
-  /** The theme follows the workload, unless that is turned off in Settings. */
+  /** The theme follows the workload, unless that is turned off in Settings: the workload's level picks the
+   *  palette, and today's progress bar (today's timed work, weighed as the bar weighs it) eases it part of the
+   *  way back toward calm as it fills (--day-progress, see styles.css). */
   function applyLoad(s: Snapshot) {
     const html = document.documentElement;
-    if (state.prefs.workloadTheme) html.dataset.load = workload(s.tasks, s.today.date).level;
-    else delete html.dataset.load;
+    if (!state.prefs.workloadTheme) {
+      delete html.dataset.load;
+      html.style.removeProperty("--day-progress");
+      return;
+    }
+    html.dataset.load = workload(s.tasks, s.today.date).level;
+    const today = todayProgress(s, Date.now(), state.prefs.weighted);
+    html.style.setProperty("--day-progress", (today.parts.length ? today.value : 0).toFixed(3));
   }
   /** The workload in the header, on every page; it opens the daily overview. */
   function loadChip(s: Snapshot) {
@@ -382,8 +389,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const timers = root.querySelector<HTMLElement>("#timer-strip");
     if (timers) bindTimers(timers, s);
     root.querySelectorAll<HTMLButtonElement>("[data-board-view]").forEach(btn => btn.onclick = () => setBoardView(btn.dataset.boardView as BoardView, s));
-    root.querySelectorAll<HTMLButtonElement>("[data-board-layout]").forEach(btn => btn.onclick = () => setBoardLayout(btn.dataset.boardLayout as BoardLayout));
-    root.querySelectorAll<HTMLInputElement>("[data-pref]").forEach(box => box.onchange = () => setPref(box.dataset.pref as "workloadTheme" | "weighted", box.checked, s));
+    bindDisplay(root, s);
     bindLoadChip();
     bindDaily();
     root.querySelectorAll<HTMLButtonElement>("[data-deadline]").forEach(btn => btn.onclick = () => {
@@ -456,23 +462,42 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         return;
       }
       void action(async () => {
-        const kind = btn.dataset.operation!;
+        const kind = btn.dataset.operation as Farewell;
         if (kind !== "deleted" && !window.confirm(`${kind === "cancelled" ? "Cancel" : "Drop"} “${task.description}”?`)) return;
-        const card = btn.closest(".task-card");
-        if (kind === "deleted") { burst(btn); card?.classList.add("completing"); }
+        // The task leaves the page while the server is told, its card and its timer together, and the board
+        // is redrawn once the space they took has closed.
+        const exit = farewell(copiesOf(btn.dataset.task!, btn), kind, btn);
         let result: {undo?: Record<string, unknown>} | undefined;
         try {
           await flushTask(task.description);
           result = await request<{undo?: Record<string, unknown>}>("task_delete", {description: task.description, action: kind});
         }
-        catch (error) { card?.classList.remove("completing"); throw error; }
-        await reload();
+        catch (error) { exit.revert(); throw error; }
+        await exit.done;
+        // The last task of a type leaves its group cleared, so the group glides to its new size.
+        const emptied = !s.tasks.some(other => other !== task && other.type === task.type);
+        await reload({morph: emptied, then: () => tickCounts(task.type)});
         const notice = kind === "deleted" ? `Completed “${task.description}”. Nice work.` : `Removed “${task.description}”.`;
         const token = result?.undo;
         if (token) offerUndo(notice, () => restoreTask(task.description, token));
         else state.notice = notice;
       });
     });
+  }
+  /** Every copy of a task on the page, by its index: its card on the board and its timer, the one holding
+   *  `pressed` first. */
+  function copiesOf(index: string, pressed: Element): HTMLElement[] {
+    const copies = new Set<HTMLElement>();
+    root.querySelectorAll(`[data-task="${index}"], input[data-progress="${index}"]`).forEach(el => {
+      const item = el.closest<HTMLElement>(".task-card, .timer");
+      if (item) copies.add(item);
+    });
+    return [...copies].sort((a, b) => Number(b.contains(pressed)) - Number(a.contains(pressed)));
+  }
+  /** After a task leaves, the counts it was part of tick down: its group's and the one in the sidebar. */
+  function tickCounts(type: string) {
+    const group = [...root.querySelectorAll<HTMLElement>(".task-group")].find(el => el.dataset.group === type);
+    for (const count of [group?.querySelector(".group-count"), root.querySelector(".nav-count")]) count?.classList.add("tick");
   }
   /** Put a completed, cancelled, or dropped task back as it was, and greet it on the board. */
   async function restoreTask(description: string, token: Record<string, unknown>) {
@@ -940,11 +965,79 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function setPref(key: "workloadTheme" | "weighted", on: boolean, s: Snapshot) {
     state.prefs[key] = on;
     savePrefs(state.prefs);
-    if (key === "workloadTheme") applyLoad(s);
+    // Weighing tasks by importance changes today's progress, which the theme follows too.
+    applyLoad(s);
     state.notice = key === "workloadTheme"
       ? (on ? "The theme follows your workload again." : "The theme stays the same whatever your workload.")
       : (on ? "Today’s progress now weighs each task by its importance." : "Today’s progress now counts every task the same.");
     status();
+  }
+  /** The display settings' controls: the layout switches (on the board too), the toggles, and the numbers where
+   *  the workload levels start. */
+  function bindDisplay(scope: ParentNode, s: Snapshot) {
+    scope.querySelectorAll<HTMLButtonElement>("[data-board-layout]").forEach(btn => btn.onclick = () => setBoardLayout(btn.dataset.boardLayout as BoardLayout));
+    scope.querySelectorAll<HTMLInputElement>("[data-pref]").forEach(box => box.onchange = () => setPref(box.dataset.pref as "workloadTheme" | "weighted", box.checked, s));
+    const fields = [...scope.querySelectorAll<HTMLInputElement>("[data-threshold]")];
+    // Typing says at once what is wrong; a number takes effect once it is entered (Enter, the arrows, or leaving
+    // the field), and only when all three can start the levels.
+    fields.forEach(field => {
+      field.oninput = () => readThresholds(fields);
+      field.onchange = () => {
+        const values = readThresholds(fields);
+        if (values) setThresholds(values, s);
+      };
+    });
+    const reset = scope.querySelector<HTMLButtonElement>("[data-thresholds-reset]");
+    if (reset) reset.onclick = () => {
+      setThresholds(DEFAULT_THRESHOLDS, s);
+      // The button is disabled once the defaults are back, so focus moves to the first number.
+      fields[0]?.focus({preventScroll: true});
+    };
+  }
+  /** The numbers in the level fields, when they can start the levels; otherwise null, with what is wrong shown
+   *  under the fields and each field at fault marked. */
+  function readThresholds(fields: HTMLInputElement[]): LoadThresholds | null {
+    const values = fields.map(field => field.value.trim() === "" ? NaN : roundLoad(Number(field.value)));
+    const problem = thresholdProblem(values);
+    const faulty = (value: number, i: number) => !Number.isFinite(value) || value <= 0 || value > MAX_THRESHOLD || (i > 0 && value <= values[i - 1]);
+    fields.forEach((field, i) => field.setAttribute("aria-invalid", String(!!problem && faulty(values[i], i))));
+    const message = fields[0]?.closest(".load-thresholds")?.querySelector<HTMLElement>(".threshold-problem");
+    if (message) { message.textContent = problem ?? ""; message.hidden = !problem; }
+    return problem ? null : [values[0], values[1], values[2]];
+  }
+  /** Start the workload levels at new numbers: the theme, the header, and the Settings card follow at once. */
+  function setThresholds(values: LoadThresholds, s: Snapshot) {
+    const changed = values.some((value, i) => value !== loadThresholds()[i]);
+    if (changed) {
+      setLoadThresholds(values);
+      state.prefs.loadThresholds = loadThresholds();
+      savePrefs(state.prefs);
+      updateLoad(s);
+    }
+    refreshDisplayCard(s);
+    if (!changed) return;
+    const [steady, busy, heavy] = loadThresholds().map(loadNumber);
+    state.notice = `${atDefaults() ? "Workload levels are back to the defaults" : "Workload levels updated"}: Steady from ${steady}, Busy from ${busy}, Heavy from ${heavy}.`;
+    status();
+  }
+  /** Bring the Settings card up to date in place, leaving its fields (and focus, and the rest of the page, such as
+   *  an unsaved edit in the configuration editor) as they are. */
+  function refreshDisplayCard(s: Snapshot) {
+    const card = root.querySelector<HTMLElement>(".display-card");
+    if (!card) return;
+    const load = workload(s.tasks, s.today.date);
+    const scale = card.querySelector(".load-scale");
+    if (scale) scale.outerHTML = levelScale(load);
+    const now = card.querySelector(".load-now");
+    if (now) now.innerHTML = loadNow(load);
+    card.querySelectorAll<HTMLInputElement>("[data-threshold]").forEach((field, i) => {
+      field.value = loadNumber(loadThresholds()[i]);
+      field.setAttribute("aria-invalid", "false");
+    });
+    const problem = card.querySelector<HTMLElement>(".threshold-problem");
+    if (problem) { problem.textContent = ""; problem.hidden = true; }
+    const reset = card.querySelector<HTMLButtonElement>("[data-thresholds-reset]");
+    if (reset) reset.disabled = atDefaults();
   }
   function closeComposer(s: Snapshot) {
     const type = state.board.composer?.type;
@@ -1093,19 +1186,39 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.";
     return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
   }
-  /** Display choices for this browser: the board's layout, the workload theme (with what workload means and its
-   *  levels), and how today's progress counts tasks. */
+  /** Display choices for this browser: the board's layout, the workload theme (with what workload means, its
+   *  levels, and where each level starts), and how today's progress counts tasks. */
   function displayCard(s: Snapshot) {
     const load = workload(s.tasks, s.today.date);
     const {prefs} = state;
     const toggle = (key: "workloadTheme" | "weighted", title: string, detail: string) => `<label class="setting-toggle"><input type="checkbox" data-pref="${key}" ${prefs[key] ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="setting-copy"><strong>${title}</strong><small>${detail}</small></span></label>`;
     return `<article class="card display-card"><h2>${icons.palette} Board, workload & progress</h2><p class="muted">Saved in this browser.</p>
       <div class="setting-block"><div class="setting-copy"><strong>Task board layout</strong><small>Compact packs the groups in rows, those with more important work first. Spread places them by workload: the heaviest in the middle, lighter ones farther out.</small></div>${layoutSwitch(prefs.layout)}</div>
-      ${toggle("workloadTheme", "Theme follows your workload", "Colors and the background shift from cool and calm to warm as open work piles up.")}
-      <div class="load-scale" role="list" aria-label="Workload levels">${LOAD_LEVELS.map((level, i) => `<span role="listitem" class="load-step load-${level.id} ${level.id === load.level ? "is-now" : ""}">${level.icon}<b>${e(level.label)}</b><small>${LEVEL_RANGES[i]}</small></span>`).join("")}</div>
-      <p class="muted">${e(WORKLOAD_DEFINITION)} Right now it is <b>${load.points.toFixed(1)}</b>: ${e(levelInfo(load.level).label.toLowerCase())}.</p>
+      ${toggle("workloadTheme", "Theme follows your workload", "Colors and the background shift from cool and calm to warm as open work piles up, and ease partway back toward calm as today’s progress bar fills.")}
+      ${levelScale(load)}
+      ${thresholdFields()}
+      <p class="muted load-now">${loadNow(load)}</p>
       ${toggle("weighted", "Weigh today’s progress by importance", "An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same.")}
     </article>`;
+  }
+  /** The five levels with their ranges, the current one marked. */
+  function levelScale(load: Workload) {
+    const ranges = levelRanges();
+    return `<div class="load-scale" role="list" aria-label="Workload levels">${loadLevels().map((level, i) => `<span role="listitem" class="load-step load-${level.id} ${level.id === load.level ? "is-now" : ""}">${level.icon}<b>${e(level.label)}</b><small>${ranges[i]}</small></span>`).join("")}</div>`;
+  }
+  const loadNow = (load: Workload) => `${e(WORKLOAD_DEFINITION)} Right now it is <b>${load.points.toFixed(1)}</b>: ${e(levelInfo(load.level).label.toLowerCase())}.`;
+  const atDefaults = () => loadThresholds().every((value, i) => value === DEFAULT_THRESHOLDS[i]);
+  /** Where Steady, Busy, and Heavy start, one number each, and a way back to the defaults. */
+  function thresholdFields() {
+    const field = (i: number, id: "steady" | "busy" | "heavy") => {
+      const info = levelInfo(id);
+      return `<label class="threshold load-${id}"><span class="threshold-name">${info.icon}${e(info.label)} from</span><input type="number" inputmode="decimal" min="0" max="${MAX_THRESHOLD}" step="0.5" value="${loadNumber(loadThresholds()[i])}" data-threshold="${i}" aria-describedby="threshold-help" aria-invalid="false"></label>`;
+    };
+    return `<div class="load-thresholds" role="group" aria-labelledby="threshold-title">
+        <div class="setting-copy"><strong id="threshold-title">Where each level starts</strong><small id="threshold-help">A workload at or above a number is in that level. Light is anything above 0 and below Steady.</small></div>
+        <div class="threshold-fields">${field(0, "steady")}${field(1, "busy")}${field(2, "heavy")}</div>
+        <div class="threshold-foot"><p class="threshold-problem" role="alert" hidden></p><button type="button" class="text-button" data-thresholds-reset ${atDefaults() ? "disabled" : ""}>${icons.undo}<span>Reset to ${DEFAULT_THRESHOLDS.map(loadNumber).join(" · ")}</span></button></div>
+      </div>`;
   }
   function settings(s: Snapshot) {
     const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};

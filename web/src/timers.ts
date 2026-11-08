@@ -195,7 +195,7 @@ function taskTimer(timer: TaskTimer, s: Snapshot, now: number, order: number): s
   const type = s.taskTypes[task.type] ?? task.typeName;
   const complete = level === "ready" ? `<button type="button" class="timer-complete" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}">${icons.check}<span>Complete</span></button>` : "";
   return `<article class="timer timer-task ${sw(typeSwatch(s.taskTypes, task.type))} urgency-${level} ${level === "overdue" ? "is-overdue" : ""}" role="listitem" data-at="${at}" data-kind="task" data-urgency="${level}" ${progress === 100 ? "data-ready" : ""} style="--i:${order}">
-      <div class="timer-top">${dial("task", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.tasks}<span>Task</span></span>${flag(level)}<span class="timer-type">${e(type || "")}</span></div><h4 title="${name}">${name}</h4></div></div>
+      <div class="timer-top">${dial("task", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.tasks}<span>Task</span></span>${flag(level)}<span class="timer-type" title="${e(type || "")}">${e(type || "")}</span></div><h4 title="${name}">${name}</h4></div></div>
       <p class="timer-clock"><time datetime="${e(task.due ?? "")}" data-clock="clock">${clock(at - now)}</time><span class="timer-sub">${icons.due}<span data-clock="word">${clockText("word", at, now)}</span> · <span data-clock="by">${clockText("by", at, now)}</span> ${e(dueLabel(task.due!, now))}</span></p>
       ${timerSteps(task, index)}
       <div class="timer-foot">${progressControl(index, task, "timer-progress")}${complete}</div>
@@ -220,7 +220,7 @@ function deadlineTimer(timer: DeadlineTimer, s: Snapshot, now: number, order: nu
   return `<article class="timer timer-deadline ${sw(deadlineSwatch(deadline, s.taskTypes))} urgency-${level}" role="listitem" data-at="${at}" data-kind="deadline" data-urgency="${level}" style="--i:${order}">
       <div class="timer-top">${dial("deadline", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.flag}<span>Deadline</span></span>${flag(level)}<button type="button" class="timer-close" data-timer-close="${e(key)}" aria-label="Close the timer for ${name}" title="Close this timer. The deadline stays as it is.">${icons.close}</button></div><h4 title="${name}">${name}</h4></div></div>
       <p class="timer-clock"><time datetime="${e(deadline.deadline)}" data-clock="clock">${clock(at - now)}</time><span class="timer-sub">${icons.due}<span data-clock="word">left</span> · due ${deadline.daysLeft === 0 ? "today" : e(formatDate(deadline.deadline, {weekday: "short", month: "short", day: "numeric"}))}</span></p>
-      ${deadline.typeName ? `<span class="timer-type">${e(deadline.typeName)}</span>` : ""}
+      ${deadline.typeName ? `<span class="timer-type" title="${e(deadline.typeName)}">${e(deadline.typeName)}</span>` : ""}
     </article>`;
 }
 

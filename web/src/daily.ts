@@ -8,7 +8,7 @@ import { artwork, delta, ring } from "./charts";
 import { progressOf, todayProgress } from "./timers";
 import type { DailyOverview, Snapshot, TaskItem } from "./types";
 import { e, formatDate, formatHours, icons, sw, typeSwatch } from "./ui";
-import { describeLoad, isPostponed, LOAD_LEVELS, LOAD_SCALE, levelInfo, taskLoad, WORKLOAD_DEFINITION, workload } from "./workload";
+import { describeLoad, isPostponed, levelInfo, loadLevels, loadScale, taskLoad, WORKLOAD_DEFINITION, workload } from "./workload";
 
 export type DayPanelOptions = {overview: DailyOverview | null; snapshot: Snapshot; now: number; weighted: boolean; folded: boolean};
 
@@ -90,12 +90,14 @@ function hourChart(day: DailyOverview, s: Snapshot, now: number): string {
 function loadTile(s: Snapshot): string {
   const load = workload(s.tasks, s.today.date);
   const info = levelInfo(load.level);
+  const scale = loadScale();
+  const levels = loadLevels();
   const point = (value: number, radius: number) => {
-    const angle = Math.PI * (1 - Math.min(value, LOAD_SCALE) / LOAD_SCALE);
+    const angle = Math.PI * (1 - Math.min(value, scale) / scale);
     return [60 + radius * Math.cos(angle), 62 - radius * Math.sin(angle)].map(n => n.toFixed(1));
   };
-  const ticks = LOAD_LEVELS.slice(1).map(level => {
-    const start = LOAD_LEVELS[LOAD_LEVELS.indexOf(level) - 1].below;
+  const ticks = levels.slice(1).map(level => {
+    const start = levels[levels.indexOf(level) - 1].below;
     const [x1, y1] = point(start, 44);
     const [x2, y2] = point(start, 56);
     return `<line class="gauge-tick" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
@@ -107,7 +109,7 @@ function loadTile(s: Snapshot): string {
   const split = types.length ? `<div class="load-split" role="img" aria-label="${e(`Workload by type: ${types.map(([id, points]) => `${typeName(id)} ${points.toFixed(1)}`).join(", ")}`)}">${types.map(([id, points]) => `<i class="${sw(typeSwatch(s.taskTypes, id))}" style="flex-grow:${points.toFixed(2)}" data-tip="${e(`${typeName(id)}: ${points.toFixed(1)}`)}"></i>`).join("")}</div>
       <div class="legend">${types.slice(0, 4).map(([id, points]) => `<span class="${sw(typeSwatch(s.taskTypes, id))}"><i></i>${e(typeName(id))} <b>${points.toFixed(1)}</b></span>`).join("")}</div>` : "";
   return `<article class="dp-tile dp-load load-${load.level}"><p class="dp-label">${icons.gauge}Workload <span class="dp-help" data-tip="${e(WORKLOAD_DEFINITION)}" tabindex="0" aria-label="${e(WORKLOAD_DEFINITION)}">?</span></p>
-      <div class="gauge" role="img" aria-label="${e(describeLoad(load))}"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="gauge-track" d="M10 62 A50 50 0 0 1 110 62"/><path class="gauge-fill" d="M10 62 A50 50 0 0 1 110 62" pathLength="100" stroke-dasharray="${(Math.min(load.points, LOAD_SCALE) / LOAD_SCALE * 100).toFixed(2)} 100"/>${ticks}</svg>
+      <div class="gauge" role="img" aria-label="${e(describeLoad(load))}"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="gauge-track" d="M10 62 A50 50 0 0 1 110 62"/><path class="gauge-fill" d="M10 62 A50 50 0 0 1 110 62" pathLength="100" stroke-dasharray="${(Math.min(load.points, scale) / scale * 100).toFixed(2)} 100"/>${ticks}</svg>
         <div class="gauge-read"><span class="gauge-icon">${info.icon}</span><strong>${load.points.toFixed(1)}</strong><span>${e(info.label)}</span></div></div>
       <p class="dp-note">${load.counted ? `${plural(load.counted, "open task")} · importance ${load.importance} on average · ${load.done}% done` : "No open tasks."}</p>
       ${split}<p class="dp-fine">${e(info.note)}</p>
