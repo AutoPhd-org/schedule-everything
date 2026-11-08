@@ -489,7 +489,7 @@ pub fn run(root: &Path, port: u16) -> i32 {
             return 1;
         }
     };
-    runtime.block_on(async move {
+    let code = runtime.block_on(async move {
         let listener = match TcpListener::bind(("127.0.0.1", port)).await {
             Ok(listener) => listener,
             Err(e) => {
@@ -527,7 +527,11 @@ pub fn run(root: &Path, port: u16) -> i32 {
                 1
             }
         }
-    })
+    });
+    // Like the Python server's daemon threads, a request still running (a
+    // long `rmd update`, say) does not keep the stopped server alive.
+    runtime.shutdown_background();
+    code
 }
 
 #[cfg(test)]

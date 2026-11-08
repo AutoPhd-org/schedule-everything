@@ -278,9 +278,13 @@ impl History {
         let mut habit_days: HashMap<String, HashSet<String>> = HashMap::new();
         for record in load_habit_records() {
             let Some(record) = record.as_object() else { continue };
-            if let (Some(Value::String(day)), Some(Value::Object(completed))) =
-                (record.get("date"), record.get("completed"))
-            {
+            let empty = Dict::new();
+            let completed = match record.get("completed") {
+                None => Some(&empty),
+                Some(Value::Object(completed)) => Some(completed),
+                Some(_) => None,
+            };
+            if let (Some(Value::String(day)), Some(completed)) = (record.get("date"), completed) {
                 let done = completed.keys().filter(|id| habits.contains_key(*id)).cloned().collect();
                 habit_days.insert(day.clone(), done);
             }
