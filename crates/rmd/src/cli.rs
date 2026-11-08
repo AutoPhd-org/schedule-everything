@@ -660,11 +660,7 @@ fn with_argparse_help(cmd: clap::Command, prog: &str, is_root: bool, width: usiz
 
 /// The `rmd` clap command with argparse-style help (also used for completions).
 pub fn build_command() -> clap::Command {
-    let cmd = Cli::command()
-        .styles(Styles::plain())
-        .color(ColorChoice::Auto)
-        .subcommand_help_heading("Available commands")
-        .subcommand_value_name("<command>");
+    let cmd = Cli::command().styles(Styles::plain()).color(ColorChoice::Auto).subcommand_value_name("<command>");
     with_argparse_help(cmd, "rmd", true, help_width())
 }
 
@@ -863,7 +859,9 @@ pub fn run(argv: Vec<OsString>) -> i32 {
     let Some(command) = cli.command else {
         let help = cmd.get_before_help().map(|h| h.to_string()).unwrap_or_default();
         let text = if crate::ui::detect_color_system().is_some() { help } else { strip_ansi(&help) };
-        print!("{text}");
+        let mut stdout = std::io::stdout().lock();
+        let _ = stdout.write_all(text.as_bytes());
+        let _ = stdout.flush();
         return 1;
     };
     if is_internal(&command) {
@@ -1166,6 +1164,16 @@ mod tests {
         assert!(!root.contains("__api") && !root.contains("daemon"));
         assert!(root.contains(&format!("Configuration root: {}", crate::paths::resolve(env.root()).display())));
         assert!(root.ends_with("/user_config_0\n    \n"));
+    }
+
+    #[test]
+    fn root_help_follows_the_language() {
+        let mut env = TestEnv::new();
+        env.set_var("REMINDER_LANG", "zh");
+        let root = strip_ansi(&help_text(&[]));
+        assert!(root.contains("\n\nrmd 命令行工具 - "));
+        assert!(root.contains("\n可用命令:\n  <command>\n"));
+        assert!(help_text(&["ddl"]).contains("\nDeadline commands:\n"));
     }
 
     #[test]

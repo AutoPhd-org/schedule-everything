@@ -955,6 +955,10 @@ fn crop_line(line: Line, width: usize) -> Line {
 /// rich's `Console.render_lines`: apply `style` under each segment's own
 /// style, crop to the width, and optionally pad with spaces.
 fn render_lines(renderable: &dyn Renderable, options: &Options, style: Style, pad: bool) -> Vec<Line> {
+    // Like rich's `Console.render`, nothing is rendered without room.
+    if options.width < 1 {
+        return Vec::new();
+    }
     renderable
         .render(options)
         .into_iter()
@@ -2411,6 +2415,18 @@ mod tests {
                 "",
             ]
             .join("\n")
+        );
+    }
+
+    #[test]
+    fn columns_without_room_render_blank() {
+        let mut table = Table::new().box_style(BoxStyle::Rounded).expand(true);
+        table.add_column(Column::new("Event"));
+        table.add_column(Column::new("Deadline").width(8));
+        table.add_row(["A long event name", "Nov 08"]);
+        assert_eq!(
+            render_plain(&table, 14),
+            "╭─┬──────────╮\n│ │ Deadline │\n├─┼──────────┤\n│ │ Nov 08   │\n╰─┴──────────╯\n"
         );
     }
 
