@@ -40,8 +40,10 @@ sha2 = "0.11.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync", "io-util"] }
 toml = { version = "1.2.1", features = ["preserve_order"] }
+ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 unicode-width = "0.2.3"
 ureq = "3.5.1"
+usvg = "0.47.0"
 yaml-rust2 = "0.13.0"
 
 [dev-dependencies]

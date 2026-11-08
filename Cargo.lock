@@ -2101,8 +2101,10 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "toml",
+ "ttf-parser",
  "unicode-width",
  "ureq",
+ "usvg",
  "yaml-rust2",
 ]
 
