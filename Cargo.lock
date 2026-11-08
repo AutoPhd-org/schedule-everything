@@ -2085,6 +2085,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "hex",
+ "http-body",
  "indexmap",
  "krilla",
  "krilla-svg",
