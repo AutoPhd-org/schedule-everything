@@ -1,5 +1,4 @@
-//! Service and config-set commands: update, stop, switch, report, edit, mode
-//! (port of `commands/service.py`).
+//! Service and config-set commands: update, stop, switch, report, edit, mode.
 //!
 //! The reminder service is `rmd daemon`, run by the installer's LaunchAgent
 //! (macOS) or systemd user unit (Linux). Restarting it stops the unit, ends

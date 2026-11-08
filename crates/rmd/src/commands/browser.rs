@@ -1,5 +1,5 @@
 //! `rmd web`: start or reuse the local browser workspace server and open a
-//! tab (port of `commands/browser.py`).
+//! tab.
 //!
 //! One server runs per config root; `.browser.json` in the root records its
 //! port, session token and pid. A running server is reused only while it runs

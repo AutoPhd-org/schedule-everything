@@ -1,5 +1,4 @@
-//! Structured service operations for the browser interface (port of
-//! `web/services.py`).
+//! Structured service operations for the browser interface.
 //!
 //! These functions wrap the storage and schedule helpers without printing CLI
 //! tables or prompts. Each takes the request payload (a JSON object) and

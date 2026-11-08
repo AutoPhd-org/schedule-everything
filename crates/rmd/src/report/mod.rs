@@ -1,4 +1,4 @@
-//! Weekly and monthly PDF reports (port of `report.py`).
+//! Weekly and monthly PDF reports.
 //!
 //! A report covers one calendar week (Monday to Sunday) or month: the tasks
 //! completed in it (`deleted` entries of the task log), the habit completion

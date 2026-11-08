@@ -1,6 +1,6 @@
 //! Schedule Everything: a local-first weekly routine, task list, and
-//! focus-block reminder app. This crate is the Rust port of the original
-//! Python `schedule_management` package; modules mirror the Python ones.
+//! focus-block reminder app. The crate replaced the original Python
+//! implementation and keeps its behaviour (see `PORTING.md`).
 
 pub mod clock;
 pub mod py;

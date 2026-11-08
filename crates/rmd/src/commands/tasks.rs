@@ -1,5 +1,4 @@
-//! Task commands: `rmd add`, `rmd rm`, `rmd cancel`, `rmd drop`, `rmd ls`
-//! (port of `commands/tasks.py`).
+//! Task commands: `rmd add`, `rmd rm`, `rmd cancel`, `rmd drop`, `rmd ls`.
 //!
 //! The three removal commands all take the task out of tasks.json, but each
 //! records a distinct history action so they are not all treated as done:

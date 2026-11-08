@@ -42,12 +42,12 @@ impl TestEnv {
         env
     }
 
-    /// Config root with a copy of `tests/config` (the Python test fixture:
-    /// `user_config_0` with settings, odd/even weeks, tasks, ...).
+    /// Config root with a copy of `tests/fixtures/config` (`user_config_0`
+    /// with settings and odd/even weeks, plus a task log).
     pub fn with_fixture() -> Self {
         let env = Self::new();
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/config");
-        crate::paths::copy_dir_all(&fixture, env.root()).expect("copy tests/config fixture");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config");
+        crate::paths::copy_dir_all(&fixture, env.root()).expect("copy tests/fixtures/config");
         env
     }
 

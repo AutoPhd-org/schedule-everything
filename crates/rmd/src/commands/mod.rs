@@ -1,4 +1,4 @@
-//! CLI command handlers, organised by domain (mirrors `schedule_management.commands`).
+//! CLI command handlers, organised by domain.
 
 pub mod browser;
 pub mod completion;

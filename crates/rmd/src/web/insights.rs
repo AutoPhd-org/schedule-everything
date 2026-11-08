@@ -1,5 +1,4 @@
-//! Weekly and daily insight statistics for the browser workspace (port of
-//! `web/insights.py`).
+//! Weekly and daily insight statistics for the browser workspace.
 //!
 //! The weekly overview (Activity page) summarizes one Monday-Sunday week of
 //! task outcomes and habit records, and compares it with the previous week and

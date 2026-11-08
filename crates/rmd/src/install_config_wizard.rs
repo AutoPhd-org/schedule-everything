@@ -1,6 +1,6 @@
-//! First-run config wizard used by the installer (port of
-//! `install_config_wizard.py`): creates missing config files from templates
-//! and fills in settings keys the template has but `settings.toml` lacks.
+//! First-run config wizard used by the installer: creates missing config
+//! files from templates and fills in settings keys the template has but
+//! `settings.toml` lacks.
 //!
 //! The installer runs `rmd __setup-config --config-dir DIR [--template-dir DIR] [--yes]`.
 

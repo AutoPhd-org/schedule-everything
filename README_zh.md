@@ -267,10 +267,10 @@ bun run test            # 浏览器工作区测试（Vitest；直接运行 `bun 
 bun run build           # 重新构建内置的浏览器资源
 ```
 
-JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。浏览器前端位于 `web/`，`bun run build` 会把打包结果写入 `src/schedule_management/web/static/`，并编译进 `rmd` 可执行文件。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
+JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。浏览器前端位于 `web/`，`bun run build` 会把打包结果写入 `crates/rmd/web-static/`，并编译进 `rmd` 可执行文件。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
 
-`src/schedule_management` 中保留了原来的 Python 实现，作为 Rust 版本的对照基准：
-[`tests/golden`](tests/golden) 记录了它在命令行和浏览器 API 上的输出，`cargo test` 会检查 `rmd` 与之一致。
+`rmd` 取代了早先的 Python 实现。该实现在命令行和浏览器 API 上的输出作为固定的规格保存在
+[`tests/golden`](tests/golden) 中，`cargo test` 会检查 `rmd` 仍与之一致。
 
 ## 许可证
 

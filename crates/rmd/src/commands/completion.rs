@@ -1,5 +1,4 @@
-//! Shell completion scripts (`rmd completion [SHELL]`; port of
-//! `commands/completion.py`, which used shtab).
+//! Shell completion scripts (`rmd completion [SHELL]`).
 //!
 //! bash, zsh and fish scripts come from clap_complete; tcsh gets a small
 //! `complete` rule covering the subcommands and their fixed choices.

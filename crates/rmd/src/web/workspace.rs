@@ -1,5 +1,5 @@
 //! Browser operations for local configuration, the reminder service, and PDF
-//! exports (port of `web/workspace.py`).
+//! exports.
 //!
 //! Configuration writes are validated with the same rules as `rmd check` and
 //! guarded against stale browser edits.
@@ -158,8 +158,8 @@ pub fn workspace_info(_payload: &Dict) -> WebResult {
     }))
 }
 
-/// Run this `rmd` binary with `args` (as the Python ran `python -m
-/// schedule_management.cli`); returns the exit code, stdout, and stderr.
+/// Run this `rmd` binary with `args`; returns the exit code, stdout, and
+/// stderr.
 fn run_cli(args: &[String]) -> WebResult<(i32, String, String)> {
     let executable = std::env::current_exe().map_err(|e| WebError::internal(e.to_string()))?;
     let mut child = Command::new(&executable)

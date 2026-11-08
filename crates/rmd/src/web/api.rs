@@ -1,5 +1,4 @@
-//! Structured command dispatch for the local browser app (port of
-//! `web/api.py`).
+//! Structured command dispatch for the local browser app.
 //!
 //! A request is `{"command": str, "payload": object}`; the response is
 //! `{"ok": true, "data": ...}` or `{"ok": false, "error": {"code", "message",

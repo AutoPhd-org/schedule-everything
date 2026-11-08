@@ -1,5 +1,4 @@
-//! AI conference dates for the browser's year calendar (port of
-//! `conferences.py`).
+//! AI conference dates for the browser's year calendar.
 //!
 //! Submission deadlines, rebuttal periods, and conference dates for 15 major
 //! AI conferences come from the community-maintained Hugging Face AI Deadlines

@@ -1,5 +1,4 @@
-//! Multi-page PDF visualization of the odd/even schedules (port of
-//! `visualizer.py`).
+//! Multi-page PDF visualization of the odd/even schedules.
 //!
 //! - Page 1: odd week schedule (color-coded blocks by activity type)
 //! - Page 2: even week schedule
@@ -429,9 +428,9 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(relative)
     }
 
-    /// `tests/config` settings and odd/even schedules.
+    /// `tests/fixtures/config` settings and odd/even schedules.
     fn fixture() -> (ScheduleConfig, WeeklySchedule) {
-        let dir = repo_file("tests/config/user_config_0");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/config/user_config_0");
         let config = ScheduleConfig::load(&dir.join("settings.toml")).unwrap();
         let weekly = WeeklySchedule::load(&dir.join("odd_weeks.toml"), &dir.join("even_weeks.toml")).unwrap();
         (config, weekly)

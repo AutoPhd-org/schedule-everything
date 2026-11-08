@@ -2,7 +2,7 @@
 //!
 //! The active language comes from `REMINDER_LANG`, then `[settings] language`
 //! in the active `settings.toml`, then English. Source strings are the English
-//! text; [`t`] looks them up in the generated table.
+//! text; [`t`] looks them up in the translation table (`i18n_table.rs`).
 
 use serde_json::Value;
 
