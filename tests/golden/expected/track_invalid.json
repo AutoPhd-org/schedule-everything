@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "⚠️  Warning: Invalid habit IDs: 9\nAvailable habits: 1, 2, 3, 4, 5\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

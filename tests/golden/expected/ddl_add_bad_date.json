@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "❌ Error: Month must be between 1 and 12\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

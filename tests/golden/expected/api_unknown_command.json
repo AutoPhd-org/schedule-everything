@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"unknown_command\", \"message\": \"unknown command: no_such_command\", \"details\": {}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

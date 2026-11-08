@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"not_found\", \"message\": \"task type not found: 42\", \"details\": {}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

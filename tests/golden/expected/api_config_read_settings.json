@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"file\": \"settings\", \"content\": \"[settings]\\nsound_file = \\\"/System/Library/Sounds/Ping.aiff\\\"\\nalarm_interval = 5  # seconds between alarm repeats\\nmax_alarm_duration = 300\\nskip_days = [\\\"sunday\\\"]\\nlanguage = \\\"en\\\"\\nshow_tasks_after_change = false\\n\\n[time_blocks]\\npomodoro = 25\\npotato = 50\\nlong_break = 40\\nmeeting = 50\\n\\n[time_points]\\ngo_to_bed = \\\"上床睡觉 😴 该休息了！\\\"\\nsummary_time = \\\"今天的工作结束 🎉, 总结一下\\\"\\nnapping = \\\"小憩时间到 😴, 休息一下吧！\\\"\\nlunch_time = \\\"午餐时间到 🍱！\\\"\\n\\n[tasks]\\ndaily_urgent = [\\\"08:31\\\", \\\"14:01\\\", \\\"17:31\\\", \\\"21:31\\\"]\\nddl_urgent = [\\\"08:32\\\", \\\"14:02\\\", \\\"17:32\\\", \\\"22:32\\\"]\\ndaily_summary = \\\"23:35\\\"\\nhabit_prompt = \\\"23:50\\\"\\nweekly_review = \\\"sunday 20:00\\\"\\nmonthly_review = \\\"1 20:00\\\"\\n\\n[paths]\\nconfig_dir = \\\"config\\\"\\nreports_path = \\\"~/reports\\\"\\n\\n[task_types]\\n1 = \\\"read papers\\\"\\n2 = \\\"gym work\\\"\\n3 = \\\"coding\\\"\\n4 = \\\"other\\\"\\n\", \"revision\": \"4a460a3f25fe3357ddb0e257be9bb1762c1885940d0f2b72776e1683c07d9aa4\", \"activeId\": 0}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

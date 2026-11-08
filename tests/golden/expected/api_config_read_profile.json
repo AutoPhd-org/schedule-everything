@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"file\": \"profile\", \"content\": \"# Profile\\n\\nI work best in the morning and like long focus blocks.\\n\", \"revision\": \"faba2637332069c9e00fb8ff4406fc0bb7f27f0f0003dcaeeda4b4444b144b79\", \"activeId\": 0}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

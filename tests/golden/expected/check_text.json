@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "Config root: <ROOT>\nChecked:     <ROOT>/user_config_0\n  ✓ settings.toml\n  ✓ odd_weeks.toml\n  ✓ even_weeks.toml\n  ✓ habits.toml\n  ✓ ddl.json\n  ✓ profile.md\n⚠️  odd_weeks.toml: [saturday] 10:00: 'Water the plants' is not a [time_blocks] or [time_points] name, so it is shown as a plain reminder message\n✅ Configuration is valid.\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

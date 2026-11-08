@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "       Today's focus blocks        \n╭───────┬──────────┬──────────────╮\n│  Time │ Block    │ Planned task │\n├───────┼──────────┼──────────────┤\n│ 08:30 │ potato   │ —            │\n│ 09:30 │ pomodoro │ —            │\n│ 10:00 │ potato   │ —            │\n│ 14:00 │ potato   │ —            │\n│ 16:00 │ pomodoro │ —            │\n╰───────┴──────────┴──────────────╯\nNo plan yet. Ask your AI agent to plan today with the Schedule Everything plugin, or apply a plan \nwith `rmd sync --apply plan.json`.\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"invalid_input\", \"message\": \"unknown configuration file.\", \"details\": {}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,7 @@
+{
+  "exit": 2,
+  "stdout": "",
+  "stderr": "usage: rmd add [-h] [task] [PRIORITY] [task_type] [postpone]\nrmd add: error: argument PRIORITY: invalid choice: '11' (choose from 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)\n",
+  "files": {},
+  "deleted": []
+}

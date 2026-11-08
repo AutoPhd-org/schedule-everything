@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"date\": \"2026-11-09\", \"completed\": {\"2\": \"Exercise for 30 minutes\", \"4\": \"Read for 20 minutes\"}, \"timestamp\": \"2026-11-09T18:30:00+00:00\"}}\n",
+  "stderr": "",
+  "files": {
+    "tasks/record.json": "[\n  {\n    \"date\": \"2026-11-02\",\n    \"completed\": {\n      \"1\": \"Go to sleep on time\",\n      \"2\": \"Exercise for 30 minutes\"\n    },\n    \"timestamp\": \"2026-11-03T07:50:00+00:00\"\n  },\n  {\n    \"date\": \"2026-11-03\",\n    \"completed\": {\n      \"1\": \"Go to sleep on time\",\n      \"3\": \"Drink 1.5L water\",\n      \"5\": \"冥想\"\n    },\n    \"timestamp\": \"2026-11-04T07:50:00+00:00\"\n  },\n  {\n    \"date\": \"2026-11-05\",\n    \"completed\": {\n      \"2\": \"Exercise for 30 minutes\"\n    },\n    \"timestamp\": \"2026-11-06T07:50:00+00:00\"\n  },\n  {\n    \"date\": \"2026-11-07\",\n    \"completed\": {\n      \"1\": \"Go to sleep on time\",\n      \"2\": \"Exercise for 30 minutes\",\n      \"3\": \"Drink 1.5L water\",\n      \"4\": \"Read for 20 minutes\",\n      \"5\": \"冥想\"\n    },\n    \"timestamp\": \"2026-11-08T07:50:00+00:00\"\n  },\n  {\n    \"date\": \"2026-11-08\",\n    \"completed\": {\n      \"3\": \"Drink 1.5L water\"\n    },\n    \"timestamp\": \"2026-11-09T07:50:00+00:00\"\n  },\n  {\n    \"date\": \"2026-11-09\",\n    \"completed\": {\n      \"2\": \"Exercise for 30 minutes\",\n      \"4\": \"Read for 20 minutes\"\n    },\n    \"timestamp\": \"2026-11-09T18:30:00+00:00\"\n  }\n]"
+  },
+  "deleted": []
+}

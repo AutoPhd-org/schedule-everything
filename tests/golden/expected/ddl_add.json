@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "✅ Deadline 'Visa appointment' added successfully for 2026-12-15!\n",
+  "stderr": "",
+  "files": {
+    "user_config_0/ddl.json": "[\n  {\n    \"event\": \"Rent\",\n    \"deadline\": \"2026-09-30\",\n    \"added\": \"2026-09-01T17:00:00+00:00\",\n    \"repeat\": \"monthly\",\n    \"repeat_day\": 30\n  },\n  {\n    \"event\": \"Old submission\",\n    \"deadline\": \"2026-11-05\",\n    \"added\": \"2026-10-15T17:00:00+00:00\"\n  },\n  {\n    \"event\": \"Grant report\",\n    \"deadline\": \"2026-11-20\",\n    \"added\": \"2026-10-20T17:05:00+00:00\",\n    \"type\": \"1\"\n  },\n  {\n    \"event\": \"Yesterday thing\",\n    \"deadline\": \"2026-11-08\",\n    \"added\": \"2026-10-20T17:06:00+00:00\"\n  },\n  {\n    \"event\": \"Team sync\",\n    \"deadline\": \"2026-11-10\",\n    \"added\": \"2026-10-30T17:00:00+00:00\",\n    \"type\": \"3\",\n    \"color\": \"blue\",\n    \"repeat\": \"weekly\"\n  },\n  {\n    \"event\": \"论文截止\",\n    \"deadline\": \"2026-12-31\",\n    \"added\": \"2026-11-02T18:00:00+00:00\"\n  },\n  {\n    \"event\": \"Visa appointment\",\n    \"deadline\": \"2026-12-15\",\n    \"added\": \"2026-11-09T18:30:00+00:00\"\n  }\n]"
+  },
+  "deleted": []
+}

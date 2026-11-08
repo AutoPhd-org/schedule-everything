@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "Cleared today's plan.\n",
+  "stderr": "",
+  "files": {},
+  "deleted": [
+    "synced_schedule.toml"
+  ]
+}

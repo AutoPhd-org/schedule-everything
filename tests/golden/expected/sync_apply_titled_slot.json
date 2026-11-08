@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "",
+  "stderr": "❌ '11:00' is not one of today's focus slots (08:30, 09:30, 10:00, 14:00, 16:00).\n",
+  "files": {},
+  "deleted": []
+}

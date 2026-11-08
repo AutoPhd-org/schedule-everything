@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"invalid_input\", \"message\": \"invalid task action.\", \"details\": {}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

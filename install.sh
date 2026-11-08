@@ -1,6 +1,13 @@
 #!/bin/bash
 
-# This script sets up the schedule management reminder system for macOS and Linux
+# Installs Schedule Everything on macOS or Linux: the `rmd` binary, the config
+# root, and the background reminder service. No Python is needed.
+#
+#   curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
+#   ./install.sh [-y|--yes] [--from-source | --prebuilt]
+#
+# The binary is a prebuilt release download, or built with cargo from a source
+# checkout. Existing configuration is never overwritten.
 
 set -euo pipefail
 
@@ -15,11 +22,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Script configuration
-SCRIPT_NAME="Schedule Management Installer"
-PYTHON_VERSION="3.12"
-# VENV_NAME="schedule_management_env"
+# Script configuration (paths and service names are unchanged from the
+# Python-based releases so upgrades keep PATH entries and service settings).
+SCRIPT_NAME="Schedule Everything Installer"
 INSTALL_DIR="$HOME/SCHEDULE_MANAGEMENT"
+RMD_BIN="$INSTALL_DIR/rmd"
 INSTALL_CONFIG_DIR="$HOME/.schedule_management/config"
 INSTALL_ACTIVE_CONFIG_ID="0"
 INSTALL_ACTIVE_CONFIG_DIR="$INSTALL_CONFIG_DIR/user_config_${INSTALL_ACTIVE_CONFIG_ID}"
@@ -28,12 +35,13 @@ LAUNCH_AGENT_NAME="com.sergiudm.schedule.management.reminder"
 LAUNCH_AGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCH_AGENT_NAME}.plist"
 SYSTEMD_SERVICE_NAME="schedule-management.service"
 SYSTEMD_SERVICE_PATH="$HOME/.config/systemd/user/${SYSTEMD_SERVICE_NAME}"
+SERVICE_WAS_RUNNING="false"
 
 # Detect OS
 detect_os() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
         echo "macos"
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    elif [[ "$OSTYPE" == "linux-gnu"* || "$OSTYPE" == "linux-musl"* ]]; then
         echo "linux"
     else
         echo "unknown"
@@ -130,140 +138,48 @@ scaffold_versioned_config_root() {
 check_os() {
     if [[ "$OS_TYPE" == "unknown" ]]; then
         log_error "Unsupported operating system: $OSTYPE"
-        log_info "Supported systems: macOS (darwin) and Linux (linux-gnu)"
+        log_info "Supported systems: macOS (darwin) and Linux"
         exit 1
     fi
     log_success "$OS_TYPE detected"
 }
 
-# Get Linux distribution info
-get_linux_distro() {
-    if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
-        echo "$ID"
-    else
-        echo "unknown"
-    fi
-}
-
-# Install package manager dependencies for Linux
-install_linux_dependencies() {
-    log_info "Installing Linux dependencies..."
-    
-    DISTRO=$(get_linux_distro)
-    log_info "Detected Linux distribution: $DISTRO"
-    
-    case "$DISTRO" in
-        ubuntu|debian)
-            sudo apt update
-            sudo apt install -y curl build-essential libssl-dev zlib1g-dev \
-                libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev \
-                xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
-            ;;
-        fedora)
-            sudo dnf install -y curl gcc zlib-devel bzip2 bzip2-devel \
-                readline-devel sqlite sqlite-devel openssl-devel xz xz-devel \
-                libffi-devel findutils
-            ;;
-        arch|manjaro)
-            sudo pacman -S --needed curl base-devel openssl zlib xz
-            ;;
-        *)
-            log_warning "Unknown distribution: $DISTRO. Please install dependencies manually:"
-            log_info "Required: curl, build tools, Python development headers, OpenSSL"
-            ;;
+# Rust target triple of the prebuilt binary for this machine.
+detect_target() {
+    local arch
+    arch="$(uname -m)"
+    case "$OS_TYPE-$arch" in
+        macos-arm64) echo "aarch64-apple-darwin" ;;
+        macos-x86_64) echo "x86_64-apple-darwin" ;;
+        linux-x86_64) echo "x86_64-unknown-linux-musl" ;;
+        linux-aarch64 | linux-arm64) echo "aarch64-unknown-linux-musl" ;;
+        *) echo "" ;;
     esac
-    
-    log_success "Linux dependencies installed"
 }
 
-# Check if Homebrew is installed (macOS only)
-check_homebrew() {
-    if [[ "$OS_TYPE" != "macos" ]]; then
-        return 0
-    fi
-    
-    if ! command -v brew &> /dev/null; then
-        log_warning "Homebrew not found. Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        if [[ ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
-            echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
-            eval "$(/opt/homebrew/bin/brew shellenv)"
-        fi
-    else
-        log_success "Homebrew is already installed"
-    fi
-}
-
-# Install uv package manager
-install_uv() {
-    log_info "Checking uv installation..."
-    if ! command -v uv &> /dev/null; then
-        log_info "uv not found. Installing uv..."
-        
-        if [[ "$OS_TYPE" == "macos" ]]; then
-            brew install uv
-        elif [[ "$OS_TYPE" == "linux" ]]; then
-            # Install uv using the official installer
-            curl -LsSf https://astral.sh/uv/install.sh | sh
-            # Add to PATH
-            export PATH="$HOME/.cargo/bin:$PATH"
-            echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc
-        fi
-        log_success "uv installed successfully"
-    else
-        log_success "uv is already installed"
-    fi
-    
-    if ! uv --version &> /dev/null; then
-        log_error "uv installation verification failed"
-        exit 1
-    fi
-}
-
-# Install Python (platform-specific)
-install_python() {
-    log_info "Setting up Python $PYTHON_VERSION..."
-    
+# Stop a running reminder service (from a Python-based or an earlier Rust
+# release) so the new binary takes over; it is started again at the end.
+stop_existing_service() {
     if [[ "$OS_TYPE" == "macos" ]]; then
-        # macOS: use pyenv
-        if ! command -v pyenv &> /dev/null; then
-            log_info "Installing pyenv..."
-            brew install pyenv
-            echo 'eval "$(pyenv init -)"' >> ~/.zshrc
-            eval "$(pyenv init -)"
+        if launchctl list 2>/dev/null | grep -q "$LAUNCH_AGENT_NAME"; then
+            SERVICE_WAS_RUNNING="true"
+            log_info "Stopping the running reminder service..."
+            launchctl unload "$LAUNCH_AGENT_PLIST" 2>/dev/null || true
         fi
-        if ! pyenv versions --bare | grep -q "^$PYTHON_VERSION$"; then
-            log_info "Installing Python $PYTHON_VERSION..."
-            pyenv install "$PYTHON_VERSION"
-        fi
-        pyenv local "$PYTHON_VERSION"
     elif [[ "$OS_TYPE" == "linux" ]]; then
-        # Linux: use system Python or pyenv
-        if command -v "python${PYTHON_VERSION}" &> /dev/null; then
-            log_success "Python $PYTHON_VERSION found in system"
-        else
-            log_info "Installing Python $PYTHON_VERSION using pyenv..."
-            if ! command -v pyenv &> /dev/null; then
-                curl https://pyenv.run | bash
-                export PATH="$HOME/.pyenv/bin:$PATH"
-                eval "$(pyenv init -)"
-                echo 'export PATH="$HOME/.pyenv/bin:$PATH"' >> ~/.bashrc
-                echo 'eval "$(pyenv init -)"' >> ~/.bashrc
-            fi
-            if ! pyenv versions --bare | grep -q "^$PYTHON_VERSION$"; then
-                pyenv install "$PYTHON_VERSION"
-            fi
-            pyenv local "$PYTHON_VERSION"
+        if systemctl --user is-active --quiet "$SYSTEMD_SERVICE_NAME" 2>/dev/null; then
+            SERVICE_WAS_RUNNING="true"
+            log_info "Stopping the running reminder service..."
+            systemctl --user stop "$SYSTEMD_SERVICE_NAME" 2>/dev/null || true
         fi
     fi
-    
-    log_success "Python $PYTHON_VERSION is ready"
+    pkill -f "python.*reminder_macos.py" 2>/dev/null || true
+    pkill -f "$RMD_BIN daemon" 2>/dev/null || true
 }
 
-# Setup project directory (preserve src layout!)
-setup_project() {
-    log_info "Setting up project directory..."
+# Prepare the installation directory, keeping a backup of an earlier one.
+setup_install_dir() {
+    log_info "Setting up $INSTALL_DIR..."
 
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Installation directory exists at $INSTALL_DIR"
@@ -294,38 +210,19 @@ setup_project() {
         fi
     fi
 
-    mkdir -p "$INSTALL_DIR"
-
-    if [[ -d "src" ]]; then
-        cp -r src "$INSTALL_DIR/"
-        log_success "src/ directory copied (preserving layout)"
-    else
-        log_error "src/ directory not found in current working directory!"
-        exit 1
-    fi
-
-    if [[ -d "third_party" ]]; then
-        cp -r third_party "$INSTALL_DIR/"
-        log_success "third_party/ directory copied"
-    fi
+    mkdir -p "$INSTALL_DIR/logs"
 
     # Agent plugins (Claude Code, Codex, Antigravity) for building and planning schedules.
-    if [[ -d "plugins" ]]; then
-        cp -r plugins "$INSTALL_DIR/"
+    if [[ -d "$SCRIPT_DIR/plugins" ]]; then
+        cp -r "$SCRIPT_DIR/plugins" "$INSTALL_DIR/"
         log_success "plugins/ directory copied"
     fi
-
-    # Copy build metadata files needed by editable installs.
-    for file in LICENSE pyproject.toml README.md uv.lock requirements.txt requirements-test.txt; do
-        if [[ -f "$file" ]]; then
-            cp "$file" "$INSTALL_DIR/"
-            log_success "$file copied"
-        fi
-    done
+    if [[ -f "$SCRIPT_DIR/LICENSE" ]]; then
+        cp "$SCRIPT_DIR/LICENSE" "$INSTALL_DIR/"
+    fi
 
     # Config directory handling
     mkdir -p "$(dirname "$INSTALL_CONFIG_DIR")"
-
     if [[ -d "$INSTALL_CONFIG_DIR" ]]; then
         # If config root already exists, preserve it unless it is still empty.
         if has_legacy_config_files || has_versioned_config_dirs || [[ -f "$INSTALL_ACTIVE_CONFIG_FILE" ]]; then
@@ -338,85 +235,129 @@ setup_project() {
         scaffold_versioned_config_root
     fi
 
-    # Create logs directory
-    mkdir -p "$INSTALL_DIR/logs"
-    log_success "Project directory setup complete"
+    log_success "Installation directory ready"
 }
 
-# Create virtual environment
-create_venv() {
-    log_info "Creating virtual environment with uv..."
-    uv venv --python=3.12 --clear "$INSTALL_DIR/.venv"
-    if [[ -f "$INSTALL_DIR/.venv/bin/activate" ]]; then
-        source "$INSTALL_DIR/.venv/bin/activate"
-        log_success "Virtual environment created and activated with uv"
+# Build rmd with cargo from the source checkout in $SCRIPT_DIR.
+build_from_source() {
+    if [[ ! -f "$SCRIPT_DIR/Cargo.toml" || ! -d "$SCRIPT_DIR/crates/rmd" ]]; then
+        return 1
+    fi
+    if ! command -v cargo &>/dev/null; then
+        return 1
+    fi
+    log_info "Building rmd with cargo (the first build takes a few minutes)..."
+    (cd "$SCRIPT_DIR" && cargo build --release --locked -p rmd)
+    local target_dir="${CARGO_TARGET_DIR:-$SCRIPT_DIR/target}"
+    install -m 755 "$target_dir/release/rmd" "$RMD_BIN"
+    log_success "Built rmd from source"
+}
+
+sha256_of() {
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$1" | awk '{print $1}'
     else
-        log_error "Virtual environment creation failed"
-        exit 1
+        shasum -a 256 "$1" | awk '{print $1}'
     fi
 }
 
-# Install dependencies and package
-install_dependencies() {
-    log_info "Installing dependencies and package..."
-
-    cd "$INSTALL_DIR"
-
-    # Upgrade pip
-    uv pip install --upgrade pip
-
-    # Install from requirements if available
-    if [[ -f "requirements.txt" ]]; then
-        uv pip install -r requirements.txt
+# Download the prebuilt binary for this machine from GitHub Releases.
+download_prebuilt() {
+    local target
+    target="$(detect_target)"
+    if [[ -z "$target" ]]; then
+        log_warning "No prebuilt binary for $(uname -s) $(uname -m)."
+        return 1
     fi
-    if [[ -f "requirements-test.txt" ]]; then
-        uv pip install -r requirements-test.txt
+    if ! command -v curl &>/dev/null || ! command -v tar &>/dev/null; then
+        log_warning "curl and tar are needed to download the prebuilt binary."
+        return 1
     fi
-
-    # Install editable package (supports src layout)
-    uv pip install -e .
-    if ! command -v rmd &> /dev/null; then
-        log_warning "CLI 'rmd' not in PATH, but should work via venv"
+    local base
+    if [[ -n "${RMD_VERSION:-}" ]]; then
+        base="$REPO_URL/releases/download/v${RMD_VERSION#v}"
     else
-        log_success "CLI tool 'rmd' is available"
+        base="$REPO_URL/releases/latest/download"
     fi
+    local archive="rmd-$target.tar.gz"
+    local work
+    work="$(mktemp -d -t rmd-download-XXXXXX)"
+    log_info "Downloading $base/$archive..."
+    if ! curl -fsSL "$base/$archive" -o "$work/$archive"; then
+        rm -rf "$work"
+        log_warning "Could not download $archive."
+        return 1
+    fi
+    if curl -fsSL "$base/$archive.sha256" -o "$work/$archive.sha256"; then
+        local expected actual
+        expected="$(awk '{print $1}' "$work/$archive.sha256")"
+        actual="$(sha256_of "$work/$archive")"
+        if [[ "$expected" != "$actual" ]]; then
+            rm -rf "$work"
+            log_error "Checksum mismatch for $archive (expected $expected, got $actual)."
+            exit 1
+        fi
+        log_success "Checksum verified"
+    else
+        log_warning "No checksum published for $archive; skipping verification."
+    fi
+    tar -xzf "$work/$archive" -C "$work"
+    install -m 755 "$work/rmd" "$RMD_BIN"
+    rm -rf "$work"
+    log_success "Installed prebuilt rmd ($target)"
+}
 
-    cd - > /dev/null
+install_binary() {
+    case "$BUILD_MODE" in
+        source)
+            build_from_source || {
+                log_error "Building from source needs cargo and a source checkout. Install Rust from https://rustup.rs and run this script from a clone."
+                exit 1
+            }
+            ;;
+        prebuilt)
+            download_prebuilt || {
+                log_error "Could not install the prebuilt binary."
+                exit 1
+            }
+            ;;
+        *)
+            # A clone with cargo builds its own code; otherwise use a release.
+            if [[ "$SCRIPT_DIR" != "$TEMP_DIR" ]] && build_from_source; then
+                :
+            elif download_prebuilt; then
+                :
+            elif build_from_source; then
+                :
+            else
+                log_error "Could not install rmd: no prebuilt binary was available and cargo was not found."
+                log_info "Install Rust from https://rustup.rs (it provides cargo), then run this installer again."
+                exit 1
+            fi
+            ;;
+    esac
+    ln -sf "rmd" "$INSTALL_DIR/reminder"
 }
 
 # Validate and complete missing configuration values
 configure_configs() {
     log_info "Checking configuration files and required values..."
 
-    local wizard_script="$INSTALL_DIR/src/schedule_management/install_config_wizard.py"
     local template_dir="$SCRIPT_DIR/config/user_config_0"
     local target_config_dir
     target_config_dir="$(resolve_install_target_config_dir)"
 
-    if [[ ! -f "$wizard_script" ]]; then
-        log_error "Config wizard not found: $wizard_script"
-        exit 1
-    fi
-
-    local extra_args=()
-    if [[ "$AUTO_YES" == "true" ]]; then
-        extra_args+=("--yes")
-    fi
-
-    local wizard_invocation=(
-        "$INSTALL_DIR/.venv/bin/python" "$wizard_script"
-        --config-dir "$target_config_dir"
-    )
+    local wizard_invocation=("$RMD_BIN" __setup-config --config-dir "$target_config_dir")
     if [[ -d "$template_dir" ]]; then
         wizard_invocation+=(--template-dir "$template_dir")
     else
         log_warning "Template directory not found at $template_dir; using config directory as template source."
     fi
-    if [[ ${#extra_args[@]} -gt 0 ]]; then
-        wizard_invocation+=("${extra_args[@]}")
+    if [[ "$AUTO_YES" == "true" ]]; then
+        wizard_invocation+=(--yes)
     fi
 
-    "${wizard_invocation[@]}"
+    REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR" "${wizard_invocation[@]}"
 
     log_info "Validated active config directory: $target_config_dir"
     log_success "Configuration checks complete"
@@ -427,11 +368,11 @@ create_systemd_service() {
     if [[ "$OS_TYPE" != "linux" ]]; then
         return 0
     fi
-    
+
     log_info "Creating systemd service..."
-    
+
     mkdir -p "$HOME/.config/systemd/user"
-    
+
     cat > "$SYSTEMD_SERVICE_PATH" << EOF
 [Unit]
 Description=Schedule Management Reminder
@@ -439,13 +380,13 @@ After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/src/schedule_management/reminder_macos.py
+ExecStart=$RMD_BIN daemon
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0
 Environment=REMINDER_CONFIG_DIR=$INSTALL_CONFIG_DIR
-StandardOutput=$INSTALL_DIR/logs/schedule_management.out
-StandardError=$INSTALL_DIR/logs/schedule_management.err
+StandardOutput=append:$INSTALL_DIR/logs/schedule_management.out
+StandardError=append:$INSTALL_DIR/logs/schedule_management.err
 
 [Install]
 WantedBy=default.target
@@ -461,7 +402,7 @@ create_launch_agent() {
     if [[ "$OS_TYPE" != "macos" ]]; then
         return 0
     fi
-    
+
     log_info "Creating LaunchAgent..."
 
     mkdir -p "$HOME/Library/LaunchAgents"
@@ -475,8 +416,8 @@ create_launch_agent() {
     <string>${LAUNCH_AGENT_NAME}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$INSTALL_DIR/.venv/bin/python</string>
-        <string>$INSTALL_DIR/src/schedule_management/reminder_macos.py</string>
+        <string>$RMD_BIN</string>
+        <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -500,13 +441,24 @@ EOF
     log_success "LaunchAgent created at $LAUNCH_AGENT_PLIST"
 }
 
-# A browser workspace left running keeps the previous version's code in memory
-# while serving the new frontend from disk, so restart it on the new code.
-refresh_browser_workspace() {
-    if [[ -x "$INSTALL_DIR/rmd" ]]; then
-        "$INSTALL_DIR/rmd" web --if-running \
-            || log_warning "Could not restart the running browser workspace. Run 'reminder web' to restart it."
+# Start the service again if it was running before the upgrade.
+restart_service_if_needed() {
+    if [[ "$SERVICE_WAS_RUNNING" != "true" ]]; then
+        return 0
     fi
+    log_info "Starting the reminder service on the new binary..."
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        launchctl load "$LAUNCH_AGENT_PLIST" || log_warning "Could not load $LAUNCH_AGENT_PLIST; run: launchctl load $LAUNCH_AGENT_PLIST"
+    elif [[ "$OS_TYPE" == "linux" ]]; then
+        systemctl --user start "$SYSTEMD_SERVICE_NAME" || log_warning "Could not start $SYSTEMD_SERVICE_NAME"
+    fi
+}
+
+# A browser workspace left running from the previous version would pair the
+# new frontend with old code, so restart it on the new binary.
+refresh_browser_workspace() {
+    REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR" "$RMD_BIN" web --if-running \
+        || log_warning "Could not restart the running browser workspace. Run 'rmd web' to restart it."
 }
 
 # Request permissions (platform-specific)
@@ -514,7 +466,8 @@ request_permissions() {
     if [[ "$OS_TYPE" == "macos" ]]; then
         log_info "The app will request Accessibility & Notification permissions on first run."
     elif [[ "$OS_TYPE" == "linux" ]]; then
-        log_info "The app will use desktop notifications. Ensure notification daemon is running."
+        log_info "Dialogs use zenity or kdialog (or notify-send); sounds use paplay, aplay or play."
+        log_info "Install the ones your desktop lacks, for example: sudo apt install zenity libnotify-bin pulseaudio-utils"
     fi
 }
 
@@ -522,74 +475,49 @@ request_permissions() {
 create_scripts() {
     log_info "Creating convenience scripts..."
 
-    # Start script (common)
     cat > "$INSTALL_DIR/start_reminders.sh" << EOF
 #!/bin/bash
 export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-source "$INSTALL_DIR/.venv/bin/activate"
-cd "$INSTALL_DIR/src/schedule_management"
-exec python reminder_macos.py
+exec "$RMD_BIN" daemon
 EOF
 
-    # Stop script (platform-specific)
     if [[ "$OS_TYPE" == "macos" ]]; then
         cat > "$INSTALL_DIR/stop_reminders.sh" << EOF
 #!/bin/bash
-launchctl unload "\$HOME/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist" 2>/dev/null || true
+launchctl unload "\$HOME/Library/LaunchAgents/${LAUNCH_AGENT_NAME}.plist" 2>/dev/null || true
+pkill -f "$RMD_BIN daemon" 2>/dev/null || true
 pkill -f "python.*reminder_macos.py" 2>/dev/null || true
 EOF
-    elif [[ "$OS_TYPE" == "linux" ]]; then
-        cat > "$INSTALL_DIR/stop_reminders.sh" << EOF
-#!/bin/bash
-systemctl --user stop schedule-management.service 2>/dev/null || true
-systemctl --user disable schedule-management.service 2>/dev/null || true
-pkill -f "python.*reminder_macos.py" 2>/dev/null || true
-EOF
-    fi
-
-    # Restart script (platform-specific)
-    if [[ "$OS_TYPE" == "macos" ]]; then
         cat > "$INSTALL_DIR/restart_reminders.sh" << EOF
 #!/bin/bash
 "$INSTALL_DIR/stop_reminders.sh"
 sleep 2
-launchctl load "\$HOME/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist"
+launchctl load "\$HOME/Library/LaunchAgents/${LAUNCH_AGENT_NAME}.plist"
 EOF
     elif [[ "$OS_TYPE" == "linux" ]]; then
+        cat > "$INSTALL_DIR/stop_reminders.sh" << EOF
+#!/bin/bash
+systemctl --user stop ${SYSTEMD_SERVICE_NAME} 2>/dev/null || true
+systemctl --user disable ${SYSTEMD_SERVICE_NAME} 2>/dev/null || true
+pkill -f "$RMD_BIN daemon" 2>/dev/null || true
+pkill -f "python.*reminder_macos.py" 2>/dev/null || true
+EOF
         cat > "$INSTALL_DIR/restart_reminders.sh" << EOF
 #!/bin/bash
 "$INSTALL_DIR/stop_reminders.sh"
 sleep 2
-systemctl --user start schedule-management.service
+systemctl --user enable ${SYSTEMD_SERVICE_NAME}
+systemctl --user start ${SYSTEMD_SERVICE_NAME}
 EOF
     fi
 
-    # Visualize script (common)
     cat > "$INSTALL_DIR/visualize_schedule.sh" << EOF
 #!/bin/bash
 export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-source "$INSTALL_DIR/.venv/bin/activate"
-cd "$INSTALL_DIR/src/schedule_management"
-exec python reminder_macos.py --visualize
+exec "$RMD_BIN" view
 EOF
 
-    # Primary CLI wrapper (common)
-    cat > "$INSTALL_DIR/rmd" << EOF
-#!/bin/bash
-export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-source "$INSTALL_DIR/.venv/bin/activate"
-exec rmd "\$@"
-EOF
-
-    # Legacy compatibility wrapper
-    cat > "$INSTALL_DIR/reminder" << EOF
-#!/bin/bash
-export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-source "$INSTALL_DIR/.venv/bin/activate"
-exec rmd "\$@"
-EOF
-
-    chmod +x "$INSTALL_DIR"/*.sh "$INSTALL_DIR/rmd" "$INSTALL_DIR/reminder"
+    chmod +x "$INSTALL_DIR"/*.sh
     log_success "Convenience scripts created"
 }
 
@@ -597,63 +525,44 @@ EOF
 test_installation() {
     log_info "Testing installation..."
 
-    source "$INSTALL_DIR/.venv/bin/activate"
-    export REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR"
-
-    if python -c "import schedule_management; print('OK')" &>/dev/null; then
-        log_success "schedule_management import test passed"
-    else
-        log_error "Failed to import schedule_management"
-        exit 1
-    fi
-
-    if rmd --help &>/dev/null; then
+    if "$RMD_BIN" --help &>/dev/null; then
         log_success "CLI 'rmd' works correctly"
     else
         log_error "CLI 'rmd' failed"
         exit 1
     fi
 
-    log_success "All tests passed"
+    if REMINDER_CONFIG_DIR="$INSTALL_CONFIG_DIR" "$RMD_BIN" check &>/dev/null; then
+        log_success "Configuration is valid"
+    else
+        log_warning "'rmd check' reported problems; run it to see them."
+    fi
 }
 
 # Setup shell autocompletion
 setup_autocompletion() {
     log_info "Setting up shell autocompletion..."
-    
-    local rmd_cmd="$INSTALL_DIR/rmd"
 
+    local zsh_rc="$HOME/.zshrc"
+    local bash_rc="$HOME/.bashrc"
     if [[ "$OS_TYPE" == "macos" ]]; then
-        # zsh is default on macOS
-        if [[ -f "$HOME/.zshrc" ]]; then
-            if ! grep -q "rmd completion zsh" "$HOME/.zshrc"; then
-                echo "eval \"\$(\"$rmd_cmd\" completion zsh)\"" >> "$HOME/.zshrc"
-                log_success "Added zsh autocompletion to ~/.zshrc"
-            else
-                log_info "zsh autocompletion already configured in ~/.zshrc"
-            fi
+        bash_rc="$HOME/.bash_profile"
+    fi
+
+    if [[ -f "$zsh_rc" ]]; then
+        if ! grep -q "rmd\"\{0,1\} completion zsh" "$zsh_rc"; then
+            echo "eval \"\$(\"$RMD_BIN\" completion zsh)\"" >> "$zsh_rc"
+            log_success "Added zsh autocompletion to $zsh_rc"
+        else
+            log_info "zsh autocompletion already configured in $zsh_rc"
         fi
-        # fallback to bash
-        if [[ -f "$HOME/.bash_profile" ]]; then
-            if ! grep -q "rmd completion bash" "$HOME/.bash_profile"; then
-                echo "eval \"\$(\"$rmd_cmd\" completion bash)\"" >> "$HOME/.bash_profile"
-                log_success "Added bash autocompletion to ~/.bash_profile"
-            fi
-        fi
-    elif [[ "$OS_TYPE" == "linux" ]]; then
-        if [[ -f "$HOME/.bashrc" ]]; then
-            if ! grep -q "rmd completion bash" "$HOME/.bashrc"; then
-                echo "eval \"\$(\"$rmd_cmd\" completion bash)\"" >> "$HOME/.bashrc"
-                log_success "Added bash autocompletion to ~/.bashrc"
-            else
-                log_info "bash autocompletion already configured in ~/.bashrc"
-            fi
-        fi
-        if [[ -f "$HOME/.zshrc" ]]; then
-            if ! grep -q "rmd completion zsh" "$HOME/.zshrc"; then
-                echo "eval \"\$(\"$rmd_cmd\" completion zsh)\"" >> "$HOME/.zshrc"
-                log_success "Added zsh autocompletion to ~/.zshrc"
-            fi
+    fi
+    if [[ -f "$bash_rc" ]]; then
+        if ! grep -q "rmd\"\{0,1\} completion bash" "$bash_rc"; then
+            echo "eval \"\$(\"$RMD_BIN\" completion bash)\"" >> "$bash_rc"
+            log_success "Added bash autocompletion to $bash_rc"
+        else
+            log_info "bash autocompletion already configured in $bash_rc"
         fi
     fi
 }
@@ -705,9 +614,6 @@ display_usage() {
 
 # Cleanup
 cleanup() {
-    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-        deactivate 2>/dev/null || true
-    fi
     if [[ -n "${TEMP_DIR:-}" && -d "${TEMP_DIR}" ]]; then
         rm -rf "${TEMP_DIR}"
     fi
@@ -718,67 +624,67 @@ main() {
     echo "=== $SCRIPT_NAME ==="
     trap cleanup EXIT
 
-    # If not running from within the repository (src/ is missing), download the repo
-    if [[ ! -d "src" ]]; then
-        log_info "Source code not found in current directory. Downloading repository..."
+    # Outside a checkout, fetch the repository for config templates and plugins.
+    if [[ ! -d "$SCRIPT_DIR/config" || ! -d "$SCRIPT_DIR/plugins" ]]; then
+        log_info "Downloading the repository for config templates and agent plugins..."
         TEMP_DIR=$(mktemp -d -t schedule-installer-XXXXXX)
-        
-        # Prefer git clone with recursive submodules to get everything cleanly
         if command -v git &>/dev/null; then
-            log_info "Cloning repository recursively..."
-            git clone --recursive --depth 1 "${REPO_URL}.git" "${TEMP_DIR}"
+            git clone --depth 1 "${REPO_URL}.git" "${TEMP_DIR}"
         elif command -v curl &>/dev/null && command -v tar &>/dev/null; then
-            log_info "Downloading repository tarball..."
             curl -sSL "${REPO_URL}/archive/refs/heads/main.tar.gz" | tar -xz -C "${TEMP_DIR}" --strip-components=1
         else
             log_error "Required tools missing. Please install curl/tar or git."
             exit 1
         fi
-        
         cd "${TEMP_DIR}"
         SCRIPT_DIR="${TEMP_DIR}"
     fi
 
     check_os
-    
-    if [[ "$OS_TYPE" == "linux" ]]; then
-        install_linux_dependencies
-    fi
-    
-    check_homebrew
-    install_uv
-    # install_python
-    setup_project
-    create_venv
+    stop_existing_service
+    setup_install_dir
+    install_binary
     configure_configs
-    install_dependencies
-    
+
     if [[ "$OS_TYPE" == "macos" ]]; then
         create_launch_agent
     elif [[ "$OS_TYPE" == "linux" ]]; then
         create_systemd_service
     fi
-    
+
     request_permissions
     create_scripts
     refresh_browser_workspace
     test_installation
     setup_autocompletion
+    restart_service_if_needed
     display_usage
 
     log_success "Installation complete! 🎉"
 }
 
-# Parse args (minimal)
+# Parse args
 AUTO_YES="false"
+BUILD_MODE="auto"
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
-            echo "Usage: $0 [-y|--yes]"
+            echo "Usage: $0 [-y|--yes] [--from-source | --prebuilt]"
+            echo "  -y, --yes       Accept defaults without prompting"
+            echo "  --from-source   Build rmd with cargo from this checkout"
+            echo "  --prebuilt      Download the release binary (RMD_VERSION=x.y.z pins a version)"
             exit 0
             ;;
         -y|--yes)
             AUTO_YES="true"
+            shift
+            ;;
+        --from-source)
+            BUILD_MODE="source"
+            shift
+            ;;
+        --prebuilt)
+            BUILD_MODE="prebuilt"
             shift
             ;;
         *)

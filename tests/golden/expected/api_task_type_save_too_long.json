@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"invalid_input\", \"message\": \"task type names can be at most 60 characters.\", \"details\": {}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

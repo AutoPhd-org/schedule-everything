@@ -1,0 +1,49 @@
+[
+  {
+    "description": "Write grant report",
+    "priority": 9,
+    "type": "1"
+  },
+  {
+    "description": "Fix CI pipeline",
+    "priority": 7,
+    "type": "3",
+    "progress": 40
+  },
+  {
+    "description": "Plan gym routine v2",
+    "priority": 5,
+    "type": "2"
+  },
+  {
+    "description": "整理笔记",
+    "priority": 5,
+    "type": "4",
+    "subtasks": [
+      {
+        "text": "Sort notes",
+        "done": true
+      },
+      {
+        "text": "Tag notes",
+        "done": false
+      },
+      {
+        "text": "Archive",
+        "done": false
+      }
+    ],
+    "progress": 33
+  },
+  {
+    "description": "Call the bank",
+    "priority": 6,
+    "type": "1"
+  },
+  {
+    "description": "Book flights",
+    "priority": 8,
+    "type": "4",
+    "alarm_from": "2026-11-11"
+  }
+]

@@ -14,8 +14,8 @@ Comprehensive guide for setting up and using Schedule Management on Linux.
 
 ### Prerequisites
 - A modern Linux distribution (Ubuntu/Debian, Fedora, or Arch are detected automatically by the installer)
-- Python 3.12 or higher
-- `curl` and `git`
+- `curl` and `tar` (or `git`); no Python or other runtime is needed
+- x86_64 or arm64 (prebuilt static binaries), or [Rust](https://rustup.rs) to build from source
 - A notification daemon and a sound theme for full popup/audio behavior (see below)
 
 ### Using the Installation Script
@@ -32,11 +32,10 @@ cd schedule-everything
 ```
 
 The script will:
-1. Install distribution packages (build tools, Python headers, OpenSSL, etc.) via `apt`/`dnf`/`pacman`.
-2. Install `uv` and create a virtual environment under `~/SCHEDULE_MANAGEMENT/.venv`.
-3. Scaffold the versioned config layout (`user_config_0`, shared `tasks/`).
-4. Install and enable a `systemd` **user** service for auto-start.
-5. Generate `rmd`/`reminder`/`start|stop|restart_reminders.sh` convenience scripts.
+1. Install the `rmd` binary in `~/SCHEDULE_MANAGEMENT/` (a prebuilt static release, or built with `cargo` from a clone).
+2. Scaffold the versioned config layout (`user_config_0`, shared `tasks/`).
+3. Install and enable a `systemd` **user** service for auto-start (`rmd daemon`).
+4. Create the `reminder` alias and `start|stop|restart_reminders.sh` convenience scripts.
 
 ### Manual Installation
 
@@ -59,9 +58,8 @@ loop in the background.
 **Service name**: `schedule-management.service`
 **Unit file**: `~/.config/systemd/user/schedule-management.service`
 
-The unit runs `reminder_macos.py` (a thin compatibility shim around the
-cross-platform `ScheduleRunner`) from the `~/SCHEDULE_MANAGEMENT/.venv`
-virtualenv, and writes logs to `~/SCHEDULE_MANAGEMENT/logs/`.
+The unit runs `~/SCHEDULE_MANAGEMENT/rmd daemon` and writes logs to
+`~/SCHEDULE_MANAGEMENT/logs/`.
 
 ### Managing the Service
 

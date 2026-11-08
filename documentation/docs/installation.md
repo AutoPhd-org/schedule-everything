@@ -14,17 +14,19 @@ reminder service, then adds the plugin to your AI agent.
 
 ## Prerequisites
 
-*   **Python 3.12+**: [Download Python](https://www.python.org/downloads/)
-*   **Git**: [Download Git](https://git-scm.com/downloads)
+*   **curl and tar, or Git**: to fetch the installer and the config templates
 *   **Terminal**: any standard terminal (Terminal.app, iTerm2, GNOME Terminal, …)
 *   **An AI coding agent** (optional): Claude Code, OpenAI Codex, or Google Antigravity, to build schedules and plan days with the Schedule Everything plugin
-*   **Node.js**: only needed to rebuild the browser assets from source; the Python package includes them
+*   **Rust** (optional): only needed to build `rmd` from source ([rustup.rs](https://rustup.rs)); the installer otherwise downloads a prebuilt binary
+*   **Node.js**: only needed to rebuild the browser assets from source; the binary includes them
+
+No Python is required. `rmd` is a single binary with the browser workspace built in.
 
 ## Method 1: Automated installer (recommended)
 
-The `install.sh` script installs dependencies, scaffolds your configuration,
-and registers the background service in one go. It installs `rmd` as the
-primary CLI and keeps `reminder` as a compatibility alias.
+The `install.sh` script installs the `rmd` binary, scaffolds your
+configuration, and registers the background service in one go. It installs
+`rmd` as the primary CLI and keeps `reminder` as a compatibility alias.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/main/install.sh | bash
@@ -41,7 +43,8 @@ cd schedule-everything
 The script:
 
 *   downloads the repository to a temporary directory when run through `curl`;
-*   installs the app and a Python environment (managed by `uv`) in `~/SCHEDULE_MANAGEMENT`, including the `rmd` wrapper, logs, and a copy of the agent plugin;
+*   installs the `rmd` binary in `~/SCHEDULE_MANAGEMENT` — a prebuilt release for your platform (macOS arm64/x86_64, Linux x86_64/arm64), or built with `cargo` when you run the script from a clone (`--prebuilt` and `--from-source` force one or the other; `RMD_VERSION=x.y.z` pins a release) — together with logs and a copy of the agent plugin;
+*   stops a running reminder service first and starts it again on the new binary, so upgrading from an older (Python-based) installation keeps the service running;
 *   creates your config root in `~/.schedule_management/config` with a first `user_config_0` version (an existing config is kept);
 *   prompts for missing required config values one by one (time blocks, reminders, and task types are your own lists, so entries you removed are not asked for again; their examples are offered only when a whole section is missing);
 *   registers the background service (LaunchAgent on macOS, systemd user service on Linux).
@@ -65,14 +68,13 @@ Then start the service:
 For advanced users or those integrating into existing environments. This
 method does not register the background service; use the installer for that.
 
-1.  **Clone the repository and install the package** in a virtual environment:
+1.  **Build and install `rmd`** (needs [Rust](https://rustup.rs)):
     ```bash
     git clone https://github.com/AutoPhd-org/schedule-everything.git
     cd schedule-everything
-    uv venv .venv
-    source .venv/bin/activate
-    uv pip install -e .
+    cargo install --path crates/rmd --locked
     ```
+    This puts `rmd` in `~/.cargo/bin`.
 
 2.  **Create the configuration** from the templates in `config/user_config_0/`:
     ```bash
@@ -96,11 +98,12 @@ method does not register the background service; use the installer for that.
 
 ## Method 3: PyPI
 
-This installs the library and the `rmd` command, without configuration or the
-background service:
+The `schedule-management` package on PyPI ships the same `rmd` binary as a
+wheel. It installs the command, without configuration or the background
+service:
 
 ```bash
-pip install schedule-management
+pip install schedule-management        # or: uv tool install schedule-management
 ```
 
 Then follow steps 2–4 of the manual installation.

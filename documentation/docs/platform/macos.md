@@ -10,9 +10,8 @@ Comprehensive guide for setting up and using Schedule Management on macOS.
 ## Installation
 
 ### Prerequisites
-- macOS 10.14 (Mojave) or later
-- Python 3.12 or higher
-- Administrator privileges for system service setup
+- macOS 11 (Big Sur) or later, Apple silicon or Intel
+- No Python or other runtime: `rmd` is a single binary
 
 ### Using the Installation Script
 
@@ -23,10 +22,10 @@ curl -fsSL https://raw.githubusercontent.com/AutoPhd-org/schedule-everything/mai
 ```
 
 The script will:
-1. Install the app and a Python environment in `~/SCHEDULE_MANAGEMENT/`
+1. Install the `rmd` binary in `~/SCHEDULE_MANAGEMENT/` (a prebuilt release, or built with `cargo` from a clone)
 2. Create your config root in `~/.schedule_management/config/`
-3. Install the LaunchAgent for auto-start
-4. Create the `rmd` CLI wrapper and convenience scripts
+3. Install the LaunchAgent for auto-start (`rmd daemon`)
+4. Create the `reminder` alias and convenience scripts
 
 ### Manual Installation
 
@@ -52,8 +51,8 @@ The installation creates a LaunchAgent that runs the reminder service automatica
     <string>com.sergiudm.schedule.management.reminder</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/.venv/bin/python</string>
-        <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/src/schedule_management/reminder_macos.py</string>
+        <string>/Users/YOUR_USERNAME/SCHEDULE_MANAGEMENT/rmd</string>
+        <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -141,7 +140,7 @@ sound_file = "/Users/yourname/Music/notification.wav"
 Schedule Management uses macOS native notifications. Configure notification settings:
 
 1. **System Preferences** → **Notifications & Focus**
-2. Find **Python** or **Terminal** in the app list
+2. Find **Script Editor** (reminder dialogs are shown through `osascript`) or **Terminal** in the app list
 3. Configure:
    - Alert style: **Alerts** (for persistent notifications)
    - Allow notifications: **On**
@@ -154,7 +153,7 @@ Grant necessary permissions:
 
 1. **System Preferences** → **Security & Privacy** → **Privacy**
 2. **Accessibility**: Add Terminal/iTerm if needed
-3. **Automation**: Allow Python to control System Events
+3. **Automation**: Allow `rmd` (or `osascript`) to control System Events if asked
 
 ## Troubleshooting macOS Issues
 

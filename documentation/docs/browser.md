@@ -429,8 +429,8 @@ The background reminder service and its system notifications remain available.
 bun install
 bun run build
 bun run test
-uv run pytest -q
-uv run rmd web
+cargo test
+cargo run -- web
 ```
 
 Use `bun run test`, not `bun test`: the project's tests run on Vitest, while
@@ -438,8 +438,9 @@ Use `bun run test`, not `bun test`: the project's tests run on Vitest, while
 the build tools run on Node.js 20 or newer.
 
 Frontend source is in `web/`; `bun run build` writes assets into
-`src/schedule_management/web/static/`. These assets are bundled with the Python
-package, so end users do not need Node.js or a frontend development server.
+`src/schedule_management/web/static/`. These assets are compiled into the `rmd`
+binary, so end users do not need Node.js or a frontend development server
+(rebuild `rmd` after `bun run build` to serve new assets).
 Commit the rebuilt assets with frontend changes. For frontend development, run
 `rmd web --port 8765 --no-open`, then `bun run dev`; open the development URL
 with the printed `#token=...` fragment. The Vite proxy routes local API requests

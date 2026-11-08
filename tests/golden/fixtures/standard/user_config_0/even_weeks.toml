@@ -1,0 +1,41 @@
+# Even ISO weeks
+[common]
+"12:00" = "lunch_time"
+"22:30" = "go_to_bed"
+
+[monday]
+"08:30" = "potato"
+"09:30" = "pomodoro"
+"10:00" = "potato"
+"11:00" = { block = "pomodoro", title = "Review pull requests" }
+"13:20" = "napping"
+"14:00" = "potato"
+"15:00" = "meeting"
+"16:00" = "pomodoro"
+
+[tuesday]
+"08:30" = "potato"
+"09:30" = "potato"
+"13:20" = "napping"
+"14:00" = "pomodoro"
+
+[wednesday]
+"08:30" = "pomodoro"
+"09:00" = "pomodoro"
+"13:20" = "napping"
+
+[thursday]
+"08:30" = "potato"
+"13:20" = "napping"
+"14:00" = "pomodoro"
+"14:30" = "pomodoro"
+"15:00" = { block = "potato", title = "Potato" }
+"16:00" = "long_break"
+
+[friday]
+"08:30" = "potato"
+"13:20" = "napping"
+"21:00" = "summary_time"
+
+[saturday]
+"10:00" = "potato"

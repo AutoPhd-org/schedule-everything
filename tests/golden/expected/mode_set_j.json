@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "✅ Mode switched to j mode successfully!\nℹ️  No installer restart script found.\n   Restart the reminder service manually if it is already running.\n",
+  "stderr": "",
+  "files": {
+    "tasks/mode.txt": "j"
+  },
+  "deleted": []
+}

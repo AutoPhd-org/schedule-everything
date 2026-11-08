@@ -88,8 +88,10 @@ cd schedule-everything
 ./install.sh
 ```
 
-安装脚本会准备 Python 环境，在 `~/.schedule_management/config` 中生成配置，
-并注册提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd）。已有配置会保留。
+安装脚本会把 `rmd` 可执行文件放到 `~/SCHEDULE_MANAGEMENT`（下载预编译的发布版本；
+从克隆的仓库运行且装有 `cargo` 时则在本地编译），在 `~/.schedule_management/config`
+中生成配置，并注册提醒服务（macOS 上为 LaunchAgent，Linux 上为 systemd）。
+不需要 Python，已有配置会保留。也可以用 `pip install schedule-management` 安装同一个可执行文件。
 
 ### 2. 为你的 AI 智能体添加插件
 
@@ -253,17 +255,22 @@ rmd web
 
 ## 开发
 
+`rmd` 使用 Rust 编写（`crates/rmd`），浏览器前端使用 TypeScript。
+
 ```bash
-uv venv .venv && source .venv/bin/activate
-uv pip install -e .
-uv run pytest -q        # Python 测试
+cargo build                    # 生成 target/debug/rmd
+cargo test                     # 单元测试与黄金对照测试
+cargo clippy --all-targets
 
 bun install
 bun run test            # 浏览器工作区测试（Vitest；直接运行 `bun test` 会调用 Bun 自带的测试器）
 bun run build           # 重新构建内置的浏览器资源
 ```
 
-JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。浏览器前端位于 `web/`，`bun run build` 会把打包结果写入 `src/schedule_management/web/static/`，并随 Python 包一起发布。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
+JavaScript 依赖由 [Bun](https://bun.sh) 管理（`bun.lock`），相关工具运行在 Node.js 20 或更新版本上。浏览器前端位于 `web/`，`bun run build` 会把打包结果写入 `src/schedule_management/web/static/`，并编译进 `rmd` 可执行文件。智能体插件位于 [`plugins/schedule-everything`](plugins/schedule-everything)。
+
+`src/schedule_management` 中保留了原来的 Python 实现，作为 Rust 版本的对照基准：
+[`tests/golden`](tests/golden) 记录了它在命令行和浏览器 API 上的输出，`cargo test` 会检查 `rmd` 与之一致。
 
 ## 许可证
 

@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "",
+  "stderr": "❌ The plan has no assignments. Use `rmd sync --clear` to remove today's plan.\n",
+  "files": {},
+  "deleted": []
+}

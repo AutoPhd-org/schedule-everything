@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"id\": \"5\", \"name\": \"writing\", \"taskTypes\": {\"1\": \"read papers\", \"2\": \"gym work\", \"3\": \"coding\", \"4\": \"other\", \"5\": \"writing\"}, \"color\": \"magenta\"}}\n",
+  "stderr": "",
+  "files": {
+    "user_config_0/settings.toml": "[settings]\nsound_file = \"/System/Library/Sounds/Ping.aiff\"\nalarm_interval = 5\nmax_alarm_duration = 300\nskip_days = [\"sunday\"]\nlanguage = \"en\"\nshow_tasks_after_change = false\n\n[time_blocks]\npomodoro = 25\npotato = 50\nlong_break = 40\nmeeting = 50\n\n[time_points]\ngo_to_bed = \"上床睡觉 😴 该休息了！\"\nsummary_time = \"今天的工作结束 🎉, 总结一下\"\nnapping = \"小憩时间到 😴, 休息一下吧！\"\nlunch_time = \"午餐时间到 🍱！\"\n\n[tasks]\ndaily_urgent = [\"08:31\", \"14:01\", \"17:31\", \"21:31\"]\nddl_urgent = [\"08:32\", \"14:02\", \"17:32\", \"22:32\"]\ndaily_summary = \"23:35\"\nhabit_prompt = \"23:50\"\nweekly_review = \"sunday 20:00\"\nmonthly_review = \"1 20:00\"\n\n[paths]\nconfig_dir = \"config\"\nreports_path = \"~/reports\"\n\n[task_types]\n1 = \"read papers\"\n2 = \"gym work\"\n3 = \"coding\"\n4 = \"other\"\n5 = \"writing\"\n\n[task_type_colors]\n1 = \"blue\"\n2 = \"orange\"\n3 = \"aqua\"\n4 = \"yellow\"\n5 = \"magenta\"\n"
+  },
+  "deleted": []
+}

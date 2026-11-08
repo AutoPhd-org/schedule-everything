@@ -50,7 +50,7 @@ Used during even-numbered weeks. Typically contains:
 date +%V
 
 # Check if current week is odd or even
-python3 -c "import datetime; print('Odd' if datetime.date.today().isocalendar()[1] % 2 else 'Even')"
+date +%V   # ISO week number: odd weeks use odd_weeks.toml, even weeks even_weeks.toml
 ```
 
 ## Use Cases for Weekly Rotation

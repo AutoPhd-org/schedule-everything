@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "                                            📅 Even Week                                            \n╭────────────────────────── Status ───────────────────────────╮\n│                                                             │\n│  🔔 NOW:  potato at 10:00                                   │\n│                                                             │\n│  ⏰ NEXT: pomodoro: Review pull requests at 11:00 (in 30m)  │\n│                                                             │\n╰─────────────────────────────────────────────────────────────╯\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

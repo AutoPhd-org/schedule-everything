@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"file\": \"odd\", \"content\": \"# Odd ISO weeks\\n[common]\\n\\\"12:00\\\" = \\\"lunch_time\\\"\\n\\\"22:30\\\" = \\\"go_to_bed\\\"\\n\\n[monday]\\n\\\"08:30\\\" = \\\"potato\\\"\\n\\\"09:30\\\" = \\\"potato\\\"\\n\\\"10:30\\\" = { block = \\\"potato\\\", title = \\\"Draft the grant proposal\\\" }\\n\\\"11:30\\\" = \\\"pomodoro\\\"\\n\\\"13:20\\\" = \\\"napping\\\"\\n\\\"14:00\\\" = \\\"meeting\\\"\\n\\n[tuesday]\\n\\\"08:30\\\" = \\\"potato\\\"\\n\\\"09:30\\\" = \\\"pomodoro\\\"\\n\\\"13:20\\\" = \\\"napping\\\"\\n\\\"14:00\\\" = \\\"potato\\\"\\n\\\"15:00\\\" = \\\"long_break\\\"\\n\\\"16:00\\\" = \\\"potato\\\"\\n\\n[wednesday]\\n\\\"08:30\\\" = \\\"potato\\\"\\n\\\"09:30\\\" = \\\"pomodoro\\\"\\n\\\"13:20\\\" = \\\"napping\\\"\\n\\\"14:00\\\" = \\\"potato\\\"\\n\\n[thursday]\\n\\\"13:20\\\" = \\\"napping\\\"\\n\\\"14:00\\\" = \\\"potato\\\"\\n\\\"15:00\\\" = \\\"potato\\\"\\n\\n[friday]\\n\\\"08:30\\\" = \\\"potato\\\"\\n\\\"09:30\\\" = \\\"pomodoro\\\"\\n\\\"13:20\\\" = \\\"napping\\\"\\n\\\"21:00\\\" = \\\"summary_time\\\"\\n\\n[saturday]\\n\\\"09:00\\\" = \\\"potato\\\"\\n\\\"10:00\\\" = \\\"Water the plants\\\"\\n\", \"revision\": \"d405e8d96ef75bc31c0a4d70b133fb784c837728b55272eda0f06eeeb5ae896a\", \"activeId\": 0}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"taskTypes\": {\"1\": \"read papers\", \"2\": \"gym work\", \"3\": \"coding\", \"4\": \"other\"}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

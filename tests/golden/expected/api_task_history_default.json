@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"activities\": [{\"description\": \"Weekly review notes\", \"priority\": 2, \"startedAt\": \"2026-11-06T20:00:00\", \"endedAt\": \"2026-11-07T17:00:00\", \"duration\": \"21h\", \"status\": \"completed\", \"type\": \"4\", \"typeName\": \"other\"}, {\"description\": \"Learn Rust macros\", \"priority\": 5, \"startedAt\": \"2026-10-28T11:00:00\", \"endedAt\": \"2026-11-02T16:00:00\", \"duration\": \"5d 5h\", \"status\": \"dropped\", \"type\": \"3\", \"typeName\": \"coding\"}, {\"description\": \"Typo task\", \"priority\": 3, \"startedAt\": \"2026-10-26T09:30:00\", \"endedAt\": \"2026-10-26T09:31:00\", \"duration\": \"1m\", \"status\": \"cancelled\", \"type\": \"1\", \"typeName\": \"read papers\"}, {\"description\": \"Read attention paper\", \"priority\": 6, \"startedAt\": \"2026-10-21T15:00:00\", \"endedAt\": \"2026-10-22T18:00:00\", \"duration\": \"1d 3h\", \"status\": \"completed\", \"type\": \"1\", \"typeName\": \"read papers\"}]}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

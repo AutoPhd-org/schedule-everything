@@ -1,0 +1,7 @@
+{
+  "exit": 2,
+  "stdout": "",
+  "stderr": "usage: rmd [-h] <command> ...\nrmd: error: argument <command>: invalid choice: 'frobnicate' (choose from web, add, rm, cancel, drop, ls, history, ddl, track, status, view, sync, check, update, stop, switch, report, edit, completion, settings, mode)\n",
+  "files": {},
+  "deleted": []
+}

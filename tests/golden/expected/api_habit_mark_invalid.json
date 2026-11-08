@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": false, \"error\": {\"code\": \"invalid_input\", \"message\": \"one or more habit IDs are invalid.\", \"details\": {\"invalidIds\": [\"42\"]}}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

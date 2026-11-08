@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"date\": \"2026-11-09\", \"today\": \"2026-11-09\", \"isToday\": true, \"firstActivity\": \"2026-10-19\", \"taskTypes\": {\"1\": \"read papers\", \"2\": \"gym work\", \"3\": \"coding\", \"4\": \"other\"}, \"completed\": 0, \"cancelled\": 0, \"dropped\": 0, \"added\": 0, \"byType\": {}, \"hours\": [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}], \"yesterday\": 0, \"usual\": 0.1, \"usualDays\": 21, \"habitsDone\": 0, \"habitsTotal\": 5, \"streak\": 0, \"medianLeadHours\": null, \"highlights\": []}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

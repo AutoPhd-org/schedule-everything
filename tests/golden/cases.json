@@ -1,0 +1,1566 @@
+{
+  "timezone": "America/Los_Angeles",
+  "cases": [
+    {
+      "name": "check_json",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "check_text",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check"
+      ],
+      "stdout": "text",
+      "stderr": "ignore"
+    },
+    {
+      "name": "check_dir_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--dir",
+        "<ROOT>/nowhere",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "check_bad_week",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "user_config_0/odd_weeks.toml": "[monday]\n\"9:00\" = \"potato\"\n"
+      }
+    },
+    {
+      "name": "check_label_problems",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "user_config_0/even_weeks.toml": "[monday]\n\"09:00\" = { block = \"nap\" }\n\"10:00\" = { block = \"potato\", title = \" \" }\n\"11:00\" = \"made_up\"\n"
+      }
+    },
+    {
+      "name": "check_missing_settings_tables",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "user_config_0/settings.toml": "[settings]\n[time_blocks]\n"
+      }
+    },
+    {
+      "name": "check_bad_deadlines",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "user_config_0/ddl.json": "[{\"event\": \"x\", \"deadline\": \"2026-13-01\"}]"
+      }
+    },
+    {
+      "name": "check_bad_habits",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "check",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "user_config_0/habits.toml": "a = \"b\"\n"
+      }
+    },
+    {
+      "name": "sync_json_monday",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "sync_json_thursday",
+      "now": "2026-11-12T14:10:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "sync_json_skip_day",
+      "now": "2026-11-15T09:00:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "sync_json_odd_week",
+      "now": "2026-11-17T08:40:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "sync_json_with_plan",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "sync_json_stale_plan",
+      "now": "2026-11-12T14:10:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "sync_json_p_mode",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "tasks/mode.txt": "p"
+      }
+    },
+    {
+      "name": "sync_json_zh",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "env": {
+        "REMINDER_LANG": "zh"
+      }
+    },
+    {
+      "name": "sync_apply_file",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "<ROOT>/plan.json"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "files": {
+        "plan.json": "{\"date\": \"2026-11-09\", \"assignments\": {\"08:30\": \"Write grant report\", \"10:00\": \"Fix CI pipeline\"}}"
+      }
+    },
+    {
+      "name": "sync_apply_stdin",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"date\": \"2026-11-09\", \"assignments\": {\"08:30\": \"Write grant report\", \"10:00\": \"Fix CI pipeline\"}}"
+    },
+    {
+      "name": "sync_apply_list_form",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": [{\"time\": \"09:30\", \"title\": \"  Call   the bank  \"}, {\"time\": \"16:00\", \"title\": \"Book flights\"}]}"
+    },
+    {
+      "name": "sync_apply_wrong_date",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"date\": \"2026-11-10\", \"assignments\": {\"08:30\": \"x\"}}"
+    },
+    {
+      "name": "sync_apply_unknown_slot",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {\"07:00\": \"x\"}}"
+    },
+    {
+      "name": "sync_apply_titled_slot",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {\"11:00\": \"x\"}}"
+    },
+    {
+      "name": "sync_apply_empty_title",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {\"08:30\": \"  \"}}"
+    },
+    {
+      "name": "sync_apply_long_title",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {\"08:30\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}"
+    },
+    {
+      "name": "sync_apply_no_assignments",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {}}"
+    },
+    {
+      "name": "sync_apply_not_object",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "[1, 2]"
+    },
+    {
+      "name": "sync_apply_bad_list_item",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": [\"x\"]}"
+    },
+    {
+      "name": "sync_apply_skip_day",
+      "now": "2026-11-15T09:00:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"assignments\": {\"08:30\": \"x\"}}"
+    },
+    {
+      "name": "sync_apply_p_mode",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--apply",
+        "-"
+      ],
+      "stdout": "text",
+      "stderr": "text",
+      "stdin": "{\"date\": \"2026-11-09\", \"assignments\": {\"08:30\": \"Write grant report\", \"10:00\": \"Fix CI pipeline\"}}",
+      "files": {
+        "tasks/mode.txt": "p"
+      }
+    },
+    {
+      "name": "sync_clear_existing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--clear"
+      ],
+      "stdout": "text",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "sync_clear_none",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync",
+        "--clear"
+      ],
+      "stdout": "text",
+      "stderr": "ignore"
+    },
+    {
+      "name": "sync_table",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "sync"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "add_basic",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "add",
+        "Write slides",
+        "7"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "add_with_type",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "add",
+        "Read diffusion paper",
+        "6",
+        "1"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "add_with_postpone",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "add",
+        "Renew passport",
+        "5",
+        "4",
+        "2"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "add_existing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "add",
+        "Call the bank",
+        "9"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "add_bad_priority",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "add",
+        "Too important",
+        "11"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "rm_by_index",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "rm",
+        "1"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "rm_by_description",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "rm",
+        "Call the bank"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "rm_many",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "rm",
+        "1",
+        "2"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "rm_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "rm",
+        "No such task"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "cancel_task",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "cancel",
+        "Book flights"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "drop_task",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "drop",
+        "整理笔记"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ls_all",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ls"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ls_type",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ls",
+        "-t",
+        "1"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "history_default",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "history"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "history_count",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "history",
+        "2"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_show",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_add",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "add",
+        "Visa appointment",
+        "12.15"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_add_past_month_day",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "add",
+        "New year plan",
+        "1.2"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_add_repeat",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "add",
+        "Pay card",
+        "11.20",
+        "--repeat",
+        "monthly"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_add_existing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "add",
+        "Grant report",
+        "11.25"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_add_bad_date",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "add",
+        "Broken",
+        "13.40"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_rm",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "rm",
+        "Grant report"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "ddl_rm_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "ddl",
+        "rm",
+        "Nope"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "track_ids",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "track",
+        "1",
+        "3"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "track_invalid",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "track",
+        "9"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "mode_show",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "mode"
+      ],
+      "stdout": "text",
+      "stderr": "ignore"
+    },
+    {
+      "name": "mode_set_p",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "mode",
+        "p"
+      ],
+      "stdout": "text",
+      "stderr": "ignore"
+    },
+    {
+      "name": "mode_set_j",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "mode",
+        "j"
+      ],
+      "stdout": "text",
+      "stderr": "ignore",
+      "files": {
+        "tasks/mode.txt": "p"
+      }
+    },
+    {
+      "name": "status_plain",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "status"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "status_verbose",
+      "now": "2026-11-12T14:10:00",
+      "argv": [
+        "status",
+        "-v"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "status_skip_day",
+      "now": "2026-11-15T09:00:00",
+      "argv": [
+        "status"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "no_command",
+      "now": "2026-11-09T10:30:00",
+      "argv": [],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "unknown_command",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "frobnicate"
+      ],
+      "stdout": "ignore",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_invalid_json",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{not json"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_not_object",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "[1]"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_unknown_command",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"no_such_command\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_missing_command",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_payload_not_object",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": []}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_status_snapshot_monday",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_status_snapshot_thursday",
+      "now": "2026-11-12T14:10:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_status_snapshot_skip_day",
+      "now": "2026-11-15T09:00:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_status_snapshot_odd_week",
+      "now": "2026-11-17T08:40:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "api_status_snapshot_with_plan",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "api_status_snapshot_zh",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"status_snapshot\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "env": {
+        "REMINDER_LANG": "zh"
+      }
+    },
+    {
+      "name": "api_task_add",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"Prepare talk\", \"priority\": 8, \"type\": \"3\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_postpone",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"Dentist\", \"priority\": 4, \"postpone\": 3}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_existing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"Call the bank\", \"priority\": 2}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_bad_priority",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"x\", \"priority\": 0}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_priority_text",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"x\", \"priority\": \"7\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_unknown_type",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"x\", \"priority\": 5, \"type\": \"99\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_negative_postpone",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"description\": \"x\", \"priority\": 5, \"postpone\": -1}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_add_missing_description",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_add\", \"payload\": {\"priority\": 5}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_update",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_update\", \"payload\": {\"originalDescription\": \"Call the bank\", \"description\": \"Call the bank today\", \"priority\": 9}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_update_type_postpone",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_update\", \"payload\": {\"originalDescription\": \"Book flights\", \"description\": \"Book flights\", \"priority\": 8, \"type\": \"1\", \"postpone\": 0}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_update_duplicate",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_update\", \"payload\": {\"originalDescription\": \"Call the bank\", \"description\": \"Fix CI pipeline\", \"priority\": 5}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_update_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_update\", \"payload\": {\"originalDescription\": \"Nope\", \"description\": \"Nope\", \"priority\": 5}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_progress",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_progress\", \"payload\": {\"description\": \"Fix CI pipeline\", \"progress\": 65}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_progress_clear",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_progress\", \"payload\": {\"description\": \"Fix CI pipeline\", \"progress\": 0}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_progress_subtasks",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_progress\", \"payload\": {\"description\": \"整理笔记\", \"progress\": 10}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_progress_bad",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_progress\", \"payload\": {\"description\": \"Fix CI pipeline\", \"progress\": \"lots\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_subtasks",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_subtasks\", \"payload\": {\"description\": \"Call the bank\", \"subtasks\": [{\"text\": \" Find number \", \"done\": true}, {\"text\": \"Call\", \"done\": false}]}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_subtasks_clear",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_subtasks\", \"payload\": {\"description\": \"整理笔记\", \"subtasks\": []}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_subtasks_bad",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_subtasks\", \"payload\": {\"description\": \"整理笔记\", \"subtasks\": \"nope\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_delete",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_delete\", \"payload\": {\"description\": \"Write grant report\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_delete_cancelled",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_delete\", \"payload\": {\"description\": \"Book flights\", \"action\": \"cancelled\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_delete_dropped",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_delete\", \"payload\": {\"description\": \"Call the bank\", \"action\": \"dropped\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_delete_bad_action",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_delete\", \"payload\": {\"description\": \"Call the bank\", \"action\": \"eaten\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_delete_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_delete\", \"payload\": {\"description\": \"Nope\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_restore_missing_tasks",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_restore\", \"payload\": {\"description\": \"Gone\", \"action\": \"deleted\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_restore",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_restore\", \"payload\": {\"description\": \"Gone\", \"action\": \"deleted\", \"tasks\": [{\"index\": 0, \"task\": {\"description\": \"Gone\", \"priority\": 3}}]}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_history",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_history\", \"payload\": {\"count\": 3}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_history_all",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_history\", \"payload\": {\"all\": true}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_history_default",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_history\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Camera ready\", \"date\": \"2026-12-05\", \"type\": \"1\", \"color\": \"orange\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add_month_day",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Taxes\", \"date\": \"4.15\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add_repeat",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Standup notes\", \"date\": \"2026-11-13\", \"repeat\": \"biweekly\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add_bad_date",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Bad\", \"date\": \"2026-02-30\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add_bad_format",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Bad\", \"date\": \"tomorrow\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_add_existing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_add\", \"payload\": {\"event\": \"Grant report\", \"date\": \"2026-11-27\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_update",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_update\", \"payload\": {\"originalEvent\": \"Grant report\", \"event\": \"Grant final report\", \"date\": \"2026-11-21\", \"repeat\": \"weekly\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_update_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_update\", \"payload\": {\"originalEvent\": \"Nope\", \"event\": \"Nope\", \"date\": \"2026-11-21\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_delete",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_delete\", \"payload\": {\"event\": \"论文截止\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_deadline_delete_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"deadline_delete\", \"payload\": {\"event\": \"Nope\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_habit_mark",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"habit_mark\", \"payload\": {\"habitIds\": [\"2\", 4]}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_habit_mark_invalid",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"habit_mark\", \"payload\": {\"habitIds\": [\"2\", \"42\"]}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_habit_mark_not_list",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"habit_mark\", \"payload\": {\"habitIds\": \"2\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_settings_get_task_types",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"settings_get_task_types\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_settings_set_task_types",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"settings_set_task_types\", \"payload\": {\"taskTypes\": {\"1\": \"papers\", \"7\": \"errands\"}}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_settings_set_task_types_bad",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"settings_set_task_types\", \"payload\": {\"taskTypes\": {\"1\": \" \"}}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_save_new",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_save\", \"payload\": {\"name\": \"writing\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_save_rename",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_save\", \"payload\": {\"id\": \"2\", \"name\": \"fitness\", \"color\": \"green\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_save_duplicate",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_save\", \"payload\": {\"name\": \"coding\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_save_too_long",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_save\", \"payload\": {\"name\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_delete_move",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_delete\", \"payload\": {\"id\": \"3\", \"moveTo\": \"4\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_task_type_delete_missing",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"task_type_delete\", \"payload\": {\"id\": \"42\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_weekly_overview",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"weekly_overview\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_weekly_overview_past",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"weekly_overview\", \"payload\": {\"date\": \"2026-10-21\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_daily_overview",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"daily_overview\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_daily_overview_date",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"daily_overview\", \"payload\": {\"date\": \"2026-11-07\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_daily_overview_bad_date",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"daily_overview\", \"payload\": {\"date\": \"07/11/2026\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_conference_calendar",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"conference_calendar\", \"payload\": {\"year\": 2026}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_conference_calendar_2027",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"conference_calendar\", \"payload\": {\"year\": 2027}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_conference_calendar_bad_year",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"conference_calendar\", \"payload\": {\"year\": \"soon\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_conference_calendar_out_of_range",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"conference_calendar\", \"payload\": {\"year\": 1900}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_read_settings",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_read\", \"payload\": {\"file\": \"settings\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_read_odd",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_read\", \"payload\": {\"file\": \"odd\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_read_deadlines",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_read\", \"payload\": {\"file\": \"deadlines\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_read_profile",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_read\", \"payload\": {\"file\": \"profile\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_read_unknown",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_read\", \"payload\": {\"file\": \"passwords\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_config_save_stale",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"config_save\", \"payload\": {\"file\": \"profile\", \"content\": \"# New\\n\", \"activeId\": 0, \"revision\": \"stale\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_workspace_info",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"workspace_info\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_service_action_unknown",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"service_action\", \"payload\": {\"action\": \"explode\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_export_pdf_unknown_kind",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"export_pdf\", \"payload\": {\"kind\": \"poster\"}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    },
+    {
+      "name": "api_sync_clear",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"sync_clear\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore",
+      "files": {
+        "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n"
+      }
+    },
+    {
+      "name": "api_sync_clear_none",
+      "now": "2026-11-09T10:30:00",
+      "argv": [
+        "__api",
+        "{\"command\": \"sync_clear\", \"payload\": {}}"
+      ],
+      "stdout": "json",
+      "stderr": "ignore"
+    }
+  ]
+}

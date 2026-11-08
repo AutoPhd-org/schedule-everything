@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"description\": \"Call the bank\", \"subtasks\": [{\"text\": \"Find number\", \"done\": true}, {\"text\": \"Call\", \"done\": false}], \"progress\": 50}}\n",
+  "stderr": "",
+  "files": {
+    "tasks/tasks.json": "[\n  {\n    \"description\": \"Write grant report\",\n    \"priority\": 9,\n    \"type\": \"1\"\n  },\n  {\n    \"description\": \"Fix CI pipeline\",\n    \"priority\": 7,\n    \"type\": \"3\",\n    \"progress\": 40\n  },\n  {\n    \"description\": \"Plan gym routine v2\",\n    \"priority\": 5,\n    \"type\": \"2\"\n  },\n  {\n    \"description\": \"整理笔记\",\n    \"priority\": 5,\n    \"type\": \"4\",\n    \"subtasks\": [\n      {\n        \"text\": \"Sort notes\",\n        \"done\": true\n      },\n      {\n        \"text\": \"Tag notes\",\n        \"done\": false\n      },\n      {\n        \"text\": \"Archive\",\n        \"done\": false\n      }\n    ],\n    \"progress\": 33\n  },\n  {\n    \"description\": \"Call the bank\",\n    \"priority\": 6,\n    \"type\": \"1\",\n    \"subtasks\": [\n      {\n        \"text\": \"Find number\",\n        \"done\": true\n      },\n      {\n        \"text\": \"Call\",\n        \"done\": false\n      }\n    ],\n    \"progress\": 50\n  },\n  {\n    \"description\": \"Book flights\",\n    \"priority\": 8,\n    \"type\": \"4\",\n    \"alarm_from\": \"2026-11-11\"\n  }\n]"
+  },
+  "deleted": []
+}

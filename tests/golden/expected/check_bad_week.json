@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "{\n  \"configRoot\": \"<ROOT>\",\n  \"activeId\": 0,\n  \"activeConfigDir\": \"<ROOT>/user_config_0\",\n  \"configIds\": [\n    0\n  ],\n  \"nextConfigId\": 1,\n  \"nextConfigDir\": \"<ROOT>/user_config_1\",\n  \"directory\": \"<ROOT>/user_config_0\",\n  \"files\": {\n    \"settings\": {\n      \"path\": \"<ROOT>/user_config_0/settings.toml\",\n      \"exists\": true\n    },\n    \"odd\": {\n      \"path\": \"<ROOT>/user_config_0/odd_weeks.toml\",\n      \"exists\": true\n    },\n    \"even\": {\n      \"path\": \"<ROOT>/user_config_0/even_weeks.toml\",\n      \"exists\": true\n    },\n    \"habits\": {\n      \"path\": \"<ROOT>/user_config_0/habits.toml\",\n      \"exists\": true\n    },\n    \"deadlines\": {\n      \"path\": \"<ROOT>/user_config_0/ddl.json\",\n      \"exists\": true\n    },\n    \"profile\": {\n      \"path\": \"<ROOT>/user_config_0/profile.md\",\n      \"exists\": true\n    }\n  },\n  \"valid\": false,\n  \"errors\": [\n    {\n      \"file\": \"odd_weeks.toml\",\n      \"message\": \"events require a valid HH:MM time and label or block/title object\"\n    }\n  ],\n  \"warnings\": []\n}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": []
+}

@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "Saved today's plan with 2 focus blocks to <ROOT>/synced_schedule.toml.\n",
+  "stderr": "",
+  "files": {
+    "synced_schedule.toml": "# Accepted task assignments for today's focus blocks.\n# This file is written by `rmd sync --apply`.\ndate = \"2026-11-09\"\nparity = \"even\"\nweekday = \"monday\"\n\n[schedule]\n\"09:30\" = { block = \"pomodoro\", title = \"Call the bank\" }\n\"16:00\" = { block = \"pomodoro\", title = \"Book flights\" }\n"
+  },
+  "deleted": []
+}

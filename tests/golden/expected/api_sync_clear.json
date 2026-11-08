@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "{\"ok\": true, \"data\": {\"cleared\": true}}\n",
+  "stderr": "",
+  "files": {},
+  "deleted": [
+    "synced_schedule.toml"
+  ]
+}

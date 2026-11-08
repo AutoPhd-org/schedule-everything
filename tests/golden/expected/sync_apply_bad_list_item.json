@@ -1,0 +1,7 @@
+{
+  "exit": 1,
+  "stdout": "",
+  "stderr": "❌ Each assignment in a list must be an object with time and title.\n",
+  "files": {},
+  "deleted": []
+}
