@@ -248,7 +248,8 @@ build_from_source() {
     fi
     log_info "Building rmd with cargo (the first build takes a few minutes)..."
     (cd "$SCRIPT_DIR" && cargo build --release --locked -p rmd)
-    install -m 755 "$SCRIPT_DIR/target/release/rmd" "$RMD_BIN"
+    local target_dir="${CARGO_TARGET_DIR:-$SCRIPT_DIR/target}"
+    install -m 755 "$target_dir/release/rmd" "$RMD_BIN"
     log_success "Built rmd from source"
 }
 
