@@ -1256,6 +1256,33 @@ mod tests {
         );
     }
 
+    /// Make a file read-only so saving it fails (skipped when running as root).
+    #[cfg(unix)]
+    fn make_read_only(path: &std::path::Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444)).unwrap();
+        std::fs::OpenOptions::new().write(true).open(path).is_err()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_errors_are_reported() {
+        let env = env_with(json!([{"description": "Task 1", "priority": 7}, {"description": "Task 3", "priority": 3}]));
+        if !make_read_only(&env.root().join("tasks/tasks.json")) {
+            return;
+        }
+        let mut console = quiet();
+        assert_eq!(add_task_with(&mut console, Some("Complete project"), Some(5), None, None), 1);
+        assert!(console.output().starts_with("❌ Error saving task: "));
+        let mut console = quiet();
+        assert_eq!(delete_task_with(&mut console, &strings(&["Task 1", "Task 3"])), 1);
+        assert!(console.output().starts_with("❌ Error saving tasks: "));
+        assert_eq!(console.output().lines().count(), 1);
+        let mut console = quiet();
+        assert_eq!(cancel_task_with(&mut console, &strings(&["Task 1"])), 1);
+        assert!(console.output().contains("Permission denied"));
+    }
+
     #[test]
     fn show_tasks_empty_list() {
         let _env = env_with(json!([]));

@@ -318,6 +318,25 @@ mod tests {
         assert_eq!(records(&env)[0]["completed"], json!({"1": "Go to sleep on time"}));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn save_errors_are_reported() {
+        use std::os::unix::fs::PermissionsExt;
+        let env = env();
+        let path = env.write("tasks/record.json", "[]");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+        if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            return; // running as root
+        }
+        let mut console = Console::capture(80);
+        assert_eq!(track_habits_with(&mut console, &strings(&["1"]), &mut no_dialog), 1);
+        assert!(
+            console.output().ends_with(
+                "  [1] Go to sleep on time\n❌ Error saving habit records: Permission denied (os error 13)\n"
+            )
+        );
+    }
+
     #[test]
     fn no_dialog_and_no_terminal_fails() {
         let _env = env();

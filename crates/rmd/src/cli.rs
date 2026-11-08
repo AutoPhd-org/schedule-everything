@@ -133,7 +133,7 @@ pub enum Command {
     #[command(long_about = "Open a configuration file in your editor.")]
     Edit(EditArgs),
 
-    /// Print a shell completion script for bash, zsh, or tcsh
+    /// Print a shell completion script for bash, zsh, tcsh, or fish
     #[command(long_about = "Generate a shell completion script for the rmd CLI.")]
     Completion(CompletionArgs),
 
@@ -681,11 +681,27 @@ fn context_string(error: &clap::Error, kind: ContextKind) -> Option<String> {
 
 /// argparse's name for an argument as clap renders it (`[PRIORITY]`,
 /// `--repeat <REPEAT>`, `<tasks>...`).
-fn argparse_arg_name(rendered: &str) -> String {
+fn argparse_arg_name(rendered: &str, cmd: &clap::Command) -> String {
     let rendered = rendered.trim();
     if rendered.starts_with('-') {
-        let flags: Vec<&str> = rendered.split_whitespace().next().unwrap_or(rendered).split(',').collect();
-        return flags.join("/");
+        let flag = rendered.split_whitespace().next().unwrap_or(rendered);
+        let found = cmd.get_arguments().find(|a| {
+            a.get_long().is_some_and(|l| flag == format!("--{l}"))
+                || a.get_short().is_some_and(|s| flag == format!("-{s}"))
+        });
+        return match found {
+            Some(arg) => {
+                let mut names = Vec::new();
+                if let Some(short) = arg.get_short() {
+                    names.push(format!("-{short}"));
+                }
+                if let Some(long) = arg.get_long() {
+                    names.push(format!("--{long}"));
+                }
+                names.join("/")
+            }
+            None => flag.to_string(),
+        };
     }
     rendered.trim_end_matches("...").trim_matches(|c| matches!(c, '<' | '>' | '[' | ']')).to_string()
 }
@@ -720,7 +736,7 @@ fn argparse_error(error: &clap::Error, cmd: &clap::Command, path: &[String]) -> 
     let target = path.iter().try_fold(cmd, |c, name| c.find_subcommand(name)).unwrap_or(cmd);
     let prog = std::iter::once("rmd").chain(path.iter().map(String::as_str)).collect::<Vec<_>>().join(" ");
     let usage = usage_line(target, &prog, path.is_empty());
-    let arg = context_string(error, ContextKind::InvalidArg).map(|a| argparse_arg_name(&a)).unwrap_or_default();
+    let arg = context_string(error, ContextKind::InvalidArg).map(|a| argparse_arg_name(&a, target)).unwrap_or_default();
     let value = context_string(error, ContextKind::InvalidValue).unwrap_or_default();
     let message = match error.kind() {
         ErrorKind::InvalidValue => {
@@ -740,13 +756,14 @@ fn argparse_error(error: &clap::Error, cmd: &clap::Command, path: &[String]) -> 
         }
         ErrorKind::MissingRequiredArgument => {
             let missing: Vec<String> = match error.get(ContextKind::InvalidArg) {
-                Some(ContextValue::Strings(values)) => values.iter().map(|v| argparse_arg_name(v)).collect(),
+                Some(ContextValue::Strings(values)) => values.iter().map(|v| argparse_arg_name(v, target)).collect(),
                 _ => vec![arg],
             };
             format!("the following arguments are required: {}", missing.join(", "))
         }
         ErrorKind::ArgumentConflict => {
-            let prior = context_string(error, ContextKind::PriorArg).map(|a| argparse_arg_name(&a)).unwrap_or_default();
+            let prior =
+                context_string(error, ContextKind::PriorArg).map(|a| argparse_arg_name(&a, target)).unwrap_or_default();
             format!("argument {prior}: not allowed with argument {arg}")
         }
         ErrorKind::InvalidSubcommand => {
@@ -791,7 +808,10 @@ fn usage_error_text(error: &clap::Error, cmd: &clap::Command, argv: &[OsString])
 fn report_parse_error(error: clap::Error, cmd: &clap::Command, argv: &[OsString]) -> i32 {
     match error.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
-            let rendered = error.render().to_string();
+            // Print the argparse-style text as is (clap would re-wrap it).
+            let path = command_path(cmd, argv);
+            let target = path.iter().try_fold(cmd, |c, name| c.find_subcommand(name)).unwrap_or(cmd);
+            let rendered = target.get_before_help().map(|h| h.to_string()).unwrap_or_default();
             let mut stdout = std::io::stdout().lock();
             let text = if crate::ui::detect_color_system().is_some() { rendered } else { strip_ansi(&rendered) };
             let _ = stdout.write_all(text.as_bytes());

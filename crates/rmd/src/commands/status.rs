@@ -401,6 +401,16 @@ mod tests {
     }
 
     #[test]
+    fn view_reports_config_errors() {
+        let env = env_at("2026-11-09T10:10:00");
+        std::fs::remove_file(env.root().join("user_config_0/settings.toml")).unwrap();
+        let mut console = Console::capture(200);
+        assert_eq!(view_command_with(&mut console), 1);
+        let output = console.output();
+        assert!(output.starts_with("📊 Generating schedule visualizations...\n❌ Error generating visualizations: [Errno 2] No such file or directory: '"));
+    }
+
+    #[test]
     fn status_reports_config_errors() {
         let env = env_at("2026-11-09T10:10:00");
         std::fs::remove_file(env.root().join("user_config_0/odd_weeks.toml")).unwrap();

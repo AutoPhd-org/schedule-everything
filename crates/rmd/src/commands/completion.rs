@@ -33,28 +33,33 @@ pub fn completion_script(shell: &str) -> Result<String, String> {
     String::from_utf8(buffer).map_err(|e| e.to_string())
 }
 
-/// `complete rmd ...` rules: subcommand names, then each subcommand's
-/// nested subcommands and fixed choices.
+/// `complete rmd ...` rules: subcommand names, then each (nested)
+/// subcommand's subcommands and fixed choices, and options' choices.
 fn tcsh_script(cmd: &clap::Command) -> String {
-    let visible = |c: &clap::Command| -> Vec<String> {
-        c.get_subcommands().filter(|s| !s.is_hide_set()).map(|s| s.get_name().to_string()).collect()
-    };
-    let mut rules = vec![format!("'p/1/({})/'", visible(cmd).join(" "))];
-    for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
-        let mut words = visible(sub);
-        for arg in sub.get_positionals() {
-            words.extend(arg.get_possible_values().iter().map(|v| v.get_name().to_string()));
-        }
-        if !words.is_empty() {
-            rules.push(format!("'n/{}/({})/'", sub.get_name(), words.join(" ")));
-        }
-        for arg in sub.get_arguments().filter(|a| a.get_long().is_some()) {
-            let values: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
-            if !values.is_empty() {
-                rules.push(format!("'n/--{}/({})/'", arg.get_long().unwrap_or_default(), values.join(" ")));
+    fn visible(c: &clap::Command) -> Vec<&clap::Command> {
+        c.get_subcommands().filter(|s| !s.is_hide_set()).collect()
+    }
+    fn add_rules(cmd: &clap::Command, rules: &mut Vec<String>) {
+        for sub in visible(cmd) {
+            let mut words: Vec<String> = visible(sub).iter().map(|s| s.get_name().to_string()).collect();
+            for arg in sub.get_positionals() {
+                words.extend(arg.get_possible_values().iter().map(|v| v.get_name().to_string()));
             }
+            if !words.is_empty() {
+                rules.push(format!("'n/{}/({})/'", sub.get_name(), words.join(" ")));
+            }
+            for arg in sub.get_arguments().filter(|a| a.get_long().is_some() && a.get_action().takes_values()) {
+                let values: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
+                if !values.is_empty() {
+                    rules.push(format!("'n/--{}/({})/'", arg.get_long().unwrap_or_default(), values.join(" ")));
+                }
+            }
+            add_rules(sub, rules);
         }
     }
+    let names: Vec<&str> = visible(cmd).iter().map(|s| s.get_name()).collect();
+    let mut rules = vec![format!("'p/1/({})/'", names.join(" "))];
+    add_rules(cmd, &mut rules);
     format!("# tcsh completion for rmd\ncomplete rmd \\\n    {}\n", rules.join(" \\\n    "))
 }
 
@@ -107,6 +112,8 @@ mod tests {
         assert!(script.contains("'n/ddl/(add rm)/'"));
         assert!(script.contains("'n/completion/(bash zsh tcsh fish)/'"));
         assert!(script.contains("'n/mode/(j p)/'"));
+        assert!(script.contains("'n/--repeat/(weekly biweekly monthly)/'"));
+        assert!(!script.contains("true false"));
         assert!(!script.contains("daemon"));
         assert!(completion_script("ksh").is_err());
     }

@@ -456,6 +456,25 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn save_errors_are_reported() {
+        use std::os::unix::fs::PermissionsExt;
+        let env =
+            env_with(json!([{"event": "homework2", "deadline": "2026-07-04", "added": "x"}]), "2025-11-22T10:00:00");
+        let path = env.root().join("user_config_0/ddl.json");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+        if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            return; // running as root
+        }
+        let mut console = Console::capture(80);
+        assert_eq!(add_deadline_with(&mut console, "exam", "7.4", None), 1);
+        assert!(console.output().starts_with("❌ Error saving deadline: "));
+        let mut console = Console::capture(80);
+        assert_eq!(delete_deadline_with(&mut console, &strings(&["homework2"])), 1);
+        assert!(console.output().starts_with("❌ Error saving deadlines: "));
+    }
+
     #[test]
     fn show_empty() {
         let _env = env_with(json!([]), "2026-04-23T08:00:00");
