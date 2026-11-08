@@ -896,8 +896,9 @@ fn run_user_command(command: Command) -> i32 {
                 .cloned()
                 .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_string()))
                 .unwrap_or_else(|| "unknown error".to_string());
-            let _ = std::io::stdout().flush();
-            println!("{}", tf("❌ Unexpected error: {e}", &[("e", &message)]));
+            let mut stdout = std::io::stdout().lock();
+            let _ = writeln!(stdout, "{}", tf("❌ Unexpected error: {e}", &[("e", &message)]));
+            let _ = stdout.flush();
             1
         }
     }

@@ -1749,49 +1749,87 @@ impl Renderable for Rule {
 // Highlighting (rich's ReprHighlighter, the parts these messages use)
 // =============================================================================
 
-fn highlight_regex() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(concat!(
-            r#"(?P<str>'[^'\n]*'|"[^"\n]*")"#,
-            r"|(?P<url>(?:file|https|http|ws|wss)://[-0-9a-zA-Z$_+!`(),.?/;:&=%#~@]*)",
-            r"|\b(?P<bool_true>True)\b|\b(?P<bool_false>False)\b|\b(?P<none>None)\b",
-            r"|(?P<number>-?[0-9]+(?:\.[0-9]+)?)",
-        ))
-        .expect("valid highlight regex")
-    })
+fn is_word_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+/// Spans rich's default highlighter (`ReprHighlighter`) colours: quoted
+/// strings, URLs, `True`/`False`/`None`, and numbers.
+fn highlight_spans(chars: &[char]) -> Vec<(usize, usize, &'static str)> {
+    const URL_SCHEMES: [&str; 5] = ["https://", "http://", "file://", "wss://", "ws://"];
+    let url_char = |c: char| c.is_ascii_alphanumeric() || "-$_+!`(),.?/;:&=%#~@".contains(c);
+    let starts_with = |at: usize, word: &str| {
+        let word: Vec<char> = word.chars().collect();
+        chars.len() >= at + word.len() && chars[at..at + word.len()] == word[..]
+    };
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let prev = (i > 0).then(|| chars[i - 1]);
+        let after_word = prev.is_some_and(is_word_char);
+        if (c == '\'' || c == '"') && !after_word && prev != Some('\\') {
+            let close = (i + 1..chars.len())
+                .take_while(|j| chars[*j] != '\n')
+                .find(|j| chars[*j] == c && chars[*j - 1] != '\\');
+            if let Some(close) = close {
+                spans.push((i, close + 1, "str"));
+                i = close + 1;
+                continue;
+            }
+        }
+        if let Some(scheme) = URL_SCHEMES.iter().find(|scheme| starts_with(i, scheme)) {
+            let mut end = i + scheme.chars().count();
+            while end < chars.len() && url_char(chars[end]) {
+                end += 1;
+            }
+            spans.push((i, end, "url"));
+            i = end;
+            continue;
+        }
+        if !after_word {
+            let keyword =
+                [("True", "bool_true"), ("False", "bool_false"), ("None", "none")].into_iter().find(|(word, _)| {
+                    starts_with(i, word) && !chars.get(i + word.len()).copied().is_some_and(is_word_char)
+                });
+            if let Some((word, kind)) = keyword {
+                spans.push((i, i + word.len(), kind));
+                i += word.len();
+                continue;
+            }
+            let digits_from = if c == '-' { i + 1 } else { i };
+            if chars.get(digits_from).is_some_and(char::is_ascii_digit) {
+                let mut end = digits_from;
+                while end < chars.len() && chars[end].is_ascii_digit() {
+                    end += 1;
+                }
+                if end + 1 < chars.len() && chars[end] == '.' && chars[end + 1].is_ascii_digit() {
+                    end += 1;
+                    while end < chars.len() && chars[end].is_ascii_digit() {
+                        end += 1;
+                    }
+                }
+                if !chars.get(end).copied().is_some_and(is_word_char) {
+                    spans.push((i, end, "number"));
+                    i = end;
+                    continue;
+                }
+                // Not a whole number: skip the rest of this run of digits.
+                i = end;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    spans
 }
 
 /// Colour numbers, quoted strings, booleans and URLs the way rich's default
 /// highlighter does for `console.print(str)` (colour output only).
 fn highlight(text: &mut Text) {
-    let plain = text.plain();
-    let byte_to_char: Vec<usize> = {
-        let mut map = vec![0; plain.len() + 1];
-        let mut count = 0;
-        for (index, ch) in plain.char_indices() {
-            for slot in map.iter_mut().skip(index).take(ch.len_utf8()) {
-                *slot = count;
-            }
-            count += 1;
-        }
-        map[plain.len()] = count;
-        map
-    };
-    let chars: Vec<char> = plain.chars().collect();
-    for caps in highlight_regex().captures_iter(&plain) {
-        let (name, matched) = ["str", "url", "bool_true", "bool_false", "none", "number"]
-            .iter()
-            .find_map(|name| caps.name(name).map(|m| (*name, m)))
-            .expect("one group matches");
-        let (start, end) = (byte_to_char[matched.start()], byte_to_char[matched.end()]);
-        if name == "number"
-            && (start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_')
-                || end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_'))
-        {
-            continue;
-        }
-        let style = Style::get(match name {
+    let chars: Vec<char> = text.chars.iter().map(|c| c.ch).collect();
+    for (start, end, kind) in highlight_spans(&chars) {
+        let style = Style::get(match kind {
             "str" => "not bold not italic green",
             "url" => "not bold not italic underline bright_blue",
             "bool_true" => "italic bright_green",
@@ -2205,7 +2243,7 @@ impl Console {
     /// rich's `console.input(prompt)`: print the prompt (markup) without a
     /// newline, then read a line.
     pub fn input(&mut self, prompt_markup: &str) -> Result<String, PromptError> {
-        let text = Text::from_markup(prompt_markup);
+        let text = self.markup(prompt_markup);
         let lines = render_lines(&text, &Options::width(self.width), Style::null(), false);
         let rendered: Vec<String> = lines.iter().map(|line| self.line_string(line)).collect();
         self.write_out(&rendered.join("\n"));
@@ -2443,6 +2481,35 @@ mod tests {
         let mut plain = Console::capture(80);
         plain.print("Task 'x' has 3 items");
         assert_eq!(plain.output(), "Task 'x' has 3 items\n");
+    }
+
+    #[test]
+    fn highlighting_follows_rich_word_rules() {
+        let spans = |text: &str| {
+            let chars: Vec<char> = text.chars().collect();
+            highlight_spans(&chars)
+                .into_iter()
+                .map(|(s, e, k)| (chars[s..e].iter().collect::<String>(), k))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(spans("Oops! Task type name can't be empty. Let's try"), vec![]);
+        assert_eq!(
+            spans("Unknown 'xyz' at 10:00 (in 30m)"),
+            vec![("'xyz'".into(), "str"), ("10".into(), "number"), ("00".into(), "number")]
+        );
+        assert_eq!(
+            spans("2026-11-09 v2 1.5 -3 True None"),
+            vec![
+                ("2026".into(), "number"),
+                ("11".into(), "number"),
+                ("09".into(), "number"),
+                ("1.5".into(), "number"),
+                ("-3".into(), "number"),
+                ("True".into(), "bool_true"),
+                ("None".into(), "none"),
+            ]
+        );
+        assert_eq!(spans("see https://example.com/x now"), vec![("https://example.com/x".into(), "url")]);
     }
 
     #[test]
