@@ -27,3 +27,6 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 
 .qoder
+
+# Rust build output
+/target/
