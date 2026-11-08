@@ -584,41 +584,4 @@ mod tests {
         assert_eq!(written, home.join("Desktop/schedule_visualization.pdf"));
         assert!(written.is_file());
     }
-
-    /// TEMPORARY: render the fixture schedules for visual inspection.
-    #[test]
-    #[ignore]
-    fn render_visualization_for_inspection() {
-        let Ok(out) = std::env::var("RMD_SAMPLE_OUT") else {
-            return;
-        };
-        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/config/user_config_0");
-        let config = ScheduleConfig::load(&fixture.join("settings.toml")).unwrap();
-        let weekly =
-            crate::config::WeeklySchedule::load(&fixture.join("odd_weeks.toml"), &fixture.join("even_weeks.toml"))
-                .unwrap();
-        let started = std::time::Instant::now();
-        visualize(
-            &config,
-            &weekly.odd_data,
-            &weekly.even_data,
-            Some(&Path::new(&out).join("schedule_visualization.pdf")),
-        )
-        .unwrap();
-        eprintln!("visualization: {:?}", started.elapsed());
-        let template = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/user_config_0");
-        let config = ScheduleConfig::load(&template.join("settings_template.toml")).unwrap();
-        let week = crate::config::load_toml_file(&template.join("week_schedule_template.toml")).unwrap();
-        let mut even = week.clone();
-        if let Some(Value::Object(monday)) = even.get_mut("monday") {
-            let mut custom = Dict::new();
-            custom.insert("block".into(), Value::from("potato"));
-            custom.insert("title".into(), Value::from("论文写作 deep_work session with a very long title"));
-            monday.insert("14:00".into(), Value::Object(custom));
-            monday.insert("05:30".into(), Value::from("exercise"));
-            monday.insert("12:00".into(), Value::from("lunch"));
-            monday.insert("16:30".into(), Value::from("meeting"));
-        }
-        visualize(&config, &week, &even, Some(&Path::new(&out).join("template_visualization.pdf"))).unwrap();
-    }
 }

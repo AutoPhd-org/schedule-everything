@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::pdf::{A4_LANDSCAPE, A4_PORTRAIT, Anchor, Canvas, Fonts, Stroke, TextStyle};
 use super::{completed_len, habit_completed};
-use crate::py;
+use crate::py::{self, Dict};
 
 const INK: &str = "#2f3542";
 const MUTED: &str = "#7f8c8d";
@@ -204,13 +204,19 @@ fn completion_time(entry: &Value) -> String {
     }
 }
 
-/// matplotlib draws `str(value)`, and nothing for `None`.
-fn label(value: Option<&Value>, default: &str) -> String {
-    match value {
-        None => default.to_string(),
+/// `task.get("description", "Unknown")`, drawn by matplotlib (which shows
+/// nothing for `None`).
+fn task_description(task: Option<&Dict>) -> String {
+    match task.and_then(|t| t.get("description")) {
+        None => "Unknown".to_string(),
         Some(Value::Null) => String::new(),
         Some(other) => py::py_str(other),
     }
+}
+
+/// `str(task.get("priority", "-"))`.
+fn task_priority(task: Option<&Dict>) -> String {
+    task.and_then(|t| t.get("priority")).map_or_else(|| "-".to_string(), py::py_str)
 }
 
 /// Tasks by timestamp text, newest first; ties keep their order, like
@@ -251,8 +257,7 @@ pub(super) fn task_list<'f>(fonts: &'f Fonts, tasks: &[Value], title: &str) -> V
             let row_top = rule_y + row_height * i as f32;
             let center_y = row_top + row_height / 2.0;
             let task = entry.get("task").and_then(Value::as_object);
-            let description = label(task.and_then(|t| t.get("description")), "Unknown");
-            let priority = label(task.and_then(|t| t.get("priority")), "-");
+            let (description, priority) = (task_description(task), task_priority(task));
 
             let date = canvas.fonts().fit(&completion_time(entry), task_x - date_x - 8.0, &cell);
             canvas.text(date_x, center_y, &date, &cell);
@@ -346,9 +351,20 @@ mod tests {
         assert_eq!(completion_time(&json!({"timestamp": "2025-11-16T23:30:00.123-08:00"})), "2025-11-16 23:30");
         assert_eq!(completion_time(&json!({"timestamp": "2025-11-16 07:05"})), "2025-11-16 07:05");
         assert_eq!(completion_time(&json!({"timestamp": "yesterday"})), "yesterday");
-        assert_eq!(label(Some(&json!(7)), "-"), "7");
-        assert_eq!(label(Some(&Value::Null), "-"), "");
-        assert_eq!(label(None, "Unknown"), "Unknown");
+    }
+
+    #[test]
+    fn task_cells_follow_python_str() {
+        let task = |value: Value| value.as_object().cloned();
+        let full = task(json!({"description": "Review code", "priority": 7}));
+        assert_eq!((task_description(full.as_ref()), task_priority(full.as_ref())), ("Review code".into(), "7".into()));
+        let nulls = task(json!({"description": null, "priority": null}));
+        assert_eq!((task_description(nulls.as_ref()), task_priority(nulls.as_ref())), (String::new(), "None".into()));
+        let empty = task(json!({}));
+        assert_eq!((task_description(empty.as_ref()), task_priority(empty.as_ref())), ("Unknown".into(), "-".into()));
+        assert_eq!((task_description(None), task_priority(None)), ("Unknown".into(), "-".into()));
+        let numbers = task(json!({"description": 42, "priority": 2.5}));
+        assert_eq!((task_description(numbers.as_ref()), task_priority(numbers.as_ref())), ("42".into(), "2.5".into()));
     }
 
     fn crowded_pages(fonts: &Fonts, path: &Path) {

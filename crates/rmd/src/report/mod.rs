@@ -96,7 +96,9 @@ fn expandvars(text: &str) -> String {
 /// `_expand_path`: expand `$VARS` and `~`; relative paths are resolved
 /// against `base_dir`.
 fn expand_path(raw: &str, base_dir: &Path) -> PathBuf {
-    let expanded: PathBuf = crate::paths::expand_user(&expandvars(raw)).components().collect();
+    // `Path(...)` normalises separators before `expanduser()`.
+    let normalized: PathBuf = Path::new(&expandvars(raw)).components().collect();
+    let expanded = normalized.to_str().map_or_else(|| normalized.clone(), crate::paths::expand_user);
     if expanded.is_absolute() { expanded } else { crate::paths::resolve(&base_dir.join(expanded)) }
 }
 
@@ -859,6 +861,7 @@ pub(crate) mod tests {
         env.remove_var("RMD_UNSET_VAR");
         let base = crate::paths::resolve(env.root());
         assert_eq!(expand_path("~/Desktop/reports", &base), PathBuf::from("/home/tester/Desktop/reports"));
+        assert_eq!(expand_path("~//Desktop/./reports/", &base), PathBuf::from("/home/tester/Desktop/reports"));
         assert_eq!(expand_path("$RMD_TEST_REPORTS/weekly", &base), PathBuf::from("/srv/reports/weekly"));
         assert_eq!(expand_path("${RMD_TEST_REPORTS}", &base), PathBuf::from("/srv/reports"));
         assert_eq!(expand_path("$RMD_UNSET_VAR/x", &base), base.join("$RMD_UNSET_VAR/x"));
@@ -876,37 +879,5 @@ pub(crate) mod tests {
     fn os_errors_read_like_python() {
         let error = std::io::Error::from_raw_os_error(13);
         assert_eq!(os_error_message(&error, Path::new("/x/it's")), "[Errno 13] Permission denied: \"/x/it's\"");
-    }
-
-    /// TEMPORARY: render the sample data for visual inspection.
-    #[test]
-    #[ignore]
-    fn render_samples_for_inspection() {
-        let (Ok(sample), Ok(out)) = (std::env::var("RMD_SAMPLE_ROOT"), std::env::var("RMD_SAMPLE_OUT")) else {
-            return;
-        };
-        let env = TestEnv::new();
-        crate::paths::copy_dir_all(Path::new(&sample), env.root()).unwrap();
-        let settings = env.read("user_config_0/settings.toml");
-        let settings: String =
-            settings
-                .lines()
-                .map(|line| {
-                    if line.starts_with("reports_path") {
-                        format!("reports_path = \"{out}\"")
-                    } else {
-                        line.to_string()
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-        env.write("user_config_0/settings.toml", &settings);
-        let date = NaiveDate::from_ymd_opt(2025, 11, 12);
-        let started = std::time::Instant::now();
-        generate_manual_report("weekly", date, None).unwrap();
-        eprintln!("weekly: {:?}", started.elapsed());
-        let started = std::time::Instant::now();
-        generate_manual_report("monthly", date, None).unwrap();
-        eprintln!("monthly: {:?}", started.elapsed());
     }
 }
