@@ -447,6 +447,7 @@ def run_python(case: dict) -> dict:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
+        initial = snapshot(root)
         argv = [arg.replace("<ROOT>", str(root)) for arg in case["argv"]]
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -469,12 +470,15 @@ def run_python(case: dict) -> dict:
             env=env,
             timeout=120,
         )
-        files = {k: normalize(v, root, home) for k, v in snapshot(root).items()}
+        after = snapshot(root)
+        # Only what the command changed: new or modified files, and deleted ones.
+        files = {k: normalize(v, root, home) for k, v in after.items() if initial.get(k) != v}
         return {
             "exit": proc.returncode,
             "stdout": normalize(proc.stdout, root, home),
             "stderr": normalize(proc.stderr, root, home),
             "files": files,
+            "deleted": sorted(k for k in initial if k not in after),
         }
 
 

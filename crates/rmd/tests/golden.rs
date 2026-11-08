@@ -78,6 +78,7 @@ struct Outcome {
     stdout: String,
     stderr: String,
     files: BTreeMap<String, String>,
+    deleted: Vec<String>,
 }
 
 fn run_case(case: &Value, timezone: &str, fixture: &Path) -> Outcome {
@@ -93,6 +94,7 @@ fn run_case(case: &Value, timezone: &str, fixture: &Path) -> Outcome {
             fs::write(target, content.as_str().unwrap()).unwrap();
         }
     }
+    let initial = snapshot(&root);
     let root_str = root.to_string_lossy().to_string();
     let argv: Vec<String> =
         case["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().replace("<ROOT>", &root_str)).collect();
@@ -124,12 +126,20 @@ fn run_case(case: &Value, timezone: &str, fixture: &Path) -> Outcome {
         child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
     }
     let output = child.wait_with_output().unwrap();
-    let files = snapshot(&root).into_iter().map(|(k, v)| (k, normalize(&v, &root, &home))).collect();
+    let after = snapshot(&root);
+    let deleted = initial.keys().filter(|k| !after.contains_key(*k)).cloned().collect();
+    // Only what the command changed, like the recordings.
+    let files = after
+        .into_iter()
+        .filter(|(k, v)| initial.get(k) != Some(v))
+        .map(|(k, v)| (k, normalize(&v, &root, &home)))
+        .collect();
     Outcome {
         exit: i64::from(output.status.code().unwrap_or(-1)),
         stdout: normalize(&String::from_utf8_lossy(&output.stdout), &root, &home),
         stderr: normalize(&String::from_utf8_lossy(&output.stderr), &root, &home),
         files,
+        deleted,
     }
 }
 
@@ -209,7 +219,7 @@ fn compare(case: &Value, expected: &Value, actual: &Outcome) -> Vec<String> {
         .collect();
     for (path, content) in &expected_files {
         match actual.files.get(path) {
-            None => diffs.push(format!("file {path}: missing")),
+            None => diffs.push(format!("file {path}: Python changed it, Rust did not")),
             Some(got) => {
                 let mode = if path.ends_with(".json") || path.ends_with(".log") { "json" } else { "text" };
                 diffs.extend(compare_stream(&format!("file {path}"), mode, content, got));
@@ -218,8 +228,15 @@ fn compare(case: &Value, expected: &Value, actual: &Outcome) -> Vec<String> {
     }
     for path in actual.files.keys() {
         if !expected_files.contains_key(path) {
-            diffs.push(format!("file {path}: unexpected"));
+            diffs.push(format!("file {path}: changed, but Python left it untouched"));
         }
+    }
+    let expected_deleted: Vec<String> = expected["deleted"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    if expected_deleted != actual.deleted {
+        diffs.push(format!("deleted files: expected {expected_deleted:?} got {:?}", actual.deleted));
     }
     diffs
 }

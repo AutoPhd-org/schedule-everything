@@ -8,9 +8,10 @@ The original Python implementation is the oracle for the Rust `rmd` binary.
 - `cases.json` lists every case: an `rmd` command line (or a browser API request
   run through `rmd __api JSON`), a frozen local time, optional setup files,
   stdin and environment, and how to compare stdout/stderr (`json`, exact
-  `text`, or `ignore`). Every file under the config root is always compared.
-- `expected/<case>.json` holds the Python result: exit code, stdout, stderr and
-  the files afterwards, with temp paths replaced by `<ROOT>` and `<HOME>`.
+  `text`, or `ignore`).
+- `expected/<case>.json` holds the Python result: exit code, stdout, stderr,
+  the files the command created or changed (`files`) and removed (`deleted`),
+  with temp paths replaced by `<ROOT>` and `<HOME>`.
 - `known_differences.json` maps case names to the reason a difference is accepted.
 
 Record (needs the Python package and `time-machine`):
