@@ -1,5 +1,5 @@
 //! Local browser workspace: HTTP server, JSON API, and service operations
-//! (port of `schedule_management.web`). OWNER: web agent.
+//! (port of `schedule_management.web`).
 
 pub mod api;
 pub mod fingerprint;

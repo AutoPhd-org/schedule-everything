@@ -1,5 +1,5 @@
 //! `rmd` argument parsing and dispatch (port of `cli.py`; `reminder.py` was a
-//! legacy alias of the same entry point). OWNER: CLI agent.
+//! legacy alias of the same entry point).
 //!
 //! The command tree, defaults, choices and help strings mirror the argparse
 //! parser. Help, usage lines and usage errors are rendered in argparse's

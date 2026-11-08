@@ -318,6 +318,10 @@ the tools themselves run on Node.js 20 or newer. The browser frontend lives in
 `src/schedule_management/web/static/`, which is compiled into the `rmd` binary.
 The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
 
+To release, bump `version` in the root `Cargo.toml` on `main`: the Release
+workflow then builds the `rmd` archives that `install.sh` downloads and the
+PyPI wheels.
+
 The original Python implementation in `src/schedule_management` is kept as
 the reference the Rust port is tested against:
 [`tests/golden`](tests/golden) records its output for CLI commands and

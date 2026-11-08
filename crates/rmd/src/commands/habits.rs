@@ -1,5 +1,4 @@
 //! Habit tracking (`rmd track [ID...]`; port of `commands/habits.py`).
-//! OWNER: CLI agent.
 //!
 //! Without IDs, `rmd track` asks about each habit in a Yes/No/Stop dialog and
 //! falls back to a terminal prompt when no dialog can be shown.

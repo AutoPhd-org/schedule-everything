@@ -1,5 +1,5 @@
 //! Task commands: `rmd add`, `rmd rm`, `rmd cancel`, `rmd drop`, `rmd ls`
-//! (port of `commands/tasks.py`). OWNER: CLI agent.
+//! (port of `commands/tasks.py`).
 //!
 //! The three removal commands all take the task out of tasks.json, but each
 //! records a distinct history action so they are not all treated as done:

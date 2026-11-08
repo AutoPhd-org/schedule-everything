@@ -1,5 +1,5 @@
 //! AI conference dates for the browser's year calendar (port of
-//! `conferences.py`). OWNER: web agent.
+//! `conferences.py`).
 //!
 //! Submission deadlines, rebuttal periods, and conference dates for 15 major
 //! AI conferences come from the community-maintained Hugging Face AI Deadlines

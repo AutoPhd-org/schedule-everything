@@ -1,5 +1,5 @@
 //! Identify the code a browser server runs so a stale server can be replaced
-//! (port of `web/fingerprint.py`). OWNER: web agent.
+//! (port of `web/fingerprint.py`).
 //!
 //! A running server keeps the code it started with. After an update, an old
 //! server would pair the new frontend with old API commands, so the launcher

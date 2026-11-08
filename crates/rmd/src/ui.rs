@@ -1,6 +1,5 @@
 //! Terminal rendering helpers standing in for `rich`: console markup, word
 //! wrapping, tables, panels, centred text, rules, and line prompts.
-//! OWNER: CLI agent.
 //!
 //! - Markup such as `[bold red]text[/bold red]` (or `[/]` to close the last
 //!   tag) is parsed the way rich parses it into a [`Text`] of styled characters.

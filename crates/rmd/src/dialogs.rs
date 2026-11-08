@@ -1,4 +1,4 @@
-//! Large-font modal dialogs (the Python version used tkinter). OWNER: daemon agent.
+//! Large-font modal dialogs (the Python version used tkinter).
 //!
 //! On macOS the dialog is an AppKit panel built by a JavaScript for Automation
 //! script (`osascript -l JavaScript`, using the Objective-C bridge), so it
