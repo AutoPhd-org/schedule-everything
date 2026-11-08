@@ -43,17 +43,35 @@ pub fn table_to_dict(table: toml::Table) -> Dict {
 
 /// Parse TOML text into an ordered JSON object.
 pub fn parse_toml_str(text: &str) -> Result<Dict, TomlLoadError> {
-    let table: toml::Table = text.parse().map_err(|e: toml::de::Error| TomlLoadError::Parse(clean_toml_error(&e)))?;
+    let table: toml::Table =
+        text.parse().map_err(|e: toml::de::Error| TomlLoadError::Parse(describe_toml_error(&e, text)))?;
     Ok(table_to_dict(table))
 }
 
-/// One-line rendering of a TOML parse error.
-pub fn clean_toml_error(error: &toml::de::Error) -> String {
-    let message = error.message().trim().to_string();
+/// One-line description of a TOML parse error in `tomllib`'s style:
+/// `"Invalid table header (at line 1, column 10)"`.
+pub fn describe_toml_error(error: &toml::de::Error, text: &str) -> String {
+    let message = error.message().lines().next().unwrap_or("Invalid TOML").trim().trim_end_matches('.');
+    let mut chars = message.chars();
+    let message = match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => "Invalid TOML".to_string(),
+    };
     match error.span() {
-        Some(span) => format!("{message} (at byte {})", span.start),
+        Some(span) => {
+            let offset = span.start.min(text.len());
+            let before = &text[..offset];
+            let line = before.matches('\n').count() + 1;
+            let column = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+            format!("{message} (at line {line}, column {column})")
+        }
         None => message,
     }
+}
+
+/// One-line rendering of a TOML parse error, without its position.
+pub fn clean_toml_error(error: &toml::de::Error) -> String {
+    error.message().lines().next().unwrap_or("Invalid TOML").trim().to_string()
 }
 
 /// Load and parse a TOML file (`tomllib.load`).

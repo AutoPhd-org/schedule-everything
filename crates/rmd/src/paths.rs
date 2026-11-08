@@ -299,3 +299,91 @@ pub fn resolve_runtime_paths(root_dir: Option<&Path>) -> RuntimePaths {
 pub fn runtime() -> RuntimePaths {
     resolve_runtime_paths(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    fn write(path: &Path, content: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn migrate_legacy_config_layout_moves_files_into_user_config_0() {
+        let env = TestEnv::new();
+        let root = env.root().join("config");
+        write(&root.join("settings.toml"), "[settings]\n");
+        write(&root.join("odd_weeks.toml"), "[monday]\n");
+        write(&root.join("even_weeks.toml"), "[monday]\n");
+        write(&root.join("habits.toml"), "[habits]\n1 = \"Read\"\n");
+        write(&root.join("profile.md"), "# Profile\n");
+        write(&root.join("ddl.json"), "{}\n");
+        write(&root.join("tasks/tasks.json"), "[]\n");
+
+        assert!(migrate_legacy_config_layout(Some(&root)));
+        assert!(!root.join("settings.toml").exists());
+        assert!(root.join("user_config_0/settings.toml").exists());
+        assert!(root.join("user_config_0/profile.md").exists());
+        assert!(root.join("tasks/tasks.json").exists());
+        assert_eq!(fs::read_to_string(root.join(ACTIVE_CONFIG_MARKER)).unwrap().trim(), "0");
+
+        let paths = resolve_runtime_paths(Some(&root));
+        assert_eq!(paths.active_config_dir, root.join("user_config_0"));
+        assert_eq!(paths.settings_path, root.join("user_config_0/settings.toml"));
+        assert_eq!(paths.tasks_path, root.join("tasks/tasks.json"));
+        assert!(!migrate_legacy_config_layout(Some(&root)), "migration runs once");
+    }
+
+    #[test]
+    fn clone_active_config_dir_copies_current_config_set() {
+        let env = TestEnv::new();
+        let root = env.root().join("config");
+        let source = root.join("user_config_0");
+        write(&source.join("settings.toml"), "[settings]\n");
+        write(&source.join("profile.md"), "# Draft\n");
+        write(&source.join("ddl.json"), "{}\n");
+        write_active_config_id(Some(&root), 0).unwrap();
+
+        let (new_id, new_dir) = clone_active_config_dir(Some(&root), Some(&source)).unwrap();
+        assert_eq!(new_id, 1);
+        assert_eq!(new_dir, root.join("user_config_1"));
+        assert_eq!(fs::read_to_string(new_dir.join("settings.toml")).unwrap(), "[settings]\n");
+        assert_eq!(fs::read_to_string(new_dir.join("profile.md")).unwrap(), "# Draft\n");
+        assert_eq!(fs::read_to_string(new_dir.join("ddl.json")).unwrap(), "{}\n");
+    }
+
+    #[test]
+    fn active_marker_falls_back_to_the_first_config_set() {
+        let env = TestEnv::new();
+        let root = env.root().to_path_buf();
+        fs::create_dir_all(root.join("user_config_2")).unwrap();
+        fs::create_dir_all(root.join("user_config_5")).unwrap();
+        fs::create_dir_all(root.join("user_config_x")).unwrap();
+        fs::write(root.join(ACTIVE_CONFIG_MARKER), "9\n").unwrap();
+
+        assert_eq!(list_config_ids(Some(&root)), vec![2, 5]);
+        assert_eq!(get_next_config_id(Some(&root)), 6);
+        assert_eq!(preview_active_config_dir(Some(&root)), root.join("user_config_2"));
+        assert_eq!(fs::read_to_string(root.join(ACTIVE_CONFIG_MARKER)).unwrap(), "9\n", "preview does not write");
+        assert_eq!(resolve_active_config_id(Some(&root)), Some(2));
+        assert_eq!(fs::read_to_string(root.join(ACTIVE_CONFIG_MARKER)).unwrap(), "2\n");
+
+        fs::write(root.join(ACTIVE_CONFIG_MARKER), " 5 \n").unwrap();
+        assert_eq!(runtime().active_id, 5);
+        assert_eq!(runtime().active_config_dir, resolve(&root).join("user_config_5"));
+    }
+
+    #[test]
+    fn empty_root_defaults_to_user_config_0() {
+        let env = TestEnv::new();
+        let root = env.root().join("fresh");
+        assert_eq!(resolve_active_config_id(Some(&root)), None);
+        assert_eq!(resolve_active_config_dir(Some(&root), false), root.join("user_config_0"));
+        assert!(!root.exists());
+        assert_eq!(resolve_active_config_dir(Some(&root), true), root.join("user_config_0"));
+        assert!(root.join("user_config_0").is_dir());
+        assert_eq!(resolve_runtime_paths(Some(&root)).active_id, 0);
+    }
+}

@@ -109,3 +109,54 @@ mod tests {
         assert_eq!(format("{count} of {{x}} {missing}", &[("count", &count)]), "3 of {x} {missing}");
     }
 }
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    #[test]
+    fn default_language_is_english() {
+        let _env = TestEnv::new();
+        assert_eq!(get_language(), "en");
+        assert_eq!(t("📋 No tasks found"), "📋 No tasks found");
+    }
+
+    #[test]
+    fn env_variable_overrides_settings() {
+        let mut env = TestEnv::new();
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"en\"\n");
+        for value in ["zh", "cn", "Chinese", "ZH"] {
+            env.set_var("REMINDER_LANG", value);
+            assert_eq!(get_language(), "zh", "{value}");
+        }
+        assert_eq!(t("📋 No tasks found"), "📋 未找到任务");
+        env.set_var("REMINDER_LANG", "en");
+        assert_eq!(get_language(), "en");
+    }
+
+    #[test]
+    fn settings_file_selects_the_language() {
+        let env = TestEnv::new();
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"zh\"\n");
+        assert_eq!(get_language(), "zh");
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"en\"\n");
+        assert_eq!(get_language(), "en");
+        env.write("user_config_0/settings.toml", "not toml [");
+        assert_eq!(get_language(), "en");
+    }
+
+    #[test]
+    fn dynamic_formatting_and_fallback() {
+        let mut env = TestEnv::new();
+        let template = "✅ Task '{task_description}' updated! Priority changed from {old_priority} to {priority}";
+        let args: [(&str, &dyn std::fmt::Display); 3] =
+            [("task_description", &"Testing i18n"), ("old_priority", &3), ("priority", &7)];
+        env.set_var("REMINDER_LANG", "en");
+        assert_eq!(tf(template, &args), "✅ Task 'Testing i18n' updated! Priority changed from 3 to 7");
+        env.set_var("REMINDER_LANG", "zh");
+        assert_eq!(tf(template, &args), "✅ 任务 'Testing i18n' 已更新！优先级从 3 修改为 7");
+        let missing = "This string is not inside our ZH_TRANSLATIONS dictionary!";
+        assert_eq!(t(missing), missing);
+    }
+}

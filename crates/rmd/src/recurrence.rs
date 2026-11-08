@@ -123,3 +123,71 @@ mod tests {
         assert_eq!(occurrences(d(2025, 1, 1), "weekly", d(2025, 1, 15), None).len(), 3);
     }
 }
+
+#[cfg(test)]
+mod python_parity_tests {
+    use super::*;
+    use crate::commands::deadlines::{prune_expired_deadlines, refresh_deadlines};
+    use serde_json::json;
+
+    fn d(y: i32, m: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, day).unwrap()
+    }
+
+    #[test]
+    fn repeat_rules_and_month_end_clamping() {
+        assert_eq!(next_occurrence(d(2026, 11, 4), "weekly", None), d(2026, 11, 11));
+        assert_eq!(next_occurrence(d(2026, 11, 4), "biweekly", None), d(2026, 11, 18));
+        assert_eq!(next_occurrence(d(2026, 1, 31), "monthly", Some(31)), d(2026, 2, 28));
+        assert_eq!(next_occurrence(d(2026, 2, 28), "monthly", Some(31)), d(2026, 3, 31));
+        assert_eq!(next_occurrence(d(2026, 12, 15), "monthly", None), d(2027, 1, 15));
+        assert!(std::panic::catch_unwind(|| next_occurrence(d(2026, 1, 1), "daily", None)).is_err());
+    }
+
+    #[test]
+    fn occurrences_and_roll_forward() {
+        assert_eq!(
+            occurrences(d(2026, 11, 20), "biweekly", d(2026, 12, 31), None),
+            vec![d(2026, 11, 20), d(2026, 12, 4), d(2026, 12, 18)]
+        );
+        assert_eq!(
+            occurrences(d(2026, 10, 31), "monthly", d(2027, 3, 1), Some(31))[..4],
+            [d(2026, 10, 31), d(2026, 11, 30), d(2026, 12, 31), d(2027, 1, 31)]
+        );
+        assert_eq!(roll_forward(d(2026, 10, 1), "weekly", d(2026, 11, 3), None), d(2026, 11, 5));
+        assert_eq!(roll_forward(d(2026, 11, 10), "weekly", d(2026, 11, 3), None), d(2026, 11, 10));
+    }
+
+    #[test]
+    fn refresh_rolls_recurring_deadlines_and_prunes_one_offs() {
+        let today = d(2026, 11, 4);
+        let items = vec![
+            json!({"event": "Standup notes", "deadline": "2026-10-01", "repeat": "weekly"}),
+            json!({"event": "Rent", "deadline": "2026-09-30", "repeat": "monthly", "repeat_day": 31}),
+            json!({"event": "Old report", "deadline": "2026-10-01"}),
+            json!({"event": "Yesterday", "deadline": "2026-11-03", "repeat": "weekly"}),
+            json!({"event": "Unknown rule", "deadline": "2026-10-01", "repeat": "hourly"}),
+        ];
+        let refreshed = refresh_deadlines(&items, Some(today));
+        assert!(refreshed.changed);
+        let by_event = |name: &str| refreshed.kept.iter().find(|i| i["event"] == name).cloned().unwrap();
+        assert_eq!(by_event("Standup notes")["deadline"], "2026-11-05");
+        assert_eq!(
+            by_event("Rent"),
+            json!({"event": "Rent", "deadline": "2026-11-30", "repeat": "monthly", "repeat_day": 31})
+        );
+        assert_eq!(by_event("Yesterday")["deadline"], "2026-11-03");
+        let removed: Vec<&Value> = refreshed.removed.iter().map(|i| &i["event"]).collect();
+        assert_eq!(removed, [&json!("Old report"), &json!("Unknown rule")]);
+        assert_eq!(items[0]["deadline"], "2026-10-01", "input is not mutated");
+        assert!(
+            !refresh_deadlines(
+                &[json!({"event": "Next week", "deadline": "2026-11-11", "repeat": "weekly"})],
+                Some(today)
+            )
+            .changed
+        );
+        let (_, removed) = prune_expired_deadlines(&items, Some(today));
+        assert_eq!(removed.len(), 2);
+    }
+}

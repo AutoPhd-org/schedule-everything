@@ -306,3 +306,167 @@ pub fn check_command(dir: Option<&str>, as_json: bool) -> i32 {
     }
     1
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestEnv;
+
+    const SETTINGS: &str = "\n[settings]\nlanguage = \"en\"\n\n[time_blocks]\npomodoro = 25\ndeep_work = 90\n\n[time_points]\nlunch_time = \"Lunch\"\n\n[tasks]\ndaily_summary = \"23:35\"\n\n[paths]\nconfig_dir = \"config\"\n";
+    const WEEK: &str = "\n[monday]\n\"09:00\" = \"deep_work\"\n\"12:30\" = \"lunch_time\"\n\"14:00\" = { block = \"pomodoro\", title = \"Review\" }\n\n[common]\n\"20:00\" = \"pomodoro\"\n";
+
+    fn config_root() -> TestEnv {
+        let env = TestEnv::new();
+        env.write(".active_config", "0\n");
+        env.write("user_config_0/settings.toml", SETTINGS);
+        env.write("user_config_0/odd_weeks.toml", WEEK);
+        env.write("user_config_0/even_weeks.toml", WEEK);
+        env.write("user_config_0/habits.toml", "[habits]\n1 = \"Read\"\n");
+        env
+    }
+
+    fn report(env: &TestEnv) -> Value {
+        let _ = env;
+        check_config(None)
+    }
+
+    #[test]
+    fn valid_active_config_reports_paths_for_agents() {
+        let env = config_root();
+        let root = crate::paths::resolve(env.root()).display().to_string();
+        let report = report(&env);
+        assert_eq!(report["valid"], true);
+        assert_eq!(report["errors"], json!([]));
+        assert_eq!(report["configRoot"], root);
+        assert_eq!(report["activeId"], 0);
+        assert_eq!(report["configIds"], json!([0]));
+        assert_eq!(report["nextConfigId"], 1);
+        assert_eq!(report["nextConfigDir"], format!("{root}/user_config_1"));
+        assert_eq!(report["directory"], report["activeConfigDir"]);
+        assert_eq!(report["directory"], format!("{root}/user_config_0"));
+        assert_eq!(
+            report["files"]["profile"],
+            json!({"path": format!("{root}/user_config_0/profile.md"), "exists": false})
+        );
+        let keys: Vec<&String> = report.as_object().unwrap().keys().collect();
+        assert_eq!(
+            keys,
+            [
+                "configRoot",
+                "activeId",
+                "activeConfigDir",
+                "configIds",
+                "nextConfigId",
+                "nextConfigDir",
+                "directory",
+                "files",
+                "valid",
+                "errors",
+                "warnings"
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_blocks_fail_and_undefined_labels_warn() {
+        let env = config_root();
+        env.write(
+            "user_config_0/odd_weeks.toml",
+            "[tuesday]\n\"09:00\" = \"gym\"\n\"10:00\" = { block = \"lunch_time\", title = \"Lunch talk\" }\n",
+        );
+        let report = report(&env);
+        assert_eq!(report["valid"], false);
+        assert_eq!(
+            report["errors"],
+            json!([{"file": "odd_weeks.toml", "message": "[tuesday] 10:00: block 'lunch_time' is not a [time_blocks] name in settings.toml"}])
+        );
+        assert_eq!(
+            report["warnings"],
+            json!([{"file": "odd_weeks.toml", "message": "[tuesday] 09:00: 'gym' is not a [time_blocks] or [time_points] name, so it is shown as a plain reminder message"}])
+        );
+        env.write("user_config_0/odd_weeks.toml", "[tuesday]\n\"09:00\" = \"Call mom\"\n");
+        let report = check_config(None);
+        assert_eq!(report["valid"], true);
+        assert_eq!(report["warnings"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn syntax_and_structure_errors() {
+        let cases = [
+            ("settings.toml", "[settings]\nlanguage = 'en'\n", "settings require a [time_blocks] table"),
+            ("settings.toml", "[settings\n", "(at line 1, column"),
+            ("even_weeks.toml", "[funday]\n\"09:00\" = \"pomodoro\"\n", "weekday or common tables"),
+            ("even_weeks.toml", "[monday]\n\"9am\" = \"pomodoro\"\n", "valid HH:MM time"),
+            ("habits.toml", "[habits\n", "(at line 1, column"),
+            ("ddl.json", "[{\"event\": \"Launch\", \"deadline\": \"soon\"}]", "Invalid isoformat string: 'soon'"),
+            (
+                "ddl.json",
+                "[{\"event\": \"Rent\", \"deadline\": \"2026-11-30\", \"repeat\": \"daily\"}]",
+                "repeat must be",
+            ),
+        ];
+        for (file, content, message) in cases {
+            let env = config_root();
+            env.write(&format!("user_config_0/{file}"), content);
+            let report = check_config(None);
+            assert_eq!(report["valid"], false, "{file}: {content}");
+            let errors = report["errors"].as_array().unwrap();
+            assert!(
+                errors.iter().any(|e| e["file"] == file && e["message"].as_str().unwrap().contains(message)),
+                "{file}: expected {message:?} in {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_tasks_and_paths_tables_are_warnings() {
+        let env = config_root();
+        env.write(
+            "user_config_0/settings.toml",
+            "[settings]\n[time_blocks]\npomodoro = 25\ndeep_work = 90\n[time_points]\nlunch_time = \"Lunch\"\n",
+        );
+        let report = check_config(None);
+        assert_eq!(report["valid"], true);
+        let messages: Vec<&str> =
+            report["warnings"].as_array().unwrap().iter().map(|w| w["message"].as_str().unwrap()).collect();
+        assert_eq!(
+            messages,
+            ["no [tasks] table; built-in defaults apply", "no [paths] table; built-in defaults apply"]
+        );
+    }
+
+    #[test]
+    fn other_directories_and_missing_files() {
+        let env = config_root();
+        let draft = env.root().join("draft");
+        std::fs::create_dir_all(&draft).unwrap();
+        std::fs::write(draft.join("settings.toml"), SETTINGS).unwrap();
+        let report = check_config(Some(&draft));
+        assert_eq!(report["valid"], false);
+        assert_eq!(report["directory"], crate::paths::resolve(&draft).display().to_string());
+        let errors = &report["errors"];
+        assert!(errors.as_array().unwrap().contains(&json!({"file": "odd_weeks.toml", "message": "missing"})));
+        assert!(errors.as_array().unwrap().contains(&json!({"file": "even_weeks.toml", "message": "missing"})));
+        std::fs::write(draft.join("odd_weeks.toml"), WEEK).unwrap();
+        std::fs::write(draft.join("even_weeks.toml"), WEEK).unwrap();
+        assert_eq!(check_config(Some(&draft))["valid"], true);
+    }
+
+    #[test]
+    fn validate_content_matches_the_browser_editor_rules() {
+        assert_eq!(
+            validate_content("settings", "[settings]\n[time_blocks]\n[time_points]\n[tasks]\n").unwrap_err().0,
+            "settings require a [paths] table"
+        );
+        assert!(validate_content("profile", "# Anything goes in Markdown").is_ok());
+        assert!(
+            validate_content(
+                "deadlines",
+                "[{\"event\": \"Rent\", \"deadline\": \"2026-11-30\", \"repeat\": \"monthly\"}]"
+            )
+            .is_ok()
+        );
+        assert!(validate_content("deadlines", "{}").is_err());
+        assert!(validate_content("habits", "[habits]\n1 = \"Read\"\n").is_ok());
+    }
+}
