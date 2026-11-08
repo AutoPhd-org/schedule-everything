@@ -3,7 +3,8 @@
 //! Replays `tests/golden/cases.json` against the `rmd` binary and compares the
 //! exit code, stdout/stderr (as JSON, exact text, or ignored, per case) and
 //! every file under the config root with the outputs recorded from the
-//! original Python implementation (`tests/golden/golden.py record`).
+//! original Python implementation before it was removed (see
+//! `tests/golden/README.md` for how to re-record from that commit).
 //!
 //! `GOLDEN_FILTER=substring cargo test --test golden` runs a subset.
 //! Accepted, documented differences live in `tests/golden/known_differences.json`.

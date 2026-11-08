@@ -1,5 +1,4 @@
-//! Background reminder service entry point (port of `reminder_macos.py` and
-//! the `runner.py` main).
+//! Background reminder service entry point.
 //!
 //! The LaunchAgent (macOS) / systemd user unit (Linux) runs `rmd daemon`,
 //! which loads the active config set once and checks the clock every 20

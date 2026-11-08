@@ -1,4 +1,4 @@
-//! Daily summary and habit tracking popups (port of `popups.py`).
+//! Daily summary and habit tracking popups.
 //!
 //! The reminder service shows these at the configured `[tasks]` times: the
 //! daily summary lists the tasks completed (removed with `rmd rm`) today, and

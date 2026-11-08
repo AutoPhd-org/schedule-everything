@@ -438,7 +438,7 @@ Use `bun run test`, not `bun test`: the project's tests run on Vitest, while
 the build tools run on Node.js 20 or newer.
 
 Frontend source is in `web/`; `bun run build` writes assets into
-`src/schedule_management/web/static/`. These assets are compiled into the `rmd`
+`crates/rmd/web-static/`. These assets are compiled into the `rmd`
 binary, so end users do not need Node.js or a frontend development server
 (rebuild `rmd` after `bun run build` to serve new assets).
 Commit the rebuilt assets with frontend changes. For frontend development, run

@@ -71,7 +71,7 @@ export const repeatLabel = (rule: RepeatRule | null | undefined) => isRepeat(rul
 export const repeatOptions = (selected: RepeatRule | "" | null | undefined) => REPEAT_OPTIONS.map(([value, label]) => `<option value="${value}" ${(selected ?? "") === value ? "selected" : ""}>${label}</option>`).join("");
 export const repeatBadge = (rule: RepeatRule | null | undefined) => isRepeat(rule) ? `<span class="repeat-badge" title="Repeats ${REPEAT_LABELS[rule].toLowerCase()}">${icons.repeat}${REPEAT_LABELS[rule]}</span>` : "";
 
-/** The occurrence after `iso` (mirrors schedule_management.recurrence; monthly keeps the chosen day, clamped to short months). */
+/** The occurrence after `iso` (mirrors `crates/rmd/src/recurrence.rs`; monthly keeps the chosen day, clamped to short months). */
 export function nextOccurrence(iso: string, rule: RepeatRule, day?: number | null): string {
   if (rule === "weekly") return addDays(iso, 7);
   if (rule === "biweekly") return addDays(iso, 14);

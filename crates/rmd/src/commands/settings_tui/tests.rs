@@ -1,6 +1,5 @@
-//! Navigation, draft cancellation, and visible-action tests (ports of
-//! `tests/test_settings_navigation.py` and the settings TUI tests in
-//! `tests/test_cli_commands.py`).
+//! Navigation, draft cancellation, and visible-action tests for the settings
+//! editor.
 
 use std::path::Path;
 

@@ -1,5 +1,4 @@
-//! Local browser workspace: HTTP server, JSON API, and service operations
-//! (port of `schedule_management.web`).
+//! Local browser workspace: HTTP server, JSON API, and service operations.
 
 pub mod api;
 pub mod fingerprint;

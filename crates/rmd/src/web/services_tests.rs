@@ -1,5 +1,4 @@
-//! Tests for `web::services` (ported from `tests/test_web_services.py` and the
-//! service cases in `tests/test_browser_server.py`).
+//! Tests for `web::services`.
 
 use chrono::Utc;
 use serde_json::{Value, json};

@@ -1,5 +1,4 @@
-//! Interactive settings.toml editor (`rmd settings`; port of the TUI half of
-//! `commands/settings.py`).
+//! Interactive settings.toml editor (`rmd settings`).
 //!
 //! Users browse sections, then keys, and change values with a picker,
 //! multi-select checkboxes, a toggle, a time-list editor, or inline text

@@ -1,5 +1,5 @@
 //! The reminder loop: time blocks, urgent tasks, deadlines, habits, and
-//! automatic reports (port of `runner.py`).
+//! automatic reports.
 //!
 //! [`ScheduleRunner::tick`] makes every decision for one check of the clock
 //! (the service calls it every 20 seconds); everything it does to the outside

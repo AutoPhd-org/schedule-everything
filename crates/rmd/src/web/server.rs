@@ -33,7 +33,7 @@ use crate::web::{TOKEN_ENV, api, pyjson, workspace};
 
 /// The built browser app (`web/src`, bundled by Vite).
 #[derive(RustEmbed)]
-#[folder = "../../src/schedule_management/web/static"]
+#[folder = "web-static"]
 pub(crate) struct Assets;
 
 pub const MAX_BODY: usize = 8 * 1024 * 1024;

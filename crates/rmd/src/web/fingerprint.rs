@@ -1,5 +1,4 @@
-//! Identify the code a browser server runs so a stale server can be replaced
-//! (port of `web/fingerprint.py`).
+//! Identify the code a browser server runs so a stale server can be replaced.
 //!
 //! A running server keeps the code it started with. After an update, an old
 //! server would pair the new frontend with old API commands, so the launcher
@@ -32,7 +31,7 @@ fn executable_digest() -> Vec<u8> {
 }
 
 /// Hash the executable's digest and every bundled frontend file (path and
-/// content), like the Python hashed its sources and `web/static`.
+/// content).
 fn fingerprint_of(executable: &[u8], assets: &[(String, Vec<u8>)]) -> String {
     let mut digest = Sha256::new();
     digest.update(b"rmd\0");

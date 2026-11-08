@@ -314,18 +314,17 @@ bun run build           # rebuild the bundled browser assets
 
 JavaScript dependencies are managed with [Bun](https://bun.sh) (`bun.lock`);
 the tools themselves run on Node.js 20 or newer. The browser frontend lives in
-`web/`, and `bun run build` writes the bundle into
-`src/schedule_management/web/static/`, which is compiled into the `rmd` binary.
+`web/`, and `bun run build` writes the bundle into `crates/rmd/web-static/`,
+which is compiled into the `rmd` binary.
 The agent plugin is in [`plugins/schedule-everything`](plugins/schedule-everything).
 
 To release, bump `version` in the root `Cargo.toml` on `main`: the Release
 workflow then builds the `rmd` archives that `install.sh` downloads and the
 PyPI wheels.
 
-The original Python implementation in `src/schedule_management` is kept as
-the reference the Rust port is tested against:
-[`tests/golden`](tests/golden) records its output for CLI commands and
-browser API requests, and `cargo test` checks that `rmd` matches.
+`rmd` replaced an earlier Python implementation. Its output for CLI commands
+and browser API requests is kept in [`tests/golden`](tests/golden) as a
+frozen spec, and `cargo test` checks that `rmd` still matches it.
 
 ## License
 
