@@ -233,7 +233,7 @@ function taskCard(task: TaskItem, index: number, position: number, now: number, 
     : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">Make it a timed task…</button>`;
   // Without subtasks, a button beside the slider breaks the task down; from then on the subtasks set its progress.
   const breakDown = steps.length || writing ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(`Add subtasks to ${task.description}`)}" title="Break it into subtasks. Progress then follows them.">${icons.subtaskAdd}</button>`;
-  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}" title="Complete task">${icons.check}</button><h4>${name}</h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="Edit ${name}">Edit</button></div>${timer}${deferred}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>More options</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${index}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
+  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}" title="Complete task">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="Edit ${name}">Edit</button></div>${timer}${deferred}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>More options</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${index}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
 }
 
 /** A task's checklist: check a subtask off, remove it, or add another; the task's progress follows. */
@@ -315,13 +315,17 @@ export function masonry(board: HTMLElement, fresh = false): void {
   const kind = kindOf(board);
   const ids = items.map((item, i) => item.dataset.group ?? item.dataset.slot ?? `#${i}`);
   const place = (reuse: boolean) => {
+    // The resolved track list also counts the extra columns that groups placed for a wider board create, so a
+    // board that narrowed would keep them. Read it with the groups unplaced; they are placed again below, before
+    // anything is painted.
+    reset();
     const style = getComputedStyle(board);
     const unit = parseFloat(style.gridAutoRows);
     const columns = style.gridTemplateColumns.split(" ").filter(Boolean).length;
     if (!(unit > 0) || !columns || !items.some(item => item.offsetHeight)) return;
     const saved = placements.get(kind);
     const columnOf = reuse && saved?.columns === columns ? saved.columnOf : new Map<string, number>();
-    // Read every height before writing any placement, so the layout is computed once.
+    // Read every height before writing any placement, so the layout is computed only once more.
     const spans = items.map(item => Math.max(1, Math.ceil((item.offsetHeight + (parseFloat(getComputedStyle(item).marginBottom) || 0)) / unit)));
     const heights = new Array<number>(columns).fill(0);
     items.forEach((item, i) => {
