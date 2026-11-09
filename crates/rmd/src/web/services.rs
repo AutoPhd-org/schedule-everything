@@ -234,7 +234,7 @@ pub fn require_text(payload: &Dict, key: &str) -> WebResult<String> {
     }
 }
 
-fn require_priority(payload: &Dict) -> WebResult<i64> {
+pub(crate) fn require_priority(payload: &Dict) -> WebResult<i64> {
     let priority =
         payload.get("priority").and_then(py::py_int).ok_or_else(|| invalid("priority must be an integer."))?;
     if !(1..=10).contains(&priority) {
@@ -258,7 +258,7 @@ fn format_due(due: NaiveDateTime) -> String {
 
 /// `due` from a payload: a local `YYYY-MM-DDTHH:MM` makes the task timed;
 /// empty or null clears it.
-fn require_due(payload: &Dict) -> WebResult<Option<String>> {
+pub(crate) fn require_due(payload: &Dict) -> WebResult<Option<String>> {
     match payload.get("due") {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) if py_strip(s).is_empty() => Ok(None),
@@ -352,13 +352,13 @@ fn require_subtasks(payload: &Dict) -> WebResult<Vec<Value>> {
 // Storage wrappers
 // =============================================================================
 
-fn save_tasks_or_error(tasks: &[Value]) -> WebResult<()> {
+pub(crate) fn save_tasks_or_error(tasks: &[Value]) -> WebResult<()> {
     save_tasks(tasks).map_err(|e| {
         WebError::new("storage_error", format!("failed to save tasks: {}", os_error(&e, &paths::runtime().tasks_path)))
     })
 }
 
-fn log_task_or_error(action: &str, task: &Value, metadata: Option<&Value>) -> WebResult<Value> {
+pub(crate) fn log_task_or_error(action: &str, task: &Value, metadata: Option<&Value>) -> WebResult<Value> {
     log_task_action(action, task, metadata).map_err(|e| {
         WebError::new(
             "storage_error",
@@ -781,6 +781,7 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "taskTypeColors": load_task_type_colors(),
         "history": history_rows(Some(5)),
         "timedDone": timed_done_today(current),
+        "suggestions": crate::web::suggestions::snapshot_rows(),
     }))
 }
 
@@ -1605,6 +1606,9 @@ pub fn task_type_delete(payload: &Dict) -> WebResult {
     if moved_deadlines > 0 {
         save_deadlines_or_error(&deadlines)?;
     }
+    // Suggestions waiting for review follow the tasks, or go to the first remaining type.
+    let suggestions_to = if move_to.is_empty() { default_task_type(&remaining) } else { move_to.clone() };
+    crate::web::suggestions::retype_pending(&type_id, &suggestions_to)?;
     if task_types.contains_key(&type_id) {
         // The other types keep the colors they show now instead of moving up the palette.
         save_task_types(&remaining, Some(&shown_type_colors(&task_types)))?;

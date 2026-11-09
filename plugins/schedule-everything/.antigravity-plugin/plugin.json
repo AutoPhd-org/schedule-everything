@@ -2,13 +2,14 @@
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "schedule-everything",
   "displayName": "Schedule Everything",
-  "version": "1.0.0",
-  "description": "Build your weekly Schedule Everything routine and plan each day's focus blocks with your coding agent, using the local `rmd` CLI.",
+  "version": "1.1.0",
+  "description": "Build your weekly Schedule Everything routine, plan each day's focus blocks, and suggest tasks from your email and calendar for you to review, with your coding agent and the local `rmd` CLI.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
     "Build my weekly schedule with Schedule Everything",
     "Plan my focus blocks for today",
-    "Move my gym sessions to the evenings"
+    "Move my gym sessions to the evenings",
+    "Suggest tasks from my email and calendar"
   ],
   "author": {
     "name": "Schedule Everything"

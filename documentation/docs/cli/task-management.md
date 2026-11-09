@@ -299,6 +299,66 @@ rmd history 3
 
 ---
 
+## suggest
+
+Tasks an AI agent suggests for you to review. A suggestion is **not** a task:
+it waits on the browser task board (`rmd web`), marked as a suggestion, until
+you accept or reject it there. Reminders, `rmd ls`, `rmd sync`, and reports
+never include it. Agents add and withdraw suggestions; only you decide.
+Suggestions are stored in `tasks/suggestions.json` next to your task list.
+
+### Syntax
+```bash
+rmd suggest [ls [--json]]
+rmd suggest add TASK PRIORITY [-t TASK_TYPE] [--due WHEN] [--postpone DAYS]
+                [--reason TEXT] [--source TEXT] [--agent NAME] [--again]
+rmd suggest rm SUGGESTION [SUGGESTION ...]
+```
+
+### Subcommands
+| Subcommand | Description |
+|------------|-------------|
+| `ls` (or no subcommand) | Show the suggestions waiting for review. `--json` also prints your task types, open tasks, the suggestions you accepted or rejected in the last 60 days, and the path of `profile.md`, for agents |
+| `add` | Suggest a task. Suggesting the same description again updates the waiting suggestion instead of adding another |
+| `rm` | Withdraw waiting suggestions by ID or description |
+
+### `add` options
+| Option | Description |
+|--------|-------------|
+| `TASK` | Description of the task |
+| `PRIORITY` | Importance from 1 to 10 |
+| `-t`, `--type` | Task type ID or name (default: the first type) |
+| `--due` | Finish-by time such as `2026-11-12T17:00`; the task becomes a timed task |
+| `--postpone` | Days to hold the daily urgent alarm, as with `rmd add` |
+| `--reason` | Why the agent suggests it, in one sentence (up to 300 characters) shown on the card |
+| `--source` | Where the agent found it, such as `Gmail` |
+| `--agent` | Who suggests it, such as `Claude` (default: `AI agent`) |
+| `--again` | Suggest it even though you rejected the same task before |
+
+`rmd suggest add` refuses a task that is already on your list, a task you
+rejected in the last 60 days (unless `--again`), and a new suggestion when 20
+are already waiting.
+
+### Examples
+```bash
+# What is waiting for review
+rmd suggest
+
+# An agent suggests a timed task it found in your email
+rmd suggest add "Reply to Prof. Lee about the rebuttal draft" 8 -t 1 \
+  --due 2026-11-12T17:00 --reason "Lee asked for comments by Thursday (email, Nov 8)." \
+  --source Gmail --agent Claude
+
+# Withdraw suggestion 3, which no longer applies
+rmd suggest rm 3
+```
+
+On the board, **Add to my tasks** turns a suggestion into a normal task,
+**Adjust** lets you change it first, and **Reject** turns it down. See
+[Suggestions from your AI agent](../browser.md#suggestions-from-your-ai-agent).
+
+---
+
 # Habit Management Commands
 
 Commands for interacting with your configured daily habits.

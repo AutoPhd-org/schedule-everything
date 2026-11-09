@@ -2,7 +2,9 @@
 // summary of its metrics, and takes new tasks inline. Each task has a progress slider, or a checklist of
 // subtasks that sets its progress, and a timed task shows when it is due (or how long it has been overdue).
 // The board is also where task types are managed: a tile at the end of the shelf adds one, and each group's
-// menu renames or deletes its type.
+// menu renames or deletes its type. Tasks an AI agent suggested wait in their type's group too, drawn apart from
+// the user's own (dashed and labeled with who suggested them and why) and left out of every count, until the user
+// adds one to their tasks or rejects it.
 //
 // Two layouts: compact packs the groups in reading order, those with more important work first; spread places
 // them by workload (workload.ts), the heaviest in the middle and lighter ones farther out, so the distance
@@ -13,8 +15,8 @@
 import { ring } from "./charts";
 import type { BoardLayout } from "./prefs";
 import { dueAt, dueLabel, clockText, isOverdue, progressControl, progressOf } from "./timers";
-import type { Snapshot, TaskItem } from "./types";
-import { e, empty, hash, icons, sw, typeSwatch } from "./ui";
+import type { Snapshot, SuggestionItem, TaskItem } from "./types";
+import { e, empty, formatDate, hash, icons, isoDay, sw, typeSwatch } from "./ui";
 import { describeLoad, workload } from "./workload";
 
 export type BoardView = "expanded" | "folded";
@@ -23,8 +25,9 @@ export type Composer = {type: string; priority: number; draft: string};
 /** The field for a new subtask: which task (by description) it is open on, and any unsent text. */
 export type SubtaskComposer = {task: string; draft: string};
 /** A type's tasks and the metrics its folded summary shows: average importance, average progress (0–100),
- *  how many tasks are important, timed, overdue, or deferred, and how many subtasks there are and are done. */
-export type TaskGroup = {id: string; name: string; tasks: TaskItem[]; average: number | null; progress: number | null; high: number; timed: number; overdue: number; deferred: number; steps: number; stepsDone: number};
+ *  how many tasks are important, timed, overdue, or deferred, and how many subtasks there are and are done.
+ *  `suggestions` are the tasks agents suggested for this type; no metric counts them. */
+export type TaskGroup = {id: string; name: string; tasks: TaskItem[]; suggestions: SuggestionItem[]; average: number | null; progress: number | null; high: number; timed: number; overdue: number; deferred: number; steps: number; stepsDone: number};
 export type BoardOptions = {
   snapshot: Snapshot;
   query: string;
@@ -58,17 +61,18 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /** The name used for a view transition, stable for a group across redraws. */
 export const groupTransitionName = (id: string) => `tg-${hash(id).toString(36)}`;
 
-/** One group per configured type, even without tasks, plus any type that only existing tasks still use.
- *  Groups are ordered by average importance (to one decimal, as shown), then by how many tasks they hold;
- *  groups without tasks come last in configured order. Tasks keep the server's order inside each group. */
+/** One group per configured type, even without tasks, plus any type that only existing tasks (or suggestions)
+ *  still use. Groups are ordered by average importance (to one decimal, as shown), then by how many tasks they
+ *  hold; groups without tasks come last in configured order. Tasks and suggestions keep the server's order. */
 export function groupTasks(snapshot: Snapshot, now = Date.now()): TaskGroup[] {
   const groups = new Map<string, TaskGroup>();
   const group = (id: string, name: string) => {
-    if (!groups.has(id)) groups.set(id, {id, name, tasks: [], average: null, progress: null, high: 0, timed: 0, overdue: 0, deferred: 0, steps: 0, stepsDone: 0});
+    if (!groups.has(id)) groups.set(id, {id, name, tasks: [], suggestions: [], average: null, progress: null, high: 0, timed: 0, overdue: 0, deferred: 0, steps: 0, stepsDone: 0});
     return groups.get(id)!;
   };
   for (const id of Object.keys(snapshot.taskTypes).sort(byId)) group(id, snapshot.taskTypes[id]);
   for (const task of snapshot.tasks) group(task.type, snapshot.taskTypes[task.type] ?? task.typeName ?? "Other").tasks.push(task);
+  for (const item of snapshot.suggestions ?? []) group(item.type, snapshot.taskTypes[item.type] ?? item.typeName ?? "Other").suggestions.push(item);
   for (const item of groups.values()) {
     if (!item.tasks.length) continue;
     item.average = Math.round(item.tasks.reduce((sum, task) => sum + task.priority, 0) / item.tasks.length * 10) / 10;
@@ -83,10 +87,13 @@ export function groupTasks(snapshot: Snapshot, now = Date.now()): TaskGroup[] {
   return [...groups.values()].sort((a, b) => (b.average ?? -1) - (a.average ?? -1) || b.tasks.length - a.tasks.length || byId(a.id, b.id));
 }
 
-/** The order of the groups on the board as the page opens: the groups with tasks, in compact order, or for
- *  the spread layout from the heaviest workload down (equal ones keep their compact order). */
+/** Whether a group belongs on the board: it has tasks, or suggestions waiting for review. */
+const busy = (group: TaskGroup) => group.tasks.length > 0 || group.suggestions.length > 0;
+
+/** The order of the groups on the board as the page opens: the groups with tasks or suggestions, in compact
+ *  order, or for the spread layout from the heaviest workload down (equal ones keep their compact order). */
 export function boardOrder(snapshot: Snapshot, layout: BoardLayout = "compact", now = Date.now()): string[] {
-  const groups = groupTasks(snapshot, now).filter(group => group.tasks.length);
+  const groups = groupTasks(snapshot, now).filter(busy);
   if (layout === "spread") {
     const load = new Map(groups.map(group => [group.id, workload(group.tasks, snapshot.today.date).points]));
     groups.sort((a, b) => load.get(b.id)! - load.get(a.id)!);
@@ -95,14 +102,14 @@ export function boardOrder(snapshot: Snapshot, layout: BoardLayout = "compact", 
 }
 
 /** The groups on the board. With an `order` (taken when the page opened, plus groups that joined since), every
- *  group in it stays in its place, even once its tasks are all done, and groups that got their first task since
- *  join at the end. Without one, the groups with tasks, in compact order. */
+ *  group in it stays in its place, even once its tasks are all done, and groups that got their first task or
+ *  suggestion since join at the end. Without one, the groups with tasks or suggestions, in compact order. */
 export function boardGroups(snapshot: Snapshot, order: readonly string[] | null | undefined, now = Date.now()): TaskGroup[] {
   const all = groupTasks(snapshot, now);
-  if (!order) return all.filter(group => group.tasks.length);
+  if (!order) return all.filter(busy);
   const found = new Map(all.map(group => [group.id, group]));
   const listed = new Set(order);
-  return [...order.flatMap(id => found.get(id) ?? []), ...all.filter(group => group.tasks.length && !listed.has(group.id))];
+  return [...order.flatMap(id => found.get(id) ?? []), ...all.filter(group => busy(group) && !listed.has(group.id))];
 }
 
 export function taskBoard(options: BoardOptions): string {
@@ -111,7 +118,8 @@ export function taskBoard(options: BoardOptions): string {
   const onBoard = boardGroups(snapshot, options.order, options.now);
   // A search shows only the groups with matches, listing them so the matching tasks can be seen.
   // Types without tasks wait on the shelf below the board (see typeShelf).
-  const groups = needle ? onBoard.map(group => ({...group, tasks: group.tasks.filter(task => task.description.toLowerCase().includes(needle))})).filter(group => group.tasks.length) : onBoard;
+  const matches = (text: string) => text.toLowerCase().includes(needle);
+  const groups = needle ? onBoard.map(group => ({...group, tasks: group.tasks.filter(task => matches(task.description)), suggestions: group.suggestions.filter(item => matches(item.description))})).filter(busy) : onBoard;
   if (!groups.length) return empty(needle ? "No tasks match your search." : "No open tasks. Add one to a type below, or use New task.");
   return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("");
 }
@@ -121,7 +129,7 @@ export function taskBoard(options: BoardOptions): string {
 export function typeShelf(options: BoardOptions): string {
   if (options.query) return "";
   const onBoard = new Set(boardGroups(options.snapshot, options.order, options.now).map(group => group.id));
-  const waiting = groupTasks(options.snapshot, options.now).filter(group => !group.tasks.length && !onBoard.has(group.id));
+  const waiting = groupTasks(options.snapshot, options.now).filter(group => !busy(group) && !onBoard.has(group.id));
   const heading = waiting.length
     ? `<header class="shelf-heading"><h3>Types without tasks <span class="count">${waiting.length}</span></h3><p>Add a task to one and it moves up to the board.</p></header>`
     : "";
@@ -159,16 +167,19 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
     ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="Name of this type" enterkeyhint="done">`
     : `<h3 data-type-title="${id}" ${searching ? "" : 'title="Double-click to rename"'}>${name}</h3>`;
   const writing = options.subtaskComposer;
+  const offers = group.suggestions;
   const body = deleting ? deletePanel(group, s, deleting.moveTo)
-    : !count ? cleared()
+    : !count ? (offers.length ? "" : cleared())
     : folded ? groupSummary(group, s.tasks.length)
     : `<div class="task-cards">${group.tasks.map((task, position) => taskCard(task, s.tasks.indexOf(task), position, now, task.description === options.added, writing?.task === task.description ? writing : null)).join("")}</div>`;
+  // Suggestions wait below the tasks; a folded group only says how many there are, and opens to show them.
+  const review = deleting || !offers.length ? "" : folded && count ? suggestionNote(group) : suggestionList(group, count, now);
   // In the spread layout each group wears its workload, which is what places it.
   const badge = options.layout === "spread" ? `<span class="group-load load-${load.level}" data-tip="${e(describeLoad(load))}">${icons.gauge}<b>${load.points.toFixed(1)}</b></span>` : "";
-  const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded && count ? "is-folded" : "", count ? "" : "is-cleared", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
+  const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded && count ? "is-folded" : "", count || offers.length ? "" : "is-cleared", offers.length ? "has-suggestions" : "", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
   return `<article class="${classes}" data-group="${id}" data-load="${load.points}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}; --vt:${groupTransitionName(group.id)}; --g:${order}">
-    ${badge}<header class="group-heading"><span class="group-icon">${icons.tasks}</span>${title}${searching ? countBadge(count) : typeMenu(group, s, count, options.menu === group.id)}${toggle}</header>
-    ${body}
+    ${badge}<header class="group-heading"><span class="group-icon">${icons.tasks}</span>${title}${searching ? (count ? countBadge(count) : "") : typeMenu(group, s, count || !offers.length ? count : null, options.menu === group.id)}${toggle}</header>
+    ${body}${review}
     ${deleting ? "" : `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, options.composer?.type === group.id ? options.composer : null)}</div>`}
   </article>`;
 }
@@ -245,6 +256,41 @@ function subtaskList(task: TaskItem, index: number, writing: SubtaskComposer | n
     : `<button type="button" class="subtask-add" data-subtask-open="${index}">${icons.plus}<span>Add a subtask</span></button>`;
   const allDone = steps.length > 0 && steps.every(step => step.done);
   return `<div class="subtasks ${allDone ? "is-done" : ""}">${steps.length ? `<ul class="subtask-list" aria-label="${e(`Subtasks of ${task.description}`)}">${items}</ul>` : ""}${field}</div>`;
+}
+
+/** A folded group's suggestions: how many wait for review, as a button that opens the group to show them. */
+function suggestionNote(group: TaskGroup): string {
+  const count = group.suggestions.length;
+  const agents = [...new Set(group.suggestions.map(item => item.agent))];
+  return `<button type="button" class="suggestion-note" data-group-toggle="${e(group.id)}" aria-label="${e(`Show ${plural(count, "suggested task")} from ${agents.join(" and ")} in ${group.name}`)}">${icons.spark}<span><b>${count}</b> suggested by ${e(agents.join(", "))}</span><span class="suggestion-note-go">Review ${icons.arrow}</span></button>`;
+}
+
+/** The suggestions in a group, under a label that says they are not tasks yet. */
+function suggestionList(group: TaskGroup, tasks: number, now: number): string {
+  const count = group.suggestions.length;
+  const label = `<p class="suggestion-label">${icons.spark}<span>${count === 1 ? "Suggested for you" : `${count} suggested for you`}</span><span class="suggestion-hint">Not on your list until you add ${count === 1 ? "it" : "them"}</span></p>`;
+  return `<section class="suggestion-list ${tasks ? "" : "is-alone"}" aria-label="${e(`Suggested tasks in ${group.name}`)}">${label}${group.suggestions.map((item, position) => suggestionCard(item, position, now)).join("")}</section>`;
+}
+
+/** A suggested task: who suggested it and where they found it, what it would be, why, and the choice to add it to
+ *  the user's tasks (as it is, or adjusted first) or reject it. */
+export function suggestionCard(item: SuggestionItem, position: number, now = Date.now()): string {
+  const name = e(item.description);
+  const level = item.priority >= 8 ? "high" : item.priority >= 5 ? "medium" : "low";
+  const due = item.due ? `<span class="suggestion-fact">${icons.clock}Finish by ${e(dueLabel(item.due, now))}</span>` : "";
+  const later = item.alarmFrom && item.alarmFrom > isoDay(new Date(now)) ? `<span class="suggestion-fact">${icons.hourglass}Reminders from ${e(formatDate(item.alarmFrom, {month: "short", day: "numeric"}))}</span>` : "";
+  const from = item.source ? ` <span class="suggestion-source">· from ${e(item.source)}</span>` : "";
+  return `<article class="suggestion" data-suggestion="${e(item.id)}" style="--i:${position}">
+      <p class="suggestion-from">${icons.spark}<span>Suggested by <b>${e(item.agent)}</b>${from}</span></p>
+      <h4 class="suggestion-title">${name}</h4>
+      <div class="suggestion-meta"><span class="priority p-${level}">${icons.flag} Importance ${item.priority}/10</span>${due}${later}</div>
+      ${item.reason ? `<p class="suggestion-reason">${e(item.reason)}</p>` : ""}
+      <div class="suggestion-actions">
+        <button type="button" class="suggestion-accept" data-suggestion-accept="${e(item.id)}" aria-label="${e(`Add ${item.description} to your tasks`)}">${icons.check}<span>Add to my tasks</span></button>
+        <button type="button" class="suggestion-adjust" data-suggestion-adjust="${e(item.id)}" aria-label="${e(`Adjust ${item.description}, then add it`)}" title="Change it, then add it">${icons.edit}<span>Adjust</span></button>
+        <button type="button" class="suggestion-reject" data-suggestion-reject="${e(item.id)}" aria-label="${e(`Reject ${item.description}`)}" title="Not for me">${icons.close}<span>Reject</span></button>
+      </div>
+    </article>`;
 }
 
 /** A folded group: average importance as a ring, every task as a dot on a 1–10 strip, how far along its tasks

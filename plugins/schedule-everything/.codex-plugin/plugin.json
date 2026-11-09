@@ -1,7 +1,7 @@
 {
   "name": "schedule-everything",
-  "version": "1.0.0",
-  "description": "Build your weekly Schedule Everything routine and plan each day's focus blocks with your coding agent, using the local `rmd` CLI.",
+  "version": "1.1.0",
+  "description": "Build your weekly Schedule Everything routine, plan each day's focus blocks, and suggest tasks from your email and calendar for you to review, with your coding agent and the local `rmd` CLI.",
   "author": {
     "name": "Schedule Everything",
     "url": "https://github.com/AutoPhd-org/schedule-everything"
@@ -19,8 +19,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Schedule Everything",
-    "shortDescription": "Build your weekly routine and plan today's focus blocks.",
-    "longDescription": "Interview-driven weekly schedule building and daily focus-block planning for the local Schedule Everything reminder app, using the `rmd` CLI.",
+    "shortDescription": "Build your weekly routine, plan today's focus blocks, and suggest tasks.",
+    "longDescription": "Interview-driven weekly schedule building, daily focus-block planning, and review-first task suggestions from your connected apps for the local Schedule Everything reminder app, using the `rmd` CLI.",
     "developerName": "Schedule Everything",
     "category": "Productivity",
     "capabilities": [

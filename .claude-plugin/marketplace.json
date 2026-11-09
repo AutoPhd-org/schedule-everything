@@ -6,7 +6,7 @@
     {
       "name": "schedule-everything",
       "source": "./plugins/schedule-everything",
-      "description": "Build your weekly routine and plan each day's focus blocks with the local `rmd` CLI."
+      "description": "Build your weekly routine, plan each day's focus blocks, and suggest tasks for you to review, with the local `rmd` CLI."
     }
   ]
 }

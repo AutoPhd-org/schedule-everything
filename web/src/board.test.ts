@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { boardGroups, boardOrder, groupTasks } from "./board";
 import { renderApp } from "./render";
-import type { BridgeClient, Snapshot, Subtask, TaskItem } from "./types";
+import type { BridgeClient, Snapshot, Subtask, SuggestionItem, TaskItem } from "./types";
 
 const task = (description: string, priority: number, type: string, extra: Partial<TaskItem> = {}): TaskItem =>
   ({description, priority, type, typeName: "", alarmFrom: null, procrastinated: false, procrastinateDays: null, ...extra});
@@ -596,5 +596,151 @@ describe("spread layout", () => {
     click('[data-board-layout="compact"]');
     expect(root.querySelector(".group-load")).toBeNull();
     expect(names()).toEqual(["Reading", "Coding", "Writing", "Retired"]);
+  });
+});
+
+describe("suggestions from agents", () => {
+  const offer = (id: string, description: string, type: string, extra: Partial<SuggestionItem> = {}): SuggestionItem =>
+    ({id, description, priority: 7, type, typeName: null, agent: "Claude", source: "Gmail", reason: "Lee asked for comments by Thursday.", ...extra});
+  const suggestion = (id: string) => root.querySelector<HTMLElement>(`.suggestion[data-suggestion="${id}"]`);
+  const titles = (name: string) => [...group(name).querySelectorAll(".task-card .task-title")].map(el => el.textContent);
+  const notice = () => root.querySelector("#notice .notice-text")?.textContent;
+  let decided: SuggestionItem[];
+
+  beforeEach(() => {
+    decided = [];
+    data.suggestions = [offer("1", "Reply to Lee", "2"), offer("2", "Stretch daily", "4", {priority: 4, source: null, reason: null})];
+    const base = send.getMockImplementation()!;
+    send.mockImplementation(async (command: string, payload: Record<string, unknown>) => {
+      const items = data.suggestions ?? [];
+      const item = items.find(entry => entry.id === payload.id);
+      if (command === "suggestion_accept" && item) {
+        data.suggestions = items.filter(entry => entry !== item);
+        decided.push(item);
+        const added = task(String(payload.description ?? item.description), Number(payload.priority ?? item.priority), String(payload.type ?? item.type));
+        data.tasks.push(added);
+        return {task: {description: added.description, type: added.type}, undo: {id: item.id, logged: ["stamp"]}};
+      }
+      if (command === "suggestion_reject" && item) {
+        data.suggestions = items.filter(entry => entry !== item);
+        decided.push(item);
+        return {id: item.id, description: item.description, undo: {id: item.id}};
+      }
+      if (command === "suggestion_undo") {
+        const back = decided.find(entry => entry.id === payload.id)!;
+        data.tasks = data.tasks.filter(entry => entry.description !== back.description);
+        data.suggestions = [...(data.suggestions ?? []), back];
+        return {id: back.id};
+      }
+      return base(command, payload);
+    });
+  });
+
+  it("waits in its type's group, drawn apart from the tasks and left out of every count", async () => {
+    await renderApp(root, client);
+    const writing = group("Writing");
+    const card = suggestion("1")!;
+    expect(writing.contains(card)).toBe(true);
+    expect(card.classList.contains("task-card")).toBe(false);
+    expect(card.querySelector(".suggestion-from")?.textContent).toBe("Suggested by Claude · from Gmail");
+    expect(card.querySelector(".suggestion-title")?.textContent).toBe("Reply to Lee");
+    expect(card.querySelector(".suggestion-reason")?.textContent).toBe("Lee asked for comments by Thursday.");
+    expect(card.querySelector(".priority")?.textContent).toContain("Importance 7/10");
+    expect(writing.querySelector(".suggestion-label")?.textContent).toContain("Suggested for you");
+    // The group's tasks, its count, the sidebar, and its metrics are the user's own tasks only.
+    expect(titles("Writing")).toEqual(["Draft essay"]);
+    expect(writing.querySelector(".group-count")?.textContent).toBe("1");
+    expect(root.querySelector(".nav-count")?.textContent).toBe("5");
+    expect(groupTasks(data).find(g => g.name === "Writing")).toMatchObject({average: 6, high: 0});
+    expect(root.querySelector(".suggestion-pill")?.textContent).toBe("2 suggested");
+    // A type with only a suggestion comes up from the shelf to show it, without a count or an "all done".
+    expect(names()).toContain("Exercise");
+    expect(shelfNames()).toEqual([]);
+    const exercise = group("Exercise");
+    expect(exercise.querySelector(".suggestion-list")?.classList.contains("is-alone")).toBe(true);
+    expect(exercise.querySelector(".group-count")).toBeNull();
+    expect(exercise.querySelector(".group-cleared")).toBeNull();
+    expect(suggestion("2")?.querySelector(".suggestion-from")?.textContent).toBe("Suggested by Claude");
+    expect(suggestion("2")?.querySelector(".suggestion-reason")).toBeNull();
+  });
+
+  it("joins the tasks when added, and Undo sends it back for review", async () => {
+    await renderApp(root, client);
+    suggestion("1")!.querySelector<HTMLButtonElement>("[data-suggestion-accept]")!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_accept", {id: "1"});
+    expect(titles("Writing")).toEqual(["Draft essay", "Reply to Lee"]);
+    expect(suggestion("1")).toBeNull();
+    expect(notice()).toBe("Added “Reply to Lee” to Writing. It’s one of your tasks now.");
+    expect(root.querySelector(".suggestion-pill")?.textContent).toBe("1 suggested");
+    root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_undo", {id: "1", logged: ["stamp"]});
+    expect(titles("Writing")).toEqual(["Draft essay"]);
+    expect(suggestion("1")).not.toBeNull();
+    expect(notice()).toBe("“Reply to Lee” is waiting for your review again.");
+  });
+
+  it("leaves the board when rejected, and Undo brings it back", async () => {
+    await renderApp(root, client);
+    suggestion("2")!.querySelector<HTMLButtonElement>("[data-suggestion-reject]")!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_reject", {id: "2"});
+    expect(suggestion("2")).toBeNull();
+    expect(data.tasks.some(entry => entry.description === "Stretch daily")).toBe(false);
+    expect(notice()).toBe("Rejected “Stretch daily”. It stays off your list.");
+    root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.click();
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_undo", {id: "2"});
+    expect(suggestion("2")).not.toBeNull();
+  });
+
+  it("can be adjusted before it is added", async () => {
+    HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+    await renderApp(root, client);
+    suggestion("1")!.querySelector<HTMLButtonElement>("[data-suggestion-adjust]")!.click();
+    const dialog = root.querySelector<HTMLDialogElement>("dialog.editor-dialog")!;
+    expect(dialog.querySelector("h2")?.textContent).toBe("Adjust, then add it");
+    expect(dialog.querySelector(".dialog-suggestion")?.textContent).toBe("Suggested by Claude from Gmail: Lee asked for comments by Thursday.");
+    expect(dialog.querySelector<HTMLInputElement>('[name="description"]')?.value).toBe("Reply to Lee");
+    expect(dialog.querySelector<HTMLSelectElement>('[name="type"]')?.value).toBe("2");
+    expect(dialog.querySelector('[type="submit"]')?.textContent).toBe("Add to my tasks");
+    dialog.querySelector<HTMLInputElement>('[name="description"]')!.value = "Reply to Lee about the draft";
+    dialog.querySelector<HTMLInputElement>('[name="priority"]')!.value = "9";
+    dialog.querySelector<HTMLSelectElement>('[name="type"]')!.value = "1";
+    dialog.querySelector("form")!.dispatchEvent(new Event("submit", {cancelable: true}));
+    await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_accept", {description: "Reply to Lee about the draft", priority: 9, type: "1", due: "", id: "1"});
+    expect(titles("Coding")).toContain("Reply to Lee about the draft");
+    expect(root.querySelector("dialog.editor-dialog")).toBeNull();
+  });
+
+  it("is only counted in a folded group, which opens to show it", async () => {
+    window.localStorage.setItem("schedule-everything-task-board", "folded");
+    await renderApp(root, client);
+    const note = group("Writing").querySelector<HTMLButtonElement>(".suggestion-note")!;
+    expect(note.textContent).toContain("1 suggested by Claude");
+    expect(suggestion("1")).toBeNull();
+    // A group with nothing but suggestions has no summary to fold into, so it shows them.
+    expect(group("Exercise").classList.contains("is-folded")).toBe(false);
+    expect(suggestion("2")).not.toBeNull();
+    note.click();
+    expect(group("Writing").classList.contains("is-folded")).toBe(false);
+    expect(suggestion("1")).not.toBeNull();
+  });
+
+  it("is found by search like a task", async () => {
+    await renderApp(root, client);
+    const search = root.querySelector<HTMLInputElement>('[name="search"]')!;
+    search.value = "stretch"; search.dispatchEvent(new Event("input"));
+    expect(names()).toEqual(["Exercise"]);
+    expect(suggestion("2")).not.toBeNull();
+    expect(root.querySelector(".task-card")).toBeNull();
+  });
+
+  it("keeps groups with only suggestions in the board order", () => {
+    expect(boardOrder(data)).toEqual(["3", "1", "2", "9", "4"]);
+    expect(boardGroups(data, null).map(g => g.id)).toEqual(["3", "1", "2", "9", "4"]);
+    expect(boardGroups(data, ["3", "1"]).map(g => g.id)).toEqual(["3", "1", "2", "9", "4"]);
   });
 });

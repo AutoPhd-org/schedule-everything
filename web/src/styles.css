@@ -443,6 +443,45 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .task-more button.neutral { color: var(--text); }
 .task-more button:hover { text-decoration: underline; text-underline-offset: 3px; }
 
+/* Suggestions from AI agents are not tasks yet: dashed, see-through and striped, and labeled with who suggested
+   them and why, so they never pass for the user's own. They join the list only when the user adds them. */
+.suggestion-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; margin-top: 12px; }
+.suggestion-list.is-alone { margin-top: 0; }
+.suggestion-label { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; padding: 0 6px; font: 700 11px/1.4 var(--display); color: var(--accent-ink); }
+.suggestion-label svg { width: 13px; height: 13px; }
+.suggestion-hint { margin-left: auto; font-weight: 560; color: var(--muted); }
+.suggestion { position: relative; padding: 12px 14px; border: 1.5px dashed color-mix(in oklab, var(--accent) 50%, var(--line-strong)); border-radius: 22px; background: repeating-linear-gradient(135deg, transparent 0 10px, color-mix(in oklab, var(--accent) 5%, transparent) 10px 20px), color-mix(in oklab, var(--surface-solid) 70%, transparent); animation: suggestion-in .5s var(--spring) both; animation-delay: calc(var(--i, 0) * 60ms); transition: border-color .25s, transform .35s var(--spring), box-shadow .3s; }
+.suggestion:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 14px 30px -18px var(--accent); }
+.suggestion-from { display: flex; align-items: center; gap: 6px; font-size: 11px; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.suggestion-from svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--accent); animation: twinkle 2.6s var(--ease) infinite; }
+.suggestion-from b { color: var(--accent-ink); font-weight: 700; }
+.suggestion-title { margin-top: 6px; font-size: 14px; line-height: 1.35; color: var(--text); overflow-wrap: anywhere; }
+.suggestion-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 7px; }
+.suggestion-fact { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.suggestion-fact svg { width: 12px; height: 12px; }
+.suggestion-reason { margin-top: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.5; color: var(--text); background: color-mix(in oklab, var(--accent) 8%, var(--surface-solid)); border-radius: 4px 14px 14px 14px; overflow-wrap: anywhere; }
+.suggestion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.suggestion-actions button { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-solid); color: var(--text); font-size: 12px; font-weight: 650; transition: background .2s, color .2s, border-color .2s, transform .3s var(--spring); }
+.suggestion-actions svg { width: 14px; height: 14px; }
+.suggestion-actions .suggestion-accept { background: var(--accent); border-color: transparent; color: #fff; }
+.suggestion-actions .suggestion-accept:hover { background: var(--good-strong); transform: translateY(-1px); }
+.suggestion-actions .suggestion-adjust:hover { border-color: var(--accent); color: var(--accent-ink); }
+.suggestion-actions .suggestion-reject { margin-left: auto; border-color: transparent; background: transparent; color: var(--muted); }
+.suggestion-actions .suggestion-reject:hover { color: var(--critical-ink); background: color-mix(in oklab, var(--critical) 9%, transparent); }
+.suggestion.is-leaving { pointer-events: none; animation: suggestion-out .4s var(--ease) forwards; }
+/* A folded group only says how many suggestions wait, and opens to show them. */
+.suggestion-note { display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 10px; padding: 9px 12px; border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--line-strong)); border-radius: 16px; background: color-mix(in oklab, var(--accent) 6%, transparent); color: var(--text); font-size: 12px; text-align: left; transition: border-color .2s, background .2s; }
+.suggestion-note svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
+.suggestion-note-go { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; color: var(--accent-ink); font-weight: 650; white-space: nowrap; }
+.suggestion-note:hover { border-style: solid; border-color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.suggestion-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 4px 9px; border: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--accent) 7%, transparent); color: var(--accent-ink); font: 700 12px/1 var(--display); vertical-align: middle; white-space: nowrap; }
+.suggestion-pill svg { width: 13px; height: 13px; }
+.dialog-suggestion { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 14px; padding: 10px 12px; border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--line-strong)); border-radius: 14px; font-size: 13px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.dialog-suggestion svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+@keyframes suggestion-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
+@keyframes suggestion-out { to { opacity: 0; transform: translateX(18px) rotate(2deg) scale(.94); } }
+@keyframes twinkle { 0%, 100% { transform: none; opacity: 1; } 50% { transform: scale(.8) rotate(18deg); opacity: .7; } }
+
 /* Timed tasks: when they are due, and an unmistakable look once they are overdue. */
 .task-detail.task-timer { color: var(--muted); font-weight: 600; }
 .task-detail.task-timer svg { color: var(--c); }
