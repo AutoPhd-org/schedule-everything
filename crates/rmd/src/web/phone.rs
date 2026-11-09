@@ -153,16 +153,31 @@ fn choose_addresses(primary: Option<Ipv4Addr>, interfaces: &[Interface]) -> Vec<
     chosen
 }
 
-/// This computer's address on the default route. Connecting a UDP socket
-/// only picks a route; nothing is sent.
+/// This computer's address on the default route.
 fn default_route_address() -> Option<Ipv4Addr> {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
     // TEST-NET-1 (RFC 5737): reached through the default route, never contacted.
-    socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
+    route_source(Ipv4Addr::new(192, 0, 2, 1))
+}
+
+/// The address this computer sends from to reach `destination`, as its
+/// routing table says. Connecting a UDP socket only picks a route; nothing
+/// is sent.
+fn route_source(destination: Ipv4Addr) -> Option<Ipv4Addr> {
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((destination, 9)).ok()?;
     match socket.local_addr().ok()?.ip() {
         IpAddr::V4(address) => Some(address),
         IpAddr::V6(_) => None,
     }
+}
+
+/// Whether traffic to other Tailscale devices leaves through another VPN
+/// instead of Tailscale, which happens when a VPN that takes over all traffic
+/// (Cisco Secure Client, for one) removes Tailscale's route. A phone's request
+/// then arrives over Tailscale, but the reply goes into the other VPN and is lost.
+pub fn tailscale_captured(tailscale: Ipv4Addr) -> bool {
+    // Any address in Tailscale's range shows where its traffic is routed.
+    route_source(Ipv4Addr::new(100, 64, 0, 1)).is_some_and(|source| source != tailscale)
 }
 
 /// The IPv4 addresses of this computer's interfaces that are up.
@@ -318,6 +333,15 @@ mod tests {
         assert_eq!(choose_addresses(Some(vpn), &interfaces[4..5]), vec![vpn]);
         assert_eq!(choose_addresses(Some(Ipv4Addr::LOCALHOST), &[]), Vec::<Ipv4Addr>::new());
         assert!(!is_tailscale(Ipv4Addr::new(100, 128, 0, 1)) && !is_tailscale(Ipv4Addr::new(100, 63, 0, 1)));
+    }
+
+    #[test]
+    fn routes_are_read_from_this_computer() {
+        assert_eq!(route_source(Ipv4Addr::LOCALHOST), Some(Ipv4Addr::LOCALHOST));
+        // Loopback never carries Tailscale's traffic, so it counts as captured
+        // wherever a route to Tailscale's range exists.
+        let routed = route_source(Ipv4Addr::new(100, 64, 0, 1)).is_some();
+        assert_eq!(tailscale_captured(Ipv4Addr::LOCALHOST), routed);
     }
 
     #[test]

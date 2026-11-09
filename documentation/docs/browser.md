@@ -421,17 +421,26 @@ rmd web --phone       # turn phone access on and show the pairing code
 rmd web --no-phone    # turn it off and sign every phone out
 ```
 
-`rmd web --phone` prints a QR code and a pairing link. Scan the code with your
-phone's camera, or open the link on the phone. The phone stays signed in (for up
+`rmd web --phone` prints a QR code and a pairing link for your Wi-Fi, and
+another pair for Tailscale when the computer is on it. Scan the code for the
+network your phone uses with its camera, or open the link on the phone. A phone
+signed in over Wi-Fi is not signed in over Tailscale, so pair it on each one you
+use. The phone stays signed in (for up
 to 400 days), so later you only need the address, for example
 `http://192.168.1.20:8765/`. Add it to the home screen or bookmark it. A plain
 `rmd web` prints that address while phone access is on, and `rmd web --phone`
 shows the code again without signing anyone out.
 
 - **Network.** The phone needs to be on the same Wi-Fi as the computer. With
-  [Tailscale](https://tailscale.com) on both, it also works away from home;
-  `rmd web --phone` then prints a second link for the Tailscale address. The
-  code uses the computer's Wi-Fi or Ethernet address, not a VPN's.
+  [Tailscale](https://tailscale.com) on both, it also works away from home or
+  on cellular data. The Wi-Fi code uses the computer's Wi-Fi or Ethernet
+  address, not a VPN's.
+- **Other VPNs.** A VPN that takes over all of the computer's traffic, such as a
+  work VPN like Cisco Secure Client, can also take over Tailscale's. The
+  phone's requests then arrive, but the replies go into that VPN and never reach
+  the phone. `rmd web --phone` warns when this happens. Disconnect the other VPN
+  while you use your phone over Tailscale (if Tailscale still does not connect,
+  turn it off and on again on the computer).
 - **Availability.** The computer must be awake. While phone access is on, the
   reminder service starts the workspace at login, and new servers keep the port
   your phone knows.

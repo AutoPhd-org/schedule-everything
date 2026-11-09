@@ -46,6 +46,8 @@ trait Backend {
     fn fingerprint(&self) -> String;
     /// Addresses a phone can reach this computer at, best first.
     fn network_addresses(&self) -> Vec<Ipv4Addr>;
+    /// Whether another VPN carries the traffic for this Tailscale address.
+    fn tailscale_captured(&self, tailscale: Ipv4Addr) -> bool;
 }
 
 /// A started server process.
@@ -113,6 +115,10 @@ impl Backend for Desktop {
 
     fn network_addresses(&self) -> Vec<Ipv4Addr> {
         phone::network_addresses()
+    }
+
+    fn tailscale_captured(&self, tailscale: Ipv4Addr) -> bool {
+        phone::tailscale_captured(tailscale)
     }
 }
 
@@ -427,28 +433,59 @@ pub struct WebRequest {
     pub phone: Option<bool>,
 }
 
-/// How a phone pairs: a QR code of the pairing link, the link itself, and
-/// the Tailscale link when this computer has one.
-fn pairing_text(access: &PhoneAccess, addresses: &[Ipv4Addr], color: bool) -> String {
-    let Some(&first) = addresses.first() else {
+/// How a phone pairs: for the local network and for Tailscale, a QR code of
+/// the pairing link and the link itself. A phone signed in at one address is
+/// not signed in at the other, so each has its own code.
+fn pairing_text(backend: &dyn Backend, access: &PhoneAccess, addresses: &[Ipv4Addr], color: bool) -> String {
+    if addresses.is_empty() {
         return "Phone access is on, but this computer has no network address. \
                 Connect to Wi-Fi, then run `rmd web --phone` again.\n"
             .to_string();
-    };
-    let mut text = String::from("Phone access is on. Scan this code with your phone's camera:\n\n");
-    for line in phone::qr_lines(&access.pairing_url(first), color) {
-        text += &format!("  {line}\n");
     }
-    text += &format!("\nOr open this link on your phone:\n  {}\n", access.pairing_url(first));
-    for &address in &addresses[1..] {
-        let network = if phone::is_tailscale(address) { "Over Tailscale" } else { "On another network" };
-        text += &format!("{network}: {}\n", access.pairing_url(address));
+    let (tailscale, local): (Vec<Ipv4Addr>, Vec<Ipv4Addr>) =
+        addresses.iter().partition(|&&address| phone::is_tailscale(address));
+    let mut text =
+        String::from("Phone access is on. Scan a code with your phone's camera, or open its link on the phone.\n");
+    for (heading, group) in
+        [("On the same Wi-Fi as this computer:", &local), ("Over Tailscale, from anywhere:", &tailscale)]
+    {
+        let Some(&first) = group.first() else {
+            continue;
+        };
+        text += &format!("\n{heading}\n\n");
+        for line in phone::qr_lines(&access.pairing_url(first), color) {
+            text += &format!("  {line}\n");
+        }
+        text += "\n";
+        for &address in group {
+            text += &format!("  {}\n", access.pairing_url(address));
+        }
+        if phone::is_tailscale(first) && backend.tailscale_captured(first) {
+            text += "\nAnother VPN on this computer is carrying Tailscale's traffic, so a phone's \
+                     requests arrive but the replies never reach it. Disconnect that VPN while \
+                     you use your phone, then run `rmd web --phone` again.\n";
+        }
     }
-    text += "\nYour phone must be on the same Wi-Fi as this computer (or on Tailscale), and \
-             this computer must be awake. The link signs a phone in, so keep it private and \
+    text += "\nThis computer must be awake. A link signs a phone in, so keep it private and \
              use phone access only on networks you trust. `rmd web --no-phone` turns phone \
              access off and signs every phone out.\n";
     text
+}
+
+/// Where paired phones connect, for `rmd web` while phone access is on.
+fn phone_access_line(access: &PhoneAccess, addresses: &[Ipv4Addr]) -> Option<String> {
+    let places: Vec<String> = addresses
+        .iter()
+        .map(|&address| {
+            if phone::is_tailscale(address) {
+                format!("{} over Tailscale", access.url(address))
+            } else {
+                access.url(address)
+            }
+        })
+        .collect();
+    (!places.is_empty())
+        .then(|| format!("Phone access is on: {} (`rmd web --phone` shows the pairing codes)\n", places.join(", ")))
 }
 
 fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, color: bool, request: WebRequest) -> i32 {
@@ -470,15 +507,10 @@ fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, color: bool,
             let mut text = format!("{status}: {}\n", launch.url);
             let addresses = || backend.network_addresses();
             match (&launch.phone, request.phone) {
-                (Some(access), Some(true)) => text += &format!("\n{}", pairing_text(access, &addresses(), color)),
-                (Some(access), _) => {
-                    if let Some(&address) = addresses().first() {
-                        text += &format!(
-                            "Phone access is on: {} (`rmd web --phone` shows the pairing code)\n",
-                            access.url(address)
-                        );
-                    }
+                (Some(access), Some(true)) => {
+                    text += &format!("\n{}", pairing_text(backend, access, &addresses(), color))
                 }
+                (Some(access), _) => text += &phone_access_line(access, &addresses()).unwrap_or_default(),
                 (None, Some(false)) => {
                     text += "Phone access is off. Phones need a new pairing code to connect again.\n"
                 }
@@ -531,6 +563,7 @@ mod tests {
         registry: PathBuf,
         build: RefCell<String>,
         has_tab: Cell<bool>,
+        tailscale_captured: Cell<bool>,
         servers: RefCell<Vec<SimServer>>,
         spawned: RefCell<Vec<(u16, Option<String>)>>,
         opened: RefCell<Vec<String>>,
@@ -543,6 +576,7 @@ mod tests {
                 registry: root.join(".browser.json"),
                 build: RefCell::new("v1".to_string()),
                 has_tab: Cell::new(false),
+                tailscale_captured: Cell::new(false),
                 servers: RefCell::new(Vec::new()),
                 spawned: RefCell::new(Vec::new()),
                 opened: RefCell::new(Vec::new()),
@@ -646,6 +680,10 @@ mod tests {
 
         fn network_addresses(&self) -> Vec<Ipv4Addr> {
             vec![Ipv4Addr::new(192, 168, 1, 20), Ipv4Addr::new(100, 101, 102, 103)]
+        }
+
+        fn tailscale_captured(&self, _: Ipv4Addr) -> bool {
+            self.tailscale_captured.get()
         }
     }
 
@@ -787,6 +825,9 @@ mod tests {
             fn network_addresses(&self) -> Vec<Ipv4Addr> {
                 Vec::new()
             }
+            fn tailscale_captured(&self, _: Ipv4Addr) -> bool {
+                false
+            }
         }
         let _env = TestEnv::new();
         let mut out = Vec::new();
@@ -823,17 +864,23 @@ mod tests {
         assert_eq!(access.port, 8765);
         assert_ne!(access.token, desktop_token);
         let pairing = format!("http://192.168.1.20:8765/#token={}", access.token);
+        let tailscale = format!("http://100.101.102.103:8765/#token={}", access.token);
         assert!(output.starts_with("Browser workspace restarted with phone access: http://127.0.0.1:8765/\n\n"));
-        assert!(output.contains("Phone access is on. Scan this code with your phone's camera:\n\n  "), "{output}");
-        assert!(output.contains(&format!("Or open this link on your phone:\n  {pairing}\n")), "{output}");
-        assert!(output.contains(&format!("Over Tailscale: http://100.101.102.103:8765/#token={}\n", access.token)));
+        // A code and a link for each network: a phone signed in at one address is not at the other.
+        let wifi_code = output.find("On the same Wi-Fi as this computer:\n\n  ").expect("Wi-Fi code");
+        let tailscale_code = output.find("Over Tailscale, from anywhere:\n\n  ").expect("Tailscale code");
+        assert!(wifi_code < tailscale_code);
+        assert!(output[wifi_code..tailscale_code].contains(&format!("\n  {pairing}\n")), "{output}");
+        assert!(output[tailscale_code..].contains(&format!("\n  {tailscale}\n")), "{output}");
+        assert!(!output.contains("Another VPN"));
         assert!(output.contains("`rmd web --no-phone` turns phone access off"));
 
         // A plain launch keeps phone access and reminds where phones connect.
         assert_eq!(
             web(&sim, WebRequest::default()),
             "Browser workspace ready: http://127.0.0.1:8765/\n\
-             Phone access is on: http://192.168.1.20:8765/ (`rmd web --phone` shows the pairing code)\n"
+             Phone access is on: http://192.168.1.20:8765/, http://100.101.102.103:8765/ over Tailscale \
+             (`rmd web --phone` shows the pairing codes)\n"
         );
         // Showing the code again keeps phones paired and the server running.
         let again = web(&sim, WebRequest { phone: Some(true), ..WebRequest::default() });
@@ -895,10 +942,27 @@ mod tests {
     }
 
     #[test]
+    fn pairing_warns_when_another_vpn_carries_tailscale_traffic() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
+        let access = PhoneAccess { token: "t".into(), port: 8765 };
+        let addresses = sim.network_addresses();
+        sim.tailscale_captured.set(true);
+        let text = pairing_text(&sim, &access, &addresses, false);
+        let warning = text.find("Another VPN on this computer is carrying Tailscale's traffic").expect("warning");
+        assert!(warning > text.find("http://100.101.102.103:8765/#token=t").unwrap(), "under the Tailscale code");
+        // Without Tailscale there is nothing to warn about.
+        let text = pairing_text(&sim, &access, &addresses[..1], false);
+        assert!(!text.contains("Over Tailscale") && !text.contains("Another VPN"), "{text}");
+    }
+
+    #[test]
     fn pairing_needs_a_network_address() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
         let access = PhoneAccess { token: "t".into(), port: 8765 };
         assert_eq!(
-            pairing_text(&access, &[], false),
+            pairing_text(&sim, &access, &[], false),
             "Phone access is on, but this computer has no network address. \
              Connect to Wi-Fi, then run `rmd web --phone` again.\n"
         );
