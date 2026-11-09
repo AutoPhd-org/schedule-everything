@@ -406,13 +406,54 @@ rmd web --no-open     # start/reuse the server and print a private launch link
 The port flag applies only when starting a server. Treat the launch link printed
 by `--no-open` as private: its fragment contains the local session token. Normal
 launch removes the token from the address bar once the session is established.
-The local `.browser.json` registry and `.browser.log` are runtime files; exclude
-`.browser*` from version control if you version your config root.
+The local `.browser.json` registry and `.browser.log` are runtime files, and
+`.phone.json` holds the phone token; exclude `.browser*` and `.phone.json` from
+version control if you version your config root.
+
+## Using it from your phone
+
+Your phone can use the workspace on your computer while you keep working there.
+Both see the same tasks, plan, deadlines, habits, and history, because they use
+the same server and files. Nothing is copied or synced.
+
+```bash
+rmd web --phone       # turn phone access on and show the pairing code
+rmd web --no-phone    # turn it off and sign every phone out
+```
+
+`rmd web --phone` prints a QR code and a pairing link. Scan the code with your
+phone's camera, or open the link on the phone. The phone stays signed in (for up
+to 400 days), so later you only need the address, for example
+`http://192.168.1.20:8765/`. Add it to the home screen or bookmark it. A plain
+`rmd web` prints that address while phone access is on, and `rmd web --phone`
+shows the code again without signing anyone out.
+
+- **Network.** The phone needs to be on the same Wi-Fi as the computer. With
+  [Tailscale](https://tailscale.com) on both, it also works away from home;
+  `rmd web --phone` then prints a second link for the Tailscale address. The
+  code uses the computer's Wi-Fi or Ethernet address, not a VPN's.
+- **Availability.** The computer must be awake. While phone access is on, the
+  reminder service starts the workspace at login, and new servers keep the port
+  your phone knows.
+- **Reminders.** Alarms and dialogs still appear on the computer only.
+- **macOS firewall.** If macOS asks whether `rmd` may accept incoming network
+  connections, choose **Allow**. After you update `rmd`, the first connection
+  can take a few seconds while macOS checks the new binary.
+
+With phone access on, the server listens on all network interfaces instead of
+only `127.0.0.1`. It accepts requests addressed to one of the computer's IPv4
+addresses, never to a host name, so a web page cannot reach it by pointing its
+own domain at your computer. Every API request still needs either the desktop
+session token or the phone token, and `.phone.json` in the config root keeps the
+phone token readable only by you. The connection is plain HTTP, so someone on the
+same network could read the token from your traffic. Use phone access on
+networks you trust, or over Tailscale, which encrypts it. `rmd web --no-phone`
+deletes the token, so turning phone access back on pairs phones anew.
 
 ## Local storage and access
 
-The server binds only to `127.0.0.1`. It checks the host, request origin, and
-session token before accepting API calls. It does not upload the local database
+The server binds only to `127.0.0.1`, unless you turn on phone access. It checks
+the host, request origin, and session token before accepting API calls. It does not upload the local database
 and makes no AI requests. If you use an agent plugin, the agent sends what it
 reads to its own model provider. Browser settings edits are validated before saving and reject
 stale revisions. Saving changes reloads the installer-managed reminder service

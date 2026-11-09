@@ -107,7 +107,10 @@ Launching again reuses an open workspace tab. The app asks the browser to bring
 it forward; browser focus permissions can prevent it from becoming the active
 tab. If the tab has been closed, a new tab opens on the existing server.
 The server listens only on `127.0.0.1` and continues running when the terminal
-closes. CLI commands remain available.
+closes. CLI commands remain available. With
+[phone access](../browser.md#using-it-from-your-phone) on (`rmd web --phone`),
+it also listens on your network. If the macOS firewall asks whether `rmd` may
+accept incoming network connections, choose **Allow**.
 
 The installed package includes the browser assets; Node.js is only needed to
 rebuild them during development. No native desktop app or widget is shipped.

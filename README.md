@@ -148,7 +148,8 @@ rmd web
 
 The workspace listens on `127.0.0.1` only and accepts API calls only with the
 session token of the tab it opens. It reads and writes the same files as the
-CLI, and running `rmd web` again reuses the open tab.
+CLI, and running `rmd web` again reuses the open tab. To use it from your phone
+as well, see [On your phone, too](#on-your-phone-too).
 
 ## The browser workspace
 
@@ -249,6 +250,24 @@ save with the same rules as `rmd check` and refuses to overwrite newer edits.
   </tr>
 </table>
 
+Run `rmd web --phone` and scan the code it prints with your phone's camera. The
+phone then uses the workspace on your computer, so it works on the same tasks,
+plan, and history while you keep working at the computer. Nothing is copied or
+synced, and the phone stays signed in.
+
+```bash
+rmd web --phone       # turn phone access on and show the pairing code
+rmd web --no-phone    # turn it off and sign every phone out
+```
+
+The phone needs to be on the same Wi-Fi as the computer, or on
+[Tailscale](https://tailscale.com) from anywhere, and the computer needs to be
+awake. With phone access on, the server also listens on your network and
+accepts requests addressed to the computer's IP address that carry the phone's
+token. The link travels unencrypted over your local network, so use phone access
+on networks you trust or over Tailscale. The reminder service starts the
+workspace at login while phone access is on. Alarms still sound on the computer.
+
 Light, dark, or system theme, remembered per browser. Motion follows your
 system's reduced-motion setting.
 
@@ -276,7 +295,7 @@ fill. A plan changes only today; your weekly files never change.
 
 | Command | What it does |
 | --- | --- |
-| `rmd web [--port N] [--no-open]` | Open the browser workspace, reusing a running server and its tab |
+| `rmd web [--port N] [--no-open] [--phone \| --no-phone]` | Open the browser workspace, reusing a running server and its tab; `--phone` lets your phone use it too |
 | `rmd status [-v]` | What is happening now and next, with today's planned task titles |
 | `rmd add "task" 8 [type] [days]` | Add a task with importance 1–10, an optional type ID, and optionally postpone its urgent alarms by some days |
 | `rmd ls [-t TYPE]` | List tasks by importance, optionally of one type |

@@ -128,7 +128,8 @@ rmd web
 It uses the same local files as the CLI: tasks, deadlines, habits, today's
 plan, the agent plugin install commands, configuration editing, mode and
 schedule switching, reminder controls, and PDF downloads. Launching again
-reuses an open workspace tab. The server listens only on `127.0.0.1` and keeps
+reuses an open workspace tab. The server listens only on `127.0.0.1` (unless
+you turn on [phone access](browser.md#using-it-from-your-phone)) and keeps
 running when the terminal closes. The installed package includes the browser
 assets; no native desktop app or widget is shipped. See
 [Browser workspace](browser.md).

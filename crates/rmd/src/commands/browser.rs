@@ -6,11 +6,14 @@
 //! the current code (its `/health` build equals [`code_fingerprint`]). An
 //! outdated one is replaced on the same port with the same token, so open tabs
 //! reconnect to the new server instead of pairing a new frontend with old APIs.
+//! A server is replaced the same way when phone access is turned on or off,
+//! since that changes where it listens.
 //!
 //! [`code_fingerprint`]: crate::web::fingerprint::code_fingerprint
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
+use std::net::Ipv4Addr;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -19,6 +22,7 @@ use anyhow::{anyhow, bail};
 use serde_json::{Value, json};
 
 use crate::i18n::tf;
+use crate::web::phone::{self, PhoneAccess};
 use crate::{paths, py};
 
 /// Carries an existing session token to a replacement server (by environment,
@@ -40,6 +44,8 @@ trait Backend {
     fn open_url(&self, url: &str);
     /// Fingerprint of the code a freshly started server would run.
     fn fingerprint(&self) -> String;
+    /// Addresses a phone can reach this computer at, best first.
+    fn network_addresses(&self) -> Vec<Ipv4Addr>;
 }
 
 /// A started server process.
@@ -104,6 +110,10 @@ impl Backend for Desktop {
     fn fingerprint(&self) -> String {
         crate::web::fingerprint::code_fingerprint()
     }
+
+    fn network_addresses(&self) -> Vec<Ipv4Addr> {
+        phone::network_addresses()
+    }
 }
 
 /// `state["port"]` as Python's `int(...)` would read it.
@@ -157,6 +167,7 @@ fn live_state(backend: &dyn Backend, registry: &Path) -> Option<Value> {
     let mut live = state.as_object()?.clone();
     live.insert("build".into(), health.get("build").cloned().unwrap_or(Value::Null));
     live.insert("tabs".into(), health.get("tabs").cloned().unwrap_or(Value::Null));
+    live.insert("phone".into(), Value::Bool(py::opt_truthy(health.get("phone"))));
     Some(Value::Object(live))
 }
 
@@ -226,7 +237,8 @@ fn start(
     bail!("Browser server startup timed out. See {}", root.join(".browser.log").display())
 }
 
-/// The live server, replaced first if its code is outdated, and the replaced
+/// The live server, replaced first if its code is outdated or it listens for
+/// phones when phone access is off (or the other way round), and the replaced
 /// server's state. A server is started only when `start_one` and none runs.
 fn current_server(
     backend: &dyn Backend,
@@ -236,14 +248,25 @@ fn current_server(
     start_one: bool,
 ) -> anyhow::Result<(Option<Value>, Option<Value>)> {
     let failed = || anyhow!("Browser server failed to start. See {}", root.join(".browser.log").display());
+    let access = phone::load(root);
     let Some(state) = live_state(backend, registry) else {
         if !start_one {
             return Ok((None, None));
         }
-        let state = start(backend, root, registry, port, None)?.ok_or_else(failed)?;
+        // Paired phones know the port phone access last used, so a new server
+        // takes it again while it is free.
+        let preferred = if port == 0 { access.as_ref().map_or(0, |access| access.port) } else { port };
+        let state = match start(backend, root, registry, preferred, None)? {
+            Some(state) => state,
+            None if preferred != port => start(backend, root, registry, port, None)?.ok_or_else(failed)?,
+            None => return Err(failed()),
+        };
+        remember_phone_port(root, access, &state)?;
         return Ok((Some(state), None));
     };
-    if state.get("build") == Some(&Value::String(backend.fingerprint())) {
+    let up_to_date = state.get("build") == Some(&Value::String(backend.fingerprint()));
+    if up_to_date && state.get("phone") == Some(&Value::Bool(access.is_some())) {
+        remember_phone_port(root, access, &state)?;
         return Ok((Some(state), None));
     }
     stop(backend, &state, registry)?;
@@ -254,7 +277,21 @@ fn current_server(
         Some(replacement) => replacement,
         None => start(backend, root, registry, port, None)?.ok_or_else(failed)?,
     };
+    remember_phone_port(root, access, &replacement)?;
     Ok((Some(replacement), Some(state)))
+}
+
+/// With phone access on, record the server's port for the next server to reuse.
+fn remember_phone_port(root: &Path, access: Option<PhoneAccess>, state: &Value) -> anyhow::Result<()> {
+    let Some(mut access) = access else {
+        return Ok(());
+    };
+    let port = u16::try_from(state_port(state).map_err(|error| anyhow!(error))?)?;
+    if access.port != port {
+        access.port = port;
+        phone::save(root, &access)?;
+    }
+    Ok(())
 }
 
 /// Focus an open tab, giving tabs of a replaced server time to reconnect.
@@ -292,22 +329,73 @@ fn server_url(state: &Value) -> String {
     format!("http://127.0.0.1:{}/", state.get("port").map(py::py_str).unwrap_or_default())
 }
 
-/// Open the workspace. Returns its URL, whether an open tab was reused, and
-/// whether an outdated server was replaced.
-fn launch_browser(backend: &dyn Backend, open_browser: bool, port: u16) -> anyhow::Result<(String, bool, bool)> {
+/// What opening the workspace found and did.
+#[derive(Debug)]
+struct Launch {
+    /// The workspace URL (with the session token when no tab was opened).
+    url: String,
+    /// Whether an open tab was reused.
+    reused: bool,
+    /// Why a running server was replaced, if it was.
+    replaced: Option<Replaced>,
+    /// Phone access, while it is on.
+    phone: Option<PhoneAccess>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Replaced {
+    /// It ran outdated code.
+    Outdated,
+    /// Phone access was turned on or off.
+    PhoneAccess,
+}
+
+/// Open the workspace, turning phone access on or off first when `phone` says so.
+fn launch_browser(backend: &dyn Backend, open_browser: bool, port: u16, phone: Option<bool>) -> anyhow::Result<Launch> {
     let root = paths::resolve_config_root_dir();
     fs::create_dir_all(&root)?;
     let registry = root.join(".browser.json");
     let _lock = launch_lock(&root)?;
+    match phone {
+        Some(true) => {
+            phone::enable(&root)?;
+        }
+        Some(false) => phone::disable(&root)?,
+        None => {}
+    }
     let (state, replaced) = current_server(backend, &root, &registry, port, true)?;
     let state = state.ok_or_else(|| anyhow!("Browser server failed to start."))?;
     let url = server_url(&state);
-    let has_tab = activate(backend, &state, replaced.as_ref())?;
+    let reused = activate(backend, &state, replaced.as_ref())?;
     let private_url = format!("{url}#token={}", state.get("token").map(py::py_str).unwrap_or_default());
-    if open_browser && !has_tab {
+    if open_browser && !reused {
         backend.open_url(&private_url);
     }
-    Ok((if open_browser { url } else { private_url }, has_tab, replaced.is_some()))
+    let fingerprint = Value::String(backend.fingerprint());
+    let replaced = replaced
+        .map(|old| if old.get("build") == Some(&fingerprint) { Replaced::PhoneAccess } else { Replaced::Outdated });
+    Ok(Launch { url: if open_browser { url } else { private_url }, reused, replaced, phone: phone::load(&root) })
+}
+
+/// Start the workspace server for paired phones when phone access is on and
+/// none runs (the reminder service calls this at login), without opening or
+/// focusing a tab. Returns a line for the service log.
+pub fn serve_phones() -> Option<String> {
+    serve_phones_with(&Desktop)
+}
+
+fn serve_phones_with(backend: &dyn Backend) -> Option<String> {
+    let root = paths::resolve_config_root_dir();
+    phone::load(&root)?;
+    let registry = root.join(".browser.json");
+    let started = launch_lock(&root)
+        .map_err(anyhow::Error::from)
+        .and_then(|_lock| current_server(backend, &root, &registry, 0, true));
+    Some(match started {
+        Ok((Some(state), _)) => format!("Workspace serving paired phones on port {}", py::py_str(&state["port"])),
+        Ok((None, _)) => "Could not start the workspace for paired phones".to_string(),
+        Err(error) => format!("Could not start the workspace for paired phones: {error}"),
+    })
 }
 
 /// Replace a running workspace server whose code is outdated, without starting
@@ -326,28 +414,82 @@ fn refresh_browser(backend: &dyn Backend) -> anyhow::Result<(Option<String>, boo
     Ok((state.as_ref().map(server_url), replaced.is_some()))
 }
 
-fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, no_open: bool, port: u16, if_running: bool) -> i32 {
+/// What `rmd web` was asked to do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WebRequest {
+    /// Start or reuse the server without opening a tab.
+    pub no_open: bool,
+    /// The port for a new server (0 picks one).
+    pub port: u16,
+    /// Only replace a running server whose code is outdated.
+    pub if_running: bool,
+    /// Turn phone access on (`Some(true)`) or off (`Some(false)`).
+    pub phone: Option<bool>,
+}
+
+/// How a phone pairs: a QR code of the pairing link, the link itself, and
+/// the Tailscale link when this computer has one.
+fn pairing_text(access: &PhoneAccess, addresses: &[Ipv4Addr], color: bool) -> String {
+    let Some(&first) = addresses.first() else {
+        return "Phone access is on, but this computer has no network address. \
+                Connect to Wi-Fi, then run `rmd web --phone` again.\n"
+            .to_string();
+    };
+    let mut text = String::from("Phone access is on. Scan this code with your phone's camera:\n\n");
+    for line in phone::qr_lines(&access.pairing_url(first), color) {
+        text += &format!("  {line}\n");
+    }
+    text += &format!("\nOr open this link on your phone:\n  {}\n", access.pairing_url(first));
+    for &address in &addresses[1..] {
+        let network = if phone::is_tailscale(address) { "Over Tailscale" } else { "On another network" };
+        text += &format!("{network}: {}\n", access.pairing_url(address));
+    }
+    text += "\nYour phone must be on the same Wi-Fi as this computer (or on Tailscale), and \
+             this computer must be awake. The link signs a phone in, so keep it private and \
+             use phone access only on networks you trust. `rmd web --no-phone` turns phone \
+             access off and signs every phone out.\n";
+    text
+}
+
+fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, color: bool, request: WebRequest) -> i32 {
     const RESTARTED: &str = "Browser workspace restarted with the updated code";
-    let line = if if_running {
+    let text = if request.if_running {
         refresh_browser(backend).map(|(url, replaced)| match url {
-            None => "No browser workspace is running.".to_string(),
-            Some(url) => format!("{}: {url}", if replaced { RESTARTED } else { "Browser workspace is up to date" }),
+            None => "No browser workspace is running.\n".to_string(),
+            Some(url) => format!("{}: {url}\n", if replaced { RESTARTED } else { "Browser workspace is up to date" }),
         })
     } else {
-        launch_browser(backend, !no_open, port).map(|(url, reused, replaced)| {
-            let status = if replaced {
-                RESTARTED
-            } else if reused {
-                "Reusing open browser workspace"
-            } else {
-                "Browser workspace ready"
+        launch_browser(backend, !request.no_open, request.port, request.phone).map(|launch| {
+            let status = match (launch.replaced, &launch.phone) {
+                (Some(Replaced::Outdated), _) => RESTARTED,
+                (Some(Replaced::PhoneAccess), Some(_)) => "Browser workspace restarted with phone access",
+                (Some(Replaced::PhoneAccess), None) => "Browser workspace restarted without phone access",
+                (None, _) if launch.reused => "Reusing open browser workspace",
+                (None, _) => "Browser workspace ready",
             };
-            format!("{status}: {url}")
+            let mut text = format!("{status}: {}\n", launch.url);
+            let addresses = || backend.network_addresses();
+            match (&launch.phone, request.phone) {
+                (Some(access), Some(true)) => text += &format!("\n{}", pairing_text(access, &addresses(), color)),
+                (Some(access), _) => {
+                    if let Some(&address) = addresses().first() {
+                        text += &format!(
+                            "Phone access is on: {} (`rmd web --phone` shows the pairing code)\n",
+                            access.url(address)
+                        );
+                    }
+                }
+                (None, Some(false)) => {
+                    text += "Phone access is off. Phones need a new pairing code to connect again.\n"
+                }
+                (None, _) => {}
+            }
+            text
         })
     };
-    match line {
-        Ok(line) => {
-            let _ = writeln!(out, "{line}");
+    match text {
+        Ok(text) => {
+            let _ = write!(out, "{text}");
             0
         }
         Err(error) => {
@@ -357,9 +499,10 @@ fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, no_open: boo
     }
 }
 
-/// `rmd web [--no-open] [--port N] [--if-running]`.
-pub fn browser_command(no_open: bool, port: u16, if_running: bool) -> i32 {
-    browser_command_with(&Desktop, &mut io::stdout(), no_open, port, if_running)
+/// `rmd web [--no-open] [--port N] [--if-running] [--phone | --no-phone]`.
+pub fn browser_command(request: WebRequest) -> i32 {
+    let color = crate::ui::detect_color_system().is_some();
+    browser_command_with(&Desktop, &mut io::stdout(), color, request)
 }
 
 #[cfg(test)]
@@ -379,6 +522,7 @@ mod tests {
         token: String,
         build: String,
         tabs: i64,
+        phone: bool,
         running: bool,
     }
 
@@ -413,6 +557,7 @@ mod tests {
                 token: token.to_string(),
                 build: build.to_string(),
                 tabs: 0,
+                phone: false,
                 running: true,
             });
         }
@@ -448,7 +593,8 @@ mod tests {
             }
             match (route, payload) {
                 ("/health", None) => Ok(json!({
-                    "app": "schedule-everything", "pid": server.pid, "build": server.build, "tabs": server.tabs
+                    "app": "schedule-everything", "pid": server.pid, "build": server.build, "tabs": server.tabs,
+                    "phone": server.phone
                 })),
                 ("/activate", Some(_)) => Ok(json!({"hasTab": self.has_tab.get()})),
                 ("/api", Some(payload)) if payload["command"] == "server_shutdown" => {
@@ -462,13 +608,25 @@ mod tests {
             }
         }
 
-        fn spawn_server(&self, _root: &Path, port: u16, token: Option<&str>) -> io::Result<Box<dyn ServerProcess>> {
+        fn spawn_server(&self, root: &Path, port: u16, token: Option<&str>) -> io::Result<Box<dyn ServerProcess>> {
             self.spawned.borrow_mut().push((port, token.map(str::to_string)));
             let count = self.spawned.borrow().len() as i64;
             let pid = 1000 + count;
             let port = if port == 0 { 40000 + count } else { i64::from(port) };
+            // A taken port: the process exits without registering.
+            if self.servers.borrow().iter().any(|server| server.running && server.port == port) {
+                struct Exited;
+                impl ServerProcess for Exited {
+                    fn has_exited(&mut self) -> bool {
+                        true
+                    }
+                }
+                return Ok(Box::new(Exited));
+            }
             let token = token.map(str::to_string).unwrap_or_else(|| format!("token-{pid}"));
             self.add_server(pid, port, &token, &self.build.borrow());
+            // Like `__web-server`, the server serves phones when phone access is on at startup.
+            self.servers.borrow_mut().last_mut().unwrap().phone = phone::load(root).is_some();
             fs::write(&self.registry, json!({"port": port, "token": token, "pid": pid}).to_string())?;
             Ok(Box::new(NeverExits))
         }
@@ -485,6 +643,10 @@ mod tests {
         fn fingerprint(&self) -> String {
             self.build.borrow().clone()
         }
+
+        fn network_addresses(&self) -> Vec<Ipv4Addr> {
+            vec![Ipv4Addr::new(192, 168, 1, 20), Ipv4Addr::new(100, 101, 102, 103)]
+        }
     }
 
     #[test]
@@ -495,14 +657,14 @@ mod tests {
         env.write(".browser.json", r#"{"port": 12345, "token": "t", "pid": 1}"#);
         sim.has_tab.set(true);
 
-        let (url, reused, replaced) = launch_browser(&sim, true, 0).unwrap();
-        assert!(reused && !replaced && sim.opened.borrow().is_empty());
-        assert_eq!(url, "http://127.0.0.1:12345/");
+        let launch = launch_browser(&sim, true, 0, None).unwrap();
+        assert!(launch.reused && launch.replaced.is_none() && sim.opened.borrow().is_empty());
+        assert_eq!(launch.url, "http://127.0.0.1:12345/");
 
         sim.has_tab.set(false);
-        launch_browser(&sim, true, 0).unwrap();
+        launch_browser(&sim, true, 0, None).unwrap();
         assert_eq!(*sim.opened.borrow(), vec!["http://127.0.0.1:12345/#token=t".to_string()]);
-        assert!(launch_browser(&sim, false, 0).unwrap().0.ends_with("#token=t"));
+        assert!(launch_browser(&sim, false, 0, None).unwrap().url.ends_with("#token=t"));
         assert_eq!(sim.opened.borrow().len(), 1);
         assert!(sim.spawned.borrow().is_empty());
     }
@@ -531,7 +693,8 @@ mod tests {
         assert!(sim.spawned.borrow().is_empty());
         let (code, output) = {
             let mut out = Vec::new();
-            (browser_command_with(&sim, &mut out, false, 0, true), String::from_utf8(out).unwrap())
+            let request = WebRequest { if_running: true, ..WebRequest::default() };
+            (browser_command_with(&sim, &mut out, false, request), String::from_utf8(out).unwrap())
         };
         assert_eq!((code, output.as_str()), (0, "No browser workspace is running.\n"));
     }
@@ -541,10 +704,13 @@ mod tests {
         let _env = TestEnv::new();
         let root = paths::resolve_config_root_dir();
         let sim = Sim::new(&root);
-        let (url, _, replaced) = launch_browser(&sim, false, 0).unwrap();
+        let launch = launch_browser(&sim, false, 0, None).unwrap();
         let first = sim.registry();
-        assert!(!replaced);
-        assert_eq!(url, format!("http://127.0.0.1:{}/#token={}", first["port"], first["token"].as_str().unwrap()));
+        assert!(launch.replaced.is_none());
+        assert_eq!(
+            launch.url,
+            format!("http://127.0.0.1:{}/#token={}", first["port"], first["token"].as_str().unwrap())
+        );
         let first_url = format!("http://127.0.0.1:{}/", first["port"]);
         assert_eq!(refresh_browser(&sim).unwrap(), (Some(first_url.clone()), false));
 
@@ -568,7 +734,15 @@ mod tests {
         let env = TestEnv::new();
         let sim = Sim::new(env.root());
         let mut out = Vec::new();
-        assert_eq!(browser_command_with(&sim, &mut out, true, 8765, false), 0);
+        assert_eq!(
+            browser_command_with(
+                &sim,
+                &mut out,
+                false,
+                WebRequest { no_open: true, port: 8765, ..WebRequest::default() }
+            ),
+            0
+        );
         let registry = sim.registry();
         assert_eq!(registry["port"], 8765);
         assert_eq!(
@@ -579,7 +753,7 @@ mod tests {
 
         *sim.build.borrow_mut() = "v2".to_string();
         let mut out = Vec::new();
-        assert_eq!(browser_command_with(&sim, &mut out, false, 0, false), 0);
+        assert_eq!(browser_command_with(&sim, &mut out, false, WebRequest::default()), 0);
         assert_eq!(
             String::from_utf8(out).unwrap(),
             "Browser workspace restarted with the updated code: http://127.0.0.1:8765/\n"
@@ -610,13 +784,124 @@ mod tests {
             fn fingerprint(&self) -> String {
                 String::new()
             }
+            fn network_addresses(&self) -> Vec<Ipv4Addr> {
+                Vec::new()
+            }
         }
         let _env = TestEnv::new();
         let mut out = Vec::new();
-        assert_eq!(browser_command_with(&Fails, &mut out, false, 0, false), 1);
+        assert_eq!(browser_command_with(&Fails, &mut out, false, WebRequest::default()), 1);
         let output = String::from_utf8(out).unwrap();
         assert!(output.starts_with("❌ Unexpected error: Browser server failed to start. See "), "{output}");
         assert!(output.trim_end().ends_with(".browser.log"));
+    }
+
+    fn web(sim: &Sim, request: WebRequest) -> String {
+        let mut out = Vec::new();
+        assert_eq!(browser_command_with(sim, &mut out, false, request), 0);
+        String::from_utf8(out).unwrap()
+    }
+
+    fn running(sim: &Sim) -> Vec<(i64, i64, String, bool)> {
+        let servers = sim.servers.borrow();
+        servers.iter().filter(|s| s.running).map(|s| (s.pid, s.port, s.token.clone(), s.phone)).collect()
+    }
+
+    #[test]
+    fn phone_access_restarts_the_server_in_place_and_shows_a_pairing_code() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
+        let local = WebRequest { no_open: true, port: 8765, ..WebRequest::default() };
+        web(&sim, local);
+        let desktop_token = sim.registry()["token"].as_str().unwrap().to_string();
+        assert_eq!(phone::load(env.root()), None);
+
+        let output = web(&sim, WebRequest { phone: Some(true), ..WebRequest::default() });
+        // Same port and token, so the tab on this computer reconnects.
+        assert_eq!(running(&sim), vec![(1002, 8765, desktop_token.clone(), true)]);
+        let access = phone::load(env.root()).unwrap();
+        assert_eq!(access.port, 8765);
+        assert_ne!(access.token, desktop_token);
+        let pairing = format!("http://192.168.1.20:8765/#token={}", access.token);
+        assert!(output.starts_with("Browser workspace restarted with phone access: http://127.0.0.1:8765/\n\n"));
+        assert!(output.contains("Phone access is on. Scan this code with your phone's camera:\n\n  "), "{output}");
+        assert!(output.contains(&format!("Or open this link on your phone:\n  {pairing}\n")), "{output}");
+        assert!(output.contains(&format!("Over Tailscale: http://100.101.102.103:8765/#token={}\n", access.token)));
+        assert!(output.contains("`rmd web --no-phone` turns phone access off"));
+
+        // A plain launch keeps phone access and reminds where phones connect.
+        assert_eq!(
+            web(&sim, WebRequest::default()),
+            "Browser workspace ready: http://127.0.0.1:8765/\n\
+             Phone access is on: http://192.168.1.20:8765/ (`rmd web --phone` shows the pairing code)\n"
+        );
+        // Showing the code again keeps phones paired and the server running.
+        let again = web(&sim, WebRequest { phone: Some(true), ..WebRequest::default() });
+        assert!(again.starts_with("Browser workspace ready: ") && again.contains(&pairing), "{again}");
+        assert_eq!(running(&sim).len(), 1);
+        assert_eq!(phone::load(env.root()).unwrap(), access);
+
+        let output = web(&sim, WebRequest { phone: Some(false), ..WebRequest::default() });
+        assert_eq!(
+            output,
+            "Browser workspace restarted without phone access: http://127.0.0.1:8765/\n\
+             Phone access is off. Phones need a new pairing code to connect again.\n"
+        );
+        assert_eq!(running(&sim), vec![(1003, 8765, desktop_token, false)]);
+        assert_eq!(phone::load(env.root()), None);
+        let output = web(&sim, WebRequest { phone: Some(true), ..WebRequest::default() });
+        assert!(!output.contains(&access.token), "turning it on again pairs anew");
+    }
+
+    #[test]
+    fn a_new_server_takes_the_port_paired_phones_know() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
+        phone::save(env.root(), &PhoneAccess { token: "phone".into(), port: 8765 }).unwrap();
+        let launch = launch_browser(&sim, false, 0, None).unwrap();
+        assert_eq!(running(&sim), vec![(1001, 8765, "token-1001".into(), true)]);
+        assert_eq!(launch.phone, Some(PhoneAccess { token: "phone".into(), port: 8765 }));
+
+        // When another program holds that port, the server takes a free one and phones follow it.
+        sim.servers.borrow_mut()[0].running = false;
+        fs::remove_file(&sim.registry).unwrap();
+        sim.add_server(7, 8765, "someone-else", "v1");
+        launch_browser(&sim, false, 0, None).unwrap();
+        assert_eq!(*sim.spawned.borrow(), vec![(8765, None), (8765, None), (0, None)]);
+        assert_eq!(phone::load(env.root()).unwrap().port, 40003);
+    }
+
+    #[test]
+    fn a_port_asked_for_wins_over_the_one_phones_know() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
+        phone::save(env.root(), &PhoneAccess { token: "phone".into(), port: 8765 }).unwrap();
+        launch_browser(&sim, false, 9000, None).unwrap();
+        assert_eq!(phone::load(env.root()).unwrap().port, 9000);
+    }
+
+    #[test]
+    fn the_reminder_service_starts_the_server_only_for_phones() {
+        let env = TestEnv::new();
+        let sim = Sim::new(env.root());
+        assert_eq!(serve_phones_with(&sim), None);
+        assert!(sim.spawned.borrow().is_empty());
+        phone::enable(env.root()).unwrap();
+        assert_eq!(serve_phones_with(&sim).unwrap(), "Workspace serving paired phones on port 40001");
+        sim.has_tab.set(true);
+        assert_eq!(serve_phones_with(&sim).unwrap(), "Workspace serving paired phones on port 40001");
+        assert_eq!(sim.spawned.borrow().len(), 1, "a running server is reused");
+        assert!(sim.opened.borrow().is_empty(), "no tab opens at login");
+    }
+
+    #[test]
+    fn pairing_needs_a_network_address() {
+        let access = PhoneAccess { token: "t".into(), port: 8765 };
+        assert_eq!(
+            pairing_text(&access, &[], false),
+            "Phone access is on, but this computer has no network address. \
+             Connect to Wi-Fi, then run `rmd web --phone` again.\n"
+        );
     }
 
     /// Serve one canned JSON response; hands back the raw request.

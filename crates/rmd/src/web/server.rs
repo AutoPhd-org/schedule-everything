@@ -6,9 +6,14 @@
 //! process. The server reports a fingerprint of its build so the launcher can
 //! replace it after an update; open tabs reconnect to the replacement on the
 //! same port with the same token.
+//!
+//! The server listens on `127.0.0.1` only, unless phone access is on (see
+//! [`phone`]): then it listens on every interface and also accepts requests
+//! addressed to this computer's IPv4 address with the paired phones' token.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::net::Ipv4Addr;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -29,7 +34,7 @@ use tokio::sync::{mpsc, watch};
 use crate::paths;
 use crate::py;
 use crate::web::fingerprint::code_fingerprint;
-use crate::web::{TOKEN_ENV, api, pyjson, workspace};
+use crate::web::{TOKEN_ENV, api, phone, pyjson, workspace};
 
 /// The built browser app (`web/src`, bundled by Vite).
 #[derive(RustEmbed)]
@@ -43,14 +48,31 @@ const HEARTBEAT_SECONDS: u64 = 2;
 /// How long open requests may finish after a shutdown request.
 const SHUTDOWN_GRACE_SECONDS: u64 = 2;
 
+/// Which token a request carried.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Access {
+    /// The session token of tabs on this computer.
+    Desktop,
+    /// The token of paired phones.
+    Phone,
+}
+
+/// An open browser tab's event channel.
+struct Tab {
+    /// Whether the tab runs on this computer (it reached the server at `127.0.0.1`).
+    local: bool,
+    events: mpsc::Sender<&'static str>,
+}
+
 /// State shared by every connection of one server.
 pub struct BrowserServer {
     pub port: u16,
     pub token: String,
     pub build: String,
-    origin: String,
+    /// The paired phones' token, while phone access is on.
+    phone_token: Option<String>,
     cookie_name: String,
-    tabs: Mutex<HashMap<u64, mpsc::Sender<&'static str>>>,
+    tabs: Mutex<HashMap<u64, Tab>>,
     next_tab: AtomicU64,
     closing: AtomicBool,
     operation_lock: Arc<Mutex<()>>,
@@ -63,7 +85,7 @@ impl BrowserServer {
             port,
             token,
             build,
-            origin: format!("http://127.0.0.1:{port}"),
+            phone_token: None,
             cookie_name: format!("rmd_{port}"),
             tabs: Mutex::new(HashMap::new()),
             next_tab: AtomicU64::new(0),
@@ -73,15 +95,22 @@ impl BrowserServer {
         }
     }
 
-    fn tabs(&self) -> std::sync::MutexGuard<'_, HashMap<u64, mpsc::Sender<&'static str>>> {
+    /// Also serve paired phones, which authenticate with `token`.
+    pub fn with_phone_access(mut self, token: String) -> Self {
+        self.phone_token = Some(token);
+        self
+    }
+
+    fn tabs(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Tab>> {
         self.tabs.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// Register an open browser tab; its events arrive on the receiver.
-    pub fn add_tab(&self) -> (u64, mpsc::Receiver<&'static str>) {
-        let (sender, receiver) = mpsc::channel(8);
+    /// Register an open browser tab, `local` when it runs on this computer;
+    /// its events arrive on the receiver.
+    pub fn add_tab(&self, local: bool) -> (u64, mpsc::Receiver<&'static str>) {
+        let (events, receiver) = mpsc::channel(8);
         let id = self.next_tab.fetch_add(1, Ordering::SeqCst);
-        self.tabs().insert(id, sender);
+        self.tabs().insert(id, Tab { local, events });
         (id, receiver)
     }
 
@@ -93,13 +122,19 @@ impl BrowserServer {
         self.tabs().len()
     }
 
-    /// Ask every open tab to come to the front; whether there was one.
+    /// Open tabs on this computer (a phone's tab is no reason not to open one here).
+    pub fn local_tab_count(&self) -> usize {
+        self.tabs().values().filter(|tab| tab.local).count()
+    }
+
+    /// Ask every open tab on this computer to come to the front; whether there was one.
     pub fn activate(&self) -> bool {
-        let tabs = self.tabs();
-        for tab in tabs.values() {
-            let _ = tab.try_send("activate");
+        let mut found = false;
+        for tab in self.tabs().values().filter(|tab| tab.local) {
+            let _ = tab.events.try_send("activate");
+            found = true;
         }
-        !tabs.is_empty()
+        found
     }
 
     /// Stop serving (`server_shutdown`, or Ctrl-C).
@@ -111,12 +146,22 @@ impl BrowserServer {
     fn close_tabs(&self) {
         self.closing.store(true, Ordering::SeqCst);
         for tab in self.tabs().values() {
-            let _ = tab.try_send("close");
+            let _ = tab.events.try_send("close");
         }
     }
 
-    fn host_ok(&self, headers: &HeaderMap) -> bool {
+    /// Whether the request reached this server at `127.0.0.1`.
+    fn is_local(&self, headers: &HeaderMap) -> bool {
         headers.get(header::HOST).is_some_and(|host| host.as_bytes() == format!("127.0.0.1:{}", self.port).as_bytes())
+    }
+
+    /// `127.0.0.1`, or with phone access any IPv4 address of this computer.
+    /// A host name is never accepted, so a page that rebinds its own name to
+    /// this computer cannot reach the server.
+    fn host_ok(&self, headers: &HeaderMap) -> bool {
+        self.is_local(headers)
+            || (self.phone_token.is_some()
+                && headers.get(header::HOST).is_some_and(|host| phone::is_address_host(host.as_bytes(), self.port)))
     }
 
     fn cookie_token<'a>(&self, headers: &'a HeaderMap) -> &'a str {
@@ -130,20 +175,20 @@ impl BrowserServer {
             .unwrap_or("")
     }
 
-    /// Same host and origin, and the session token as a bearer token or cookie.
-    fn authorized(&self, headers: &HeaderMap) -> bool {
+    /// An accepted host, an origin that is this server at that host, and the
+    /// session or phone token as a bearer token or cookie.
+    fn access(&self, headers: &HeaderMap) -> Option<Access> {
         if !self.host_ok(headers) {
-            return false;
+            return None;
         }
+        let host = headers.get(header::HOST)?.as_bytes();
         if let Some(origin) = headers.get(header::ORIGIN)
             && !origin.is_empty()
-            && origin.as_bytes() != self.origin.as_bytes()
+            && origin.as_bytes() != [b"http://", host].concat()
         {
-            return false;
+            return None;
         }
-        let Ok(authorization) = headers.get(header::AUTHORIZATION).map_or(Ok(""), HeaderValue::to_str) else {
-            return false;
-        };
+        let authorization = headers.get(header::AUTHORIZATION).map_or(Ok(""), HeaderValue::to_str).ok()?;
         // `Bearer ` with an empty token arrives as `Bearer` (trailing space trimmed); like the
         // Python server, it falls back to the session cookie.
         let mut token = match authorization {
@@ -153,7 +198,29 @@ impl BrowserServer {
         if token.is_empty() {
             token = self.cookie_token(headers);
         }
-        constant_time_eq(token.as_bytes(), self.token.as_bytes())
+        if constant_time_eq(token.as_bytes(), self.token.as_bytes()) {
+            Some(Access::Desktop)
+        } else if self.phone_token.as_ref().is_some_and(|phone| constant_time_eq(token.as_bytes(), phone.as_bytes())) {
+            Some(Access::Phone)
+        } else {
+            None
+        }
+    }
+
+    fn authorized(&self, headers: &HeaderMap) -> bool {
+        self.access(headers).is_some()
+    }
+
+    /// The cookie that keeps a tab signed in: for this browser session on this
+    /// computer, for as long as browsers allow on a paired phone.
+    fn session_cookie(&self, access: Access) -> String {
+        let name = &self.cookie_name;
+        match (access, &self.phone_token) {
+            (Access::Phone, Some(token)) => {
+                format!("{name}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={}", phone::COOKIE_MAX_AGE)
+            }
+            _ => format!("{name}={}; HttpOnly; SameSite=Strict; Path=/", self.token),
+        }
     }
 }
 
@@ -244,8 +311,8 @@ struct EventStream {
 }
 
 impl EventStream {
-    fn new(server: Arc<BrowserServer>) -> Self {
-        let (tab, events) = server.add_tab();
+    fn new(server: Arc<BrowserServer>, local: bool) -> Self {
+        let (tab, events) = server.add_tab(local);
         Self {
             server,
             tab,
@@ -297,13 +364,13 @@ impl Drop for EventStream {
     }
 }
 
-fn events_response(server: Arc<BrowserServer>) -> Response {
+fn events_response(server: Arc<BrowserServer>, local: bool) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/event-stream")
         .header(header::CACHE_CONTROL, "no-store")
         .header(header::CONNECTION, "close")
-        .body(Body::new(EventStream::new(server)))
+        .body(Body::new(EventStream::new(server, local)))
         .expect("valid response")
 }
 
@@ -321,7 +388,8 @@ async fn get(server: Arc<BrowserServer>, request: Request) -> Response {
             "app": "schedule-everything",
             "pid": std::process::id(),
             "build": server.build,
-            "tabs": server.tab_count(),
+            "tabs": server.local_tab_count(),
+            "phone": server.phone_token.is_some(),
         });
         return json_response(StatusCode::OK, &health);
     }
@@ -329,7 +397,8 @@ async fn get(server: Arc<BrowserServer>, request: Request) -> Response {
         if !server.authorized(headers) {
             return error(StatusCode::FORBIDDEN, "Unauthorized.");
         }
-        return events_response(server);
+        let local = server.is_local(headers);
+        return events_response(server, local);
     }
     if let Some(key) = path.strip_prefix("/downloads/") {
         if !server.authorized(headers) {
@@ -352,9 +421,9 @@ async fn get(server: Arc<BrowserServer>, request: Request) -> Response {
 
 async fn post(server: Arc<BrowserServer>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
-    if !server.authorized(&parts.headers) {
+    let Some(access) = server.access(&parts.headers) else {
         return closing(error(StatusCode::FORBIDDEN, "Unauthorized request."));
-    }
+    };
     let length = match parts.headers.get(header::CONTENT_LENGTH) {
         None => Some(0),
         Some(value) => value.to_str().ok().and_then(py::parse_int_str),
@@ -373,7 +442,7 @@ async fn post(server: Arc<BrowserServer>, request: Request) -> Response {
     };
     match parts.uri.path() {
         "/session" => {
-            let cookie = format!("{}={}; HttpOnly; SameSite=Strict; Path=/", server.cookie_name, server.token);
+            let cookie = server.session_cookie(access);
             send(
                 StatusCode::OK,
                 py::dumps(&json!({"ok": true})).into_bytes(),
@@ -440,16 +509,7 @@ pub async fn serve(server: Arc<BrowserServer>, listener: TcpListener) -> std::io
 
 /// Write `.browser.json` (`{"port", "token", "pid"}`, owner-only) atomically.
 fn write_registry(registry: &Path, port: u16, token: &str) -> std::io::Result<()> {
-    let temporary = registry.with_extension("tmp");
-    let content = py::dumps(&json!({"port": port, "token": token, "pid": std::process::id()}));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
-    std::io::Write::write_all(&mut options.open(&temporary)?, content.as_bytes())?;
-    #[cfg(unix)]
-    std::fs::set_permissions(&temporary, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
-    std::fs::rename(&temporary, registry)
+    crate::web::write_private(registry, &py::dumps(&json!({"port": port, "token": token, "pid": std::process::id()})))
 }
 
 /// Remove `.browser.json` if it still names this process.
@@ -466,6 +526,7 @@ fn clear_registry(registry: &Path) {
 /// `rmd __web-server --root R --port P`: serve the workspace for config root
 /// `root` on `port` (0 picks a free port) until shut down. A replacement
 /// server keeps its predecessor's token, passed in `REMINDER_BROWSER_TOKEN`.
+/// Phone access is on when `root` holds `.phone.json` at startup.
 pub fn run(root: &Path, port: u16) -> i32 {
     // Fingerprint first, so an update that lands mid-startup makes this server
     // look stale rather than current.
@@ -489,11 +550,13 @@ pub fn run(root: &Path, port: u16) -> i32 {
             return 1;
         }
     };
+    let phone = phone::load(&root);
+    let address = if phone.is_some() { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST };
     let code = runtime.block_on(async move {
-        let listener = match TcpListener::bind(("127.0.0.1", port)).await {
+        let listener = match TcpListener::bind((address, port)).await {
             Ok(listener) => listener,
             Err(e) => {
-                eprintln!("Could not listen on 127.0.0.1:{port}: {e}");
+                eprintln!("Could not listen on {address}:{port}: {e}");
                 return 1;
             }
         };
@@ -505,7 +568,11 @@ pub fn run(root: &Path, port: u16) -> i32 {
             }
         };
         let token = token.unwrap_or_else(|| workspace::token_urlsafe(32));
-        let server = Arc::new(BrowserServer::new(port, token, build));
+        let mut server = BrowserServer::new(port, token, build);
+        if let Some(phone) = phone {
+            server = server.with_phone_access(phone.token);
+        }
+        let server = Arc::new(server);
         let registry = root.join(".browser.json");
         if let Err(e) = write_registry(&registry, port, &server.token) {
             eprintln!("Could not write {}: {e}", registry.display());
@@ -570,6 +637,12 @@ mod tests {
 
     impl TestServer {
         fn start() -> Self {
+            Self::start_with(None)
+        }
+
+        /// A server with phone access when `phone_token` is given.
+        fn start_with(phone_token: Option<&str>) -> Self {
+            let phone_token = phone_token.map(str::to_string);
             let (sender, receiver) = std::sync::mpsc::channel();
             let thread = std::thread::spawn(move || {
                 let runtime =
@@ -577,7 +650,11 @@ mod tests {
                 runtime.block_on(async move {
                     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
                     let port = listener.local_addr().unwrap().port();
-                    let server = Arc::new(BrowserServer::new(port, TOKEN.to_string(), "test-build".to_string()));
+                    let mut server = BrowserServer::new(port, TOKEN.to_string(), "test-build".to_string());
+                    if let Some(token) = phone_token {
+                        server = server.with_phone_access(token);
+                    }
+                    let server = Arc::new(server);
                     sender.send(server.clone()).unwrap();
                     serve(server, listener).await.unwrap();
                 });
@@ -749,7 +826,7 @@ mod tests {
     #[test]
     fn activation_notifies_existing_tabs() {
         let server = TestServer::start();
-        let (tab, mut events) = server.server.add_tab();
+        let (tab, mut events) = server.server.add_tab(true);
         let reply = request(server.port(), "POST", "/activate", Some("{}"), &[auth()]);
         assert_eq!((reply.status, reply.json()), (200, json!({"hasTab": true})));
         assert_eq!(events.try_recv().unwrap(), "activate");
@@ -839,8 +916,104 @@ mod tests {
         assert_eq!(body["app"], json!("schedule-everything"));
         assert_eq!(body["pid"], json!(std::process::id()));
         assert_eq!((&body["build"], &body["tabs"]), (&json!("test-build"), &json!(0)));
-        let _tab = server.server.add_tab();
+        let _tab = server.server.add_tab(true);
         assert_eq!(request(server.port(), "GET", "/health", None, &[auth()]).json()["tabs"], json!(1));
+        assert_eq!(body["phone"], json!(false));
+    }
+
+    #[test]
+    fn without_phone_access_only_loopback_requests_are_served() {
+        let server = TestServer::start();
+        let host = format!("192.168.1.20:{}", server.port());
+        let reply = request(server.port(), "GET", "/", None, &[("Host", &host)]);
+        assert_eq!((reply.status, reply.json()), (403, json!({"error": "Invalid host."})));
+        let body = r#"{"command": "workspace_info"}"#;
+        let reply = request(server.port(), "POST", "/api", Some(body), &[auth(), ("Host", &host)]);
+        assert_eq!(reply.status, 403);
+    }
+
+    #[test]
+    fn phone_access_serves_ipv4_hosts_with_either_token() {
+        let _env = TestEnv::new();
+        let server = TestServer::start_with(Some("phone-token"));
+        let port = server.port();
+        let host = format!("192.168.1.20:{port}");
+        let origin = format!("http://{host}");
+        let phone = ("Authorization", "Bearer phone-token");
+        let body = r#"{"command": "settings_get_task_types"}"#;
+
+        let reply = request(port, "GET", "/", None, &[("Host", &host)]);
+        assert_eq!(reply.status, 200, "the app loads at the computer's address");
+        for headers in [vec![phone, ("Host", &host), ("Origin", &origin)], vec![auth(), ("Host", &host)], vec![phone]] {
+            let reply = request(port, "POST", "/api", Some(body), &headers);
+            assert_eq!((reply.status, reply.json()["ok"].clone()), (200, json!(true)), "{headers:?}");
+        }
+        let elsewhere = format!("http://127.0.0.1:{port}");
+        let tailscale = format!("100.101.102.103:{port}");
+        let wrong_port = format!("192.168.1.20:{}", port.wrapping_add(1));
+        for headers in [
+            vec![phone, ("Host", &host), ("Origin", &elsewhere)],
+            vec![phone, ("Host", &tailscale), ("Origin", &origin)],
+            vec![phone, ("Host", "evil.example")],
+            vec![phone, ("Host", &format!("evil.example:{port}"))],
+            vec![phone, ("Host", &wrong_port)],
+            vec![("Authorization", "Bearer wrong"), ("Host", &host)],
+        ] {
+            assert_eq!(request(port, "POST", "/api", Some(body), &headers).status, 403, "{headers:?}");
+        }
+        let health = request(port, "GET", "/health", None, &[phone, ("Host", &host)]);
+        assert_eq!((health.status, health.json()["phone"].clone()), (200, json!(true)));
+    }
+
+    #[test]
+    fn a_paired_phone_stays_signed_in() {
+        let _env = TestEnv::new();
+        let server = TestServer::start_with(Some("phone-token"));
+        let port = server.port();
+        let host = format!("192.168.1.20:{port}");
+        let origin = format!("http://{host}");
+        let headers = [("Authorization", "Bearer phone-token"), ("Host", &host), ("Origin", &origin)];
+        let reply = request(port, "POST", "/session", Some("{}"), &headers);
+        assert_eq!(
+            reply.header("Set-Cookie"),
+            Some(format!("rmd_{port}=phone-token; HttpOnly; SameSite=Strict; Path=/; Max-Age=34560000").as_str())
+        );
+        let cookie = format!("rmd_{port}=phone-token");
+        let body = r#"{"command": "settings_get_task_types"}"#;
+        let reply =
+            request(port, "POST", "/api", Some(body), &[("Cookie", &cookie), ("Host", &host), ("Origin", &origin)]);
+        assert_eq!(reply.status, 200);
+        // The desktop session still ends with the browser session, wherever it is used.
+        let reply = request(port, "POST", "/session", Some("{}"), &[auth(), ("Host", &host)]);
+        assert_eq!(
+            reply.header("Set-Cookie"),
+            Some(format!("rmd_{port}=test-token; HttpOnly; SameSite=Strict; Path=/").as_str())
+        );
+    }
+
+    #[test]
+    fn phone_tabs_neither_count_nor_come_to_the_front() {
+        let server = TestServer::start_with(Some("phone-token"));
+        let host = format!("192.168.1.20:{}", server.port());
+        let stream = send_request(
+            server.port(),
+            "GET",
+            "/events",
+            None,
+            &[("Authorization", "Bearer phone-token"), ("Host", &host)],
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while server.server.tab_count() == 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!((server.server.tab_count(), server.server.local_tab_count()), (1, 0));
+        assert!(!server.server.activate(), "a phone's tab is no tab on this computer");
+        let health = request(server.port(), "GET", "/health", None, &[auth()]);
+        assert_eq!(health.json()["tabs"], json!(0));
+        let (_local, mut events) = server.server.add_tab(true);
+        assert!(server.server.activate());
+        assert_eq!(events.try_recv().unwrap(), "activate");
+        drop(stream);
     }
 
     #[test]
