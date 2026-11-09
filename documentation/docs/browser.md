@@ -249,6 +249,35 @@ it, set its importance, and press **Enter**. The form stays open for the next
 task; **Esc** closes it. **New task** in the heading still opens the full form,
 where you can also make the task timed.
 
+### Suggestions from your AI agent
+
+An AI agent can suggest tasks, for example the
+[`suggest-tasks`](ai-agents.md#suggest-tasks) skill running every morning
+over your email and calendar. A suggestion is not a task yet. It waits in its
+type's group below your own tasks, and looks different from them: a dashed,
+striped card that says who suggested it and where it came from (**Suggested by
+Claude · from Gmail**), with the agent's reason underneath. A **suggested**
+pill beside the board's heading counts what is waiting. Reminders, the task
+counts, the workload, timers, and your statistics leave suggestions out.
+
+Each suggestion has three buttons:
+
+- **Add to my tasks** makes it a normal task in that group, with the
+  suggested importance, type, and finish-by time. From then on it is like any
+  task you added yourself, and adding it counts in your history.
+- **Adjust** opens the task form with the suggestion filled in, so you can
+  change its wording, importance, type, or timing first. **Add to my tasks**
+  in the form adds it.
+- **Reject** removes it from the board. Agents see that you turned it down,
+  and `rmd suggest add` refuses to suggest the same task again.
+
+The notice after adding or rejecting a suggestion has an **Undo** button that
+puts the suggestion back for review. A type whose only content is a suggestion
+comes up from the shelf to show it. A folded group shows a **suggested by**
+line that opens the group. Search finds suggestions as well as tasks. New
+suggestions appear within 30 seconds while the page is open, or at once with
+**Refresh**.
+
 ### Progress, subtasks, and timers
 
 Every task has a **Progress** slider from 0 to 100%. Drag it, or focus it and use
@@ -376,8 +405,9 @@ Schedule building and daily planning happen in your own coding agent through
 the Schedule Everything plugin for Claude Code, OpenAI Codex, or Google
 Antigravity. The **Plan with your AI agent** card on the Schedule page has a tab
 for each agent with its install commands (each with a copy button) and example
-prompts such as "Build my weekly schedule" and "Plan my focus blocks for
-today". See [AI agent plugins](ai-agents.md).
+prompts such as "Build my weekly schedule", "Plan my focus blocks for
+today", and "Suggest tasks from my email and calendar". See
+[AI agent plugins](ai-agents.md).
 
 <Figure
   src="img/screens/schedule-agents.webp"

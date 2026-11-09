@@ -32,6 +32,7 @@ pub mod popups;
 pub mod reminder;
 pub mod report;
 pub mod runner;
+pub mod suggestions;
 pub mod ui;
 pub mod visualizer;
 pub mod web;

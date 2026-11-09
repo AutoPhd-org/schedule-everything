@@ -104,6 +104,16 @@ pub enum Command {
     )]
     Sync(SyncArgs),
 
+    /// Tasks suggested by AI agents, waiting for your review
+    #[command(
+        long_about = "Tasks an AI agent suggests. They wait on the browser task board, marked as suggestions, until you accept or reject them there. Without subcommand, lists the suggestions waiting for review.",
+        subcommand_help_heading = "Suggestion commands"
+    )]
+    Suggest {
+        #[command(subcommand)]
+        command: Option<SuggestCommand>,
+    },
+
     /// Validate the schedule configuration files
     #[command(
         long_about = "Validate settings.toml, the week schedules, habits.toml, and ddl.json in the active config directory (or --dir), including that every schedule label is defined in settings.toml."
@@ -173,6 +183,27 @@ pub enum DdlCommand {
     /// Delete one or more deadline events
     #[command(long_about = "Remove deadlines by their event names.")]
     Rm(DdlRmArgs),
+}
+
+/// `rmd suggest` subcommands.
+#[derive(Subcommand, Debug, PartialEq, Eq)]
+pub enum SuggestCommand {
+    /// List the suggestions waiting for review
+    #[command(
+        long_about = "List the suggestions waiting for review. With --json, also print the task types, the open tasks, and the user's recent decisions, so an agent can avoid suggesting a task twice."
+    )]
+    Ls(SuggestLsArgs),
+
+    /// Suggest a task for the user to accept or reject
+    #[command(
+        long_about = "Suggest a task. It waits on the browser task board, marked as a suggestion, until the user accepts it (it becomes a normal task) or rejects it. Suggesting the same description again updates the waiting suggestion.",
+        allow_negative_numbers = true
+    )]
+    Add(SuggestAddArgs),
+
+    /// Withdraw suggestions that are still waiting for review
+    #[command(long_about = "Withdraw suggestions that are still waiting for review, by ID or description.")]
+    Rm(SuggestRmArgs),
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
@@ -253,6 +284,51 @@ pub struct DdlRmArgs {
     /// Event names to delete (e.g., 'homework2' 'project')
     #[arg(value_name = "events", required = true, num_args = 1..)]
     pub events: Vec<String>,
+}
+
+#[derive(Args, Debug, PartialEq, Eq)]
+pub struct SuggestLsArgs {
+    /// Print the suggestions, task types, open tasks, and recent decisions as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug, PartialEq, Eq)]
+pub struct SuggestAddArgs {
+    /// Description of the suggested task
+    #[arg(value_name = "task")]
+    pub task: String,
+    /// Priority level 1-10 (higher = more important)
+    #[arg(value_name = "PRIORITY", value_parser = parse_priority)]
+    pub priority: i64,
+    /// Task type ID or name (default: the first type)
+    #[arg(short = 't', long = "type", value_name = "TASK_TYPE")]
+    pub task_type: Option<String>,
+    /// Finish-by time for a timed task, e.g. 2026-11-12T17:00
+    #[arg(long, value_name = "WHEN")]
+    pub due: Option<String>,
+    /// Days to postpone the daily urgent alarm
+    #[arg(long, value_name = "DAYS", value_parser = parse_int)]
+    pub postpone: Option<i64>,
+    /// Why you suggest it, in one sentence the user will read
+    #[arg(long, value_name = "TEXT")]
+    pub reason: Option<String>,
+    /// Where you found it, e.g. Gmail or Calendar
+    #[arg(long, value_name = "TEXT")]
+    pub source: Option<String>,
+    /// Who suggests it, e.g. Claude
+    #[arg(long, value_name = "NAME")]
+    pub agent: Option<String>,
+    /// Suggest it even though the user rejected it before
+    #[arg(long)]
+    pub again: bool,
+}
+
+#[derive(Args, Debug, PartialEq, Eq)]
+pub struct SuggestRmArgs {
+    /// Suggestion IDs or descriptions from 'rmd suggest ls'
+    #[arg(value_name = "suggestions", required = true, num_args = 1..)]
+    pub suggestions: Vec<String>,
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
@@ -908,7 +984,7 @@ fn run_user_command(command: Command) -> i32 {
 }
 
 fn dispatch(command: Command) -> i32 {
-    use commands::{completion, deadlines, habits, history, service, status, sync, tasks};
+    use commands::{completion, deadlines, habits, history, service, status, suggest, sync, tasks};
     match command {
         Command::Web(a) => commands::browser::browser_command(commands::browser::WebRequest {
             no_open: a.no_open,
@@ -937,6 +1013,22 @@ fn dispatch(command: Command) -> i32 {
         Command::Status(a) => status::status_command(a.verbose),
         Command::View => status::view_command(),
         Command::Sync(a) => sync::sync_command(a.json, a.apply.as_deref(), a.clear),
+        Command::Suggest { command } => match command {
+            None => suggest::list_command(false),
+            Some(SuggestCommand::Ls(a)) => suggest::list_command(a.json),
+            Some(SuggestCommand::Add(a)) => suggest::add_command(&crate::suggestions::NewSuggestion {
+                description: a.task,
+                priority: a.priority,
+                task_type: a.task_type,
+                due: a.due,
+                postpone: a.postpone,
+                reason: a.reason,
+                source: a.source,
+                agent: a.agent,
+                again: a.again,
+            }),
+            Some(SuggestCommand::Rm(a)) => suggest::withdraw_command(&a.suggestions),
+        },
         Command::Check(a) => crate::config_check::check_command(a.dir.as_deref(), a.json),
         Command::Update => service::update_command(),
         Command::Stop => service::stop_command(),
@@ -1067,6 +1159,58 @@ mod tests {
     }
 
     #[test]
+    fn parses_suggest_commands() {
+        let _env = TestEnv::new();
+        assert_eq!(parse_ok(&["suggest"]), Command::Suggest { command: None });
+        assert_eq!(
+            parse_ok(&["suggest", "ls", "--json"]),
+            Command::Suggest { command: Some(SuggestCommand::Ls(SuggestLsArgs { json: true })) }
+        );
+        assert_eq!(
+            parse_ok(&[
+                "suggest",
+                "add",
+                "Reply to Lee",
+                "8",
+                "-t",
+                "work",
+                "--due",
+                "2026-11-12T17:00",
+                "--reason",
+                "Asked by Thursday",
+                "--source",
+                "Gmail",
+                "--agent",
+                "Claude",
+                "--again",
+            ]),
+            Command::Suggest {
+                command: Some(SuggestCommand::Add(SuggestAddArgs {
+                    task: "Reply to Lee".into(),
+                    priority: 8,
+                    task_type: Some("work".into()),
+                    due: Some("2026-11-12T17:00".into()),
+                    postpone: None,
+                    reason: Some("Asked by Thursday".into()),
+                    source: Some("Gmail".into()),
+                    agent: Some("Claude".into()),
+                    again: true,
+                }))
+            }
+        );
+        assert_eq!(
+            parse_ok(&["suggest", "rm", "3", "Buy stamps"]),
+            Command::Suggest {
+                command: Some(SuggestCommand::Rm(SuggestRmArgs { suggestions: vec!["3".into(), "Buy stamps".into()] }))
+            }
+        );
+        assert_eq!(
+            error_message(&["suggest", "add", "x", "0"]),
+            "usage: rmd suggest add [-h] [-t TASK_TYPE] [--due WHEN] [--postpone DAYS] [--reason TEXT] [--source TEXT] [--agent NAME] [--again] task PRIORITY\nrmd suggest add: error: argument PRIORITY: invalid choice: '0' (choose from 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
+        );
+    }
+
+    #[test]
     fn parses_internal_commands_verbatim() {
         let _env = TestEnv::new();
         assert_eq!(
@@ -1111,7 +1255,7 @@ mod tests {
         );
         assert_eq!(
             error_message(&["frobnicate"]),
-            "usage: rmd [-h] <command> ...\nrmd: error: argument <command>: invalid choice: 'frobnicate' (choose from web, add, rm, cancel, drop, ls, history, ddl, track, status, view, sync, check, update, stop, switch, report, edit, completion, settings, mode)"
+            "usage: rmd [-h] <command> ...\nrmd: error: argument <command>: invalid choice: 'frobnicate' (choose from web, add, rm, cancel, drop, ls, history, ddl, track, status, view, sync, suggest, check, update, stop, switch, report, edit, completion, settings, mode)"
         );
         assert_eq!(
             error_message(&["ddl", "add", "x"]),

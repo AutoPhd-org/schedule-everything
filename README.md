@@ -33,7 +33,7 @@
   <tr>
     <td width="33%" valign="top">
       <h3>🧠 Your agent plans</h3>
-      Tell Claude Code, Codex, or Antigravity about your life. The <code>build-schedule</code> skill interviews you and writes your weekly routine; <code>plan-day</code> fills today's focus blocks with your real tasks.
+      Tell Claude Code, Codex, or Antigravity about your life. The <code>build-schedule</code> skill interviews you and writes your weekly routine; <code>plan-day</code> fills today's focus blocks with your real tasks; <code>suggest-tasks</code> finds work in your email and calendar and leaves it on your board for you to accept or reject.
     </td>
     <td width="33%" valign="top">
       <h3>⏰ Reminders that stick</h3>
@@ -139,6 +139,7 @@ commands too, and the workspace's **Schedule** page has copy buttons for them.
 | **"Build my weekly schedule"** | `build-schedule` asks about your work, constraints, energy, and habits, shows a plain-language summary, and only after you confirm writes `settings.toml`, `odd_weeks.toml`, `even_weeks.toml`, `habits.toml`, and `profile.md`. It validates them with `rmd check` and reloads reminders. |
 | **"Plan my focus blocks for today"** | `plan-day` reads `rmd sync --json`, matches your most important tasks and nearest deadlines to today's pomodoro and potato blocks, confirms with you, and saves the plan with `rmd sync --apply`. |
 | **"Move my workouts to the evenings"** | Changes become a new `user_config_<n>` version, validated with `rmd check --dir` and activated with `rmd switch <n>`. Earlier versions stay for rollback. |
+| **"Suggest tasks from my email and calendar"** | `suggest-tasks` reads `rmd suggest ls --json`, looks through your connected apps for work you have not captured, and saves a few suggestions with `rmd suggest add`. They wait on the task board, marked as suggestions, until you add or reject each one. Run it on a schedule and new suggestions keep arriving. |
 
 ### 4. Open the workspace
 
@@ -175,6 +176,12 @@ run `rmd mode j|p`.
   slider or a checklist of subtasks. **Fold** turns each group into a summary
   of its importance, progress, and size. Task types are added, renamed, and
   deleted right on the board.
+- **Suggestions from your agent.** Tasks an agent suggests with
+  `rmd suggest add` wait in their type's group, dashed and labeled with who
+  suggested them and why. They are not tasks yet: no reminder, count, or
+  statistic includes them. **Add to my tasks** makes one a normal task,
+  **Adjust** lets you change it first, and **Reject** turns it down so the
+  agent does not suggest it again. Both can be undone.
 - **Timers.** Dials above the board count down to timed tasks due by tonight
   (overdue ones count up) and to deadlines in their last 24 hours. One bar
   shows the progress of today's timed work, optionally weighted by importance.
@@ -304,6 +311,7 @@ fill. A plan changes only today; your weekly files never change.
 | `rmd ddl` · `rmd ddl add <event> <M.D> [--repeat weekly\|biweekly\|monthly]` · `rmd ddl rm <event>…` | List, add, and remove deadlines, including repeating ones |
 | `rmd track [id…]` | Record today's habits (asks about each one when no IDs are given) |
 | `rmd sync [--json \| --apply FILE \| --clear]` | Show, save, or clear today's plan; `--json` and `--apply` are what `plan-day` uses |
+| `rmd suggest [ls [--json]]` · `rmd suggest add "task" 8 [--type T] [--reason …]` · `rmd suggest rm <id>…` | List, add, or withdraw tasks suggested by an AI agent; you accept or reject them on the task board |
 | `rmd check [--dir DIR] [--json]` | Validate a config directory and report its paths |
 | `rmd mode [j\|p]` | Show or switch between J and P mode |
 | `rmd switch <n>` | Activate `user_config_<n>` and reload reminders |
@@ -348,7 +356,7 @@ points `rmd` at a different config root.
 | --- | --- |
 | [`crates/rmd`](crates/rmd) | The `rmd` binary in Rust: CLI, reminder service, local web server, PDF reports |
 | [`web`](web) | The browser workspace in TypeScript, bundled by Vite into `crates/rmd/web-static` |
-| [`plugins/schedule-everything`](plugins/schedule-everything) | The agent plugin and its `build-schedule` and `plan-day` skills |
+| [`plugins/schedule-everything`](plugins/schedule-everything) | The agent plugin and its `build-schedule`, `plan-day`, and `suggest-tasks` skills |
 | [`config`](config) | Templates the installer copies into a new config root |
 | [`documentation`](documentation) | The Docusaurus documentation site |
 | [`tests/golden`](tests/golden) | Recorded CLI and browser API cases that `cargo test` replays |

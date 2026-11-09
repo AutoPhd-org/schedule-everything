@@ -7,6 +7,7 @@ pub mod phone;
 pub mod pyjson;
 pub mod server;
 pub mod services;
+pub mod suggestions;
 pub mod workspace;
 
 /// Carries an existing session token to a replacement server. The launcher

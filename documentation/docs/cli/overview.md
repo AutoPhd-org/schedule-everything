@@ -53,6 +53,7 @@ Commands for managing your task list:
 - [`rmd rm`](task-management.md#rm) - Remove tasks
 - [`rmd ls`](task-management.md#ls) - List all tasks
 - [`rmd history`](task-management.md#history) - Show recent completed task activities
+- [`rmd suggest`](task-management.md#suggest) - List, add, or withdraw tasks suggested by an AI agent
 
 ### Deadline Management
 Commands for managing event deadlines:

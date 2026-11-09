@@ -9,5 +9,6 @@ pub mod service;
 pub mod settings;
 pub mod settings_tui;
 pub mod status;
+pub mod suggest;
 pub mod sync;
 pub mod tasks;

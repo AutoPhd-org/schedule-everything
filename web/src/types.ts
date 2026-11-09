@@ -33,6 +33,27 @@ export type TaskItem = {
   subtasks?: Subtask[];
 };
 
+/** A task an AI agent suggested (`rmd suggest add`). It is not a task yet: it waits on the board, marked as a
+ *  suggestion and left out of every count, until the user accepts it (it becomes a normal task) or rejects it. */
+export type SuggestionItem = {
+  id: string;
+  description: string;
+  priority: number;
+  type: string;
+  typeName: string | null;
+  /** Finish-by time, local `YYYY-MM-DDTHH:MM`, when it would be a timed task. */
+  due?: string | null;
+  /** The daily urgent alarm would wait until this date. */
+  alarmFrom?: string | null;
+  /** Why the agent suggests it, in its own words. */
+  reason?: string | null;
+  /** Where the agent found it, such as Gmail. */
+  source?: string | null;
+  /** Who suggested it, such as Claude. */
+  agent: string;
+  suggestedAt?: string | null;
+};
+
 /** A timed task completed today that was due by tonight; it counts as finished work in today's progress. */
 export type TimedDone = {description: string; priority?: number; type: string | null; due: string; endedAt: string};
 
@@ -201,6 +222,8 @@ export type Snapshot = {
   taskTypeColors?: Record<string, string>;
   history: HistoryItem[];
   timedDone?: TimedDone[];
+  /** Tasks suggested by AI agents, waiting for review. */
+  suggestions?: SuggestionItem[];
 };
 
 export type BridgeClient = {

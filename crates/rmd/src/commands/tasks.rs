@@ -703,6 +703,7 @@ pub fn show_tasks_with(console: &mut Console, type_filter: Option<&str>) -> i32 
 
     if tasks.is_empty() {
         console.print(&format!("[bold yellow]{}[/bold yellow]", t("📋 No tasks found")));
+        suggestion_hint(console);
         return 0;
     }
     let sorted = sort_tasks_by_section_and_priority(&tasks, today, &procrastinated);
@@ -804,7 +805,25 @@ pub fn show_tasks_with(console: &mut Console, type_filter: Option<&str>) -> i32 
         None => tf("Total tasks: {count}", &[("count", &tasks.len())]),
     };
     console.print_justified(&format!("[dim]{footer}[/dim]"), Justify::Right);
+    suggestion_hint(console);
     0
+}
+
+/// Point at the tasks agents suggested, which wait for review on the board and
+/// are not on the list yet.
+fn suggestion_hint(console: &mut Console) {
+    let waiting = crate::suggestions::load_suggestions()
+        .iter()
+        .filter(|item| crate::suggestions::status_of(item) == crate::suggestions::PENDING)
+        .count();
+    let message = match waiting {
+        0 => return,
+        1 => t("✨ 1 suggested task waits for your review on the task board (rmd web)."),
+        count => {
+            tf("✨ {count} suggested tasks wait for your review on the task board (rmd web).", &[("count", &count)])
+        }
+    };
+    console.print(&format!("[magenta]{message}[/magenta]"));
 }
 
 #[cfg(test)]
@@ -1280,6 +1299,30 @@ mod tests {
         let mut console = quiet();
         assert_eq!(cancel_task_with(&mut console, &strings(&["Task 1"])), 1);
         assert!(console.output().contains("Permission denied"));
+    }
+
+    #[test]
+    fn show_tasks_points_at_waiting_suggestions() {
+        let env = env_with(json!([{"description": "Task A", "priority": 3, "type": "1"}]));
+        let mut console = Console::capture(100);
+        show_tasks_with(&mut console, None);
+        assert!(!console.output().contains("suggested"));
+        env.write(
+            "tasks/suggestions.json",
+            r#"[{"id": "1", "description": "Reply", "status": "pending"}, {"id": "2", "description": "Gym", "status": "rejected"}]"#,
+        );
+        let mut console = Console::capture(100);
+        show_tasks_with(&mut console, None);
+        assert!(console.output().ends_with("✨ 1 suggested task waits for your review on the task board (rmd web).\n"));
+        // They are never listed as tasks.
+        assert!(!console.output().contains("Reply"));
+        env.write("tasks/tasks.json", "[]");
+        let mut console = Console::capture(100);
+        show_tasks_with(&mut console, None);
+        assert_eq!(
+            console.output(),
+            "📋 No tasks found\n✨ 1 suggested task waits for your review on the task board (rmd web).\n"
+        );
     }
 
     #[test]

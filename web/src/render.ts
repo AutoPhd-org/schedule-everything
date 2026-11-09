@@ -14,7 +14,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, todayProgress, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
 
@@ -92,7 +92,7 @@ const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string
   codex: {name: "Codex", steps: [`codex plugin marketplace add ${REPOSITORY}`, "codex plugin add schedule-everything@schedule-everything"], note: "The plugin also appears in the ChatGPT desktop app once the marketplace is added."},
   antigravity: {name: "Antigravity", steps: [`git clone https://github.com/${REPOSITORY}.git`, "agy plugin install ./schedule-everything/plugins/schedule-everything"], note: "Antigravity installs the plugin from the cloned folder."}
 };
-const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings"];
+const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings", "Suggest tasks from my email and calendar"];
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
 const isDaily = (value: unknown): value is DailyOverview => !!value && Array.isArray((value as DailyOverview).hours) && typeof (value as DailyOverview).date === "string";
@@ -793,6 +793,72 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
     scope.querySelectorAll<HTMLFormElement>("form.composer").forEach(form => bindComposer(form, s));
     bindTypes(scope, s);
+    bindSuggestions(scope, s);
+  }
+
+  // ----- Task board: suggestions from AI agents ----------------------------------
+
+  const suggestionsOf = (s: Snapshot) => s.suggestions ?? [];
+  function bindSuggestions(scope: HTMLElement, s: Snapshot) {
+    const find = (id: string | undefined) => suggestionsOf(s).find(item => item.id === id);
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-accept]").forEach(btn => btn.onclick = () => {
+      const item = find(btn.dataset.suggestionAccept);
+      if (!item) return;
+      burst(btn, 16);
+      void action(() => acceptSuggestion(item));
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-adjust]").forEach(btn => btn.onclick = () => {
+      const item = find(btn.dataset.suggestionAdjust);
+      if (item) taskDialog(undefined, {suggestion: item});
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-reject]").forEach(btn => btn.onclick = () => {
+      const item = find(btn.dataset.suggestionReject);
+      if (item) rejectSuggestion(item, btn);
+    });
+  }
+  /** Add a suggestion to the user's tasks, as it is or with `adjust` (description, priority, type, due), and greet
+   *  it on the board as one of their own. The notice can take it back. */
+  async function acceptSuggestion(item: SuggestionItem, adjust: Record<string, unknown> = {}) {
+    const result = await request<{task: {description: string; type: string}; undo: Record<string, unknown>}>("suggestion_accept", {...adjust, id: item.id});
+    const {description, type} = result.task;
+    state.board.added = description;
+    await reload({morph: true});
+    offerUndo(`Added “${description}” to ${typeName(state.snapshot!, type)}. It’s one of your tasks now.`, () => takeBack(item, result.undo));
+    status();
+  }
+  function rejectSuggestion(item: SuggestionItem, pressed: HTMLElement) {
+    void action(async () => {
+      const exit = leave(pressed.closest<HTMLElement>(".suggestion"));
+      let result: {undo: Record<string, unknown>};
+      try { result = await request<{undo: Record<string, unknown>}>("suggestion_reject", {id: item.id}); }
+      catch (error) { exit.revert(); throw error; }
+      await exit.done;
+      await reload({morph: true});
+      offerUndo(`Rejected “${item.description}”. It stays off your list.`, () => takeBack(item, result.undo));
+    });
+  }
+  /** Undo an accept or a reject: the suggestion waits for review again. */
+  async function takeBack(item: SuggestionItem, token: Record<string, unknown>) {
+    await request("suggestion_undo", token);
+    await reload({morph: true});
+    state.notice = `“${item.description}” is waiting for your review again.`;
+  }
+  /** A rejected suggestion folds away while the server is told; `revert` brings it back if that fails. */
+  function leave(card: HTMLElement | null): {done: Promise<void>; revert: () => void} {
+    if (!card || reducedMotion()) return {done: Promise.resolve(), revert: () => {}};
+    card.classList.add("is-leaving");
+    const done = new Promise<void>(resolve => {
+      card.addEventListener("animationend", () => resolve(), {once: true});
+      window.setTimeout(resolve, 420);
+    });
+    return {done, revert: () => card.classList.remove("is-leaving")};
+  }
+  /** How many suggestions wait for review, beside the board's heading. */
+  function suggestionPill(s: Snapshot) {
+    const count = suggestionsOf(s).length;
+    if (!count) return "";
+    const agents = [...new Set(suggestionsOf(s).map(item => item.agent))].join(", ");
+    return `<span class="suggestion-pill" data-tip="${e(`Suggested by ${agents}. They sit in their type’s group, dashed, and join your list only when you add them.`)}">${icons.spark}${count} suggested</span>`;
   }
 
   // ----- Task board: managing types ------------------------------------------
@@ -1139,11 +1205,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
-    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
+    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.${suggestionPill(s)}</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
       ${timerArea(s)}${boardArea(s, true)}${dayPanel(dayOptions(s))}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span></h2><p class="muted">${spread() ? "Groups sit by workload: the heaviest in the middle, lighter ones farther out." : "Groups with more important work come first."} They keep their places while you work here, and are arranged anew when you come back.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
+    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span>${suggestionPill(s)}</h2><p class="muted">${spread() ? "Groups sit by workload: the heaviest in the middle, lighter ones farther out." : "Groups with more important work come first."} They keep their places while you work here, and are arranged anew when you come back.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -1169,7 +1235,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const agent = AGENT_SETUP[state.agentTab];
     const planCard = s.schedule.hasSyncedOverlay ? `<article class="card plan-card"><p class="eyebrow">${icons.spark} TODAY’S PLAN</p><h2>Your focus blocks have a purpose.</h2><p class="muted">Your AI agent planned today. Each focus block in the timeline shows its task, and reminders announce it. Your weekly routine is unchanged.</p><div class="button-row">${button("sync-clear", "Clear today’s plan", icons.close, "button ghost danger")}</div></article>` : "";
     return `<div class="page-heading"><div><p class="eyebrow">A RHYTHM THAT WORKS FOR YOU</p><h1>Make a little space<span class="accent-dot">.</span></h1><p class="muted">${e(s.today.parity)} week · ${e(s.today.weekday)} · schedule ${s.config.activeId}</p></div>${button("schedule-pdf", "Download schedule", icons.schedule)}</div><section class="split-grid"><article class="card timeline-card"><div class="section-heading compact"><h2>Today’s timeline</h2><span class="pill light">${s.schedule.events.length} blocks</span></div>${timeline(s)}</article><div>${planCard}
-      <article class="card agent-card"><p class="eyebrow">${icons.spark} PLAN WITH YOUR AI AGENT</p><h2>Let your coding agent build and plan your schedule.</h2><p class="muted">Install the Schedule Everything plugin in Claude Code, Codex, or Antigravity. It interviews you, writes your weekly routine, and fills today’s focus blocks through the local <code>rmd</code> CLI. Your agent sends what it reads to its own model provider.</p>
+      <article class="card agent-card"><p class="eyebrow">${icons.spark} PLAN WITH YOUR AI AGENT</p><h2>Let your coding agent build and plan your schedule.</h2><p class="muted">Install the Schedule Everything plugin in Claude Code, Codex, or Antigravity. It interviews you, writes your weekly routine, fills today’s focus blocks, and suggests tasks from your email and calendar for you to review on the board, through the local <code>rmd</code> CLI. Your agent sends what it reads to its own model provider.</p>
         <div class="agent-tabs" role="tablist" aria-label="Choose your agent">${(Object.keys(AGENT_SETUP) as AgentTab[]).map(id => `<button type="button" role="tab" id="agent-tab-${id}" class="agent-tab" data-agent-tab="${id}" aria-selected="${state.agentTab === id}" aria-controls="agent-panel">${e(AGENT_SETUP[id].name)}</button>`).join("")}</div>
         <div class="agent-panel" role="tabpanel" id="agent-panel" aria-labelledby="agent-tab-${state.agentTab}"><ol class="agent-steps">${agent.steps.map((command, i) => `<li><span class="step-num" aria-hidden="true">${i + 1}</span><code>${e(command)}</code><button type="button" class="icon-button" data-copy="${e(command)}" aria-label="Copy command ${i + 1}">${icons.copy}</button></li>`).join("")}</ol><p class="muted">${e(agent.note)}</p></div>
         <p class="eyebrow try-label">THEN ASK YOUR AGENT</p><div class="prompt-chips">${AGENT_PROMPTS.map(prompt => `<button type="button" class="chip prompt-chip" data-copy="${e(prompt)}" title="Copy prompt">${icons.spark}${e(prompt)}</button>`).join("")}</div></article></div></section>`;
@@ -1516,25 +1582,30 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   // ----- Dialogs ---------------------------------------------------------------
 
-  function dialog(title: string, body: string, submit: (data: FormData) => Promise<void>) {
+  function dialog(title: string, body: string, submit: (data: FormData) => Promise<void>, submitLabel = "Save") {
     root.querySelector("dialog.editor-dialog")?.remove();
-    const el = document.createElement("dialog"); el.className = "editor-dialog"; el.innerHTML = `<form><div class="section-heading"><h2>${title}</h2><button class="icon-button" type="button" aria-label="Close">${icons.close}</button></div>${body}<div class="button-row"><button class="button primary" type="submit">Save</button><button class="button ghost" type="button" data-close>Cancel</button></div><p class="dialog-error" role="alert"></p></form>`;
+    const el = document.createElement("dialog"); el.className = "editor-dialog"; el.innerHTML = `<form><div class="section-heading"><h2>${title}</h2><button class="icon-button" type="button" aria-label="Close">${icons.close}</button></div>${body}<div class="button-row"><button class="button primary" type="submit">${e(submitLabel)}</button><button class="button ghost" type="button" data-close>Cancel</button></div><p class="dialog-error" role="alert"></p></form>`;
     root.append(el); el.showModal();
     el.querySelectorAll<HTMLButtonElement>('button[type="button"]').forEach(btn => btn.onclick = () => { el.close(); el.remove(); });
     el.querySelector("form")!.onsubmit = event => { event.preventDefault(); const btn = el.querySelector<HTMLButtonElement>('[type="submit"]')!; btn.disabled = true; void submit(new FormData(event.target as HTMLFormElement)).then(() => { el.close(); el.remove(); }).catch(error => { el.querySelector(".dialog-error")!.textContent = error instanceof Error ? error.message : String(error); btn.disabled = false; }); };
   }
   /** The task form. A timed task has a finish-by time: due by tonight, it gets a timer above the board.
-   *  `timed` opens the form with the timer on and its time in focus. */
-  function taskDialog(task?: TaskItem, options: {timed?: boolean} = {}) {
-    const timed = options.timed ?? !!task?.due;
-    const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">Timer</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}Timed task</strong><small>Set when it should be finished. Due by tonight, it gets a timer above the board.</small></span></label><label class="timed-due">Finish by<input type="datetime-local" name="due" value="${e(task?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
-    dialog(task ? "Edit task" : "A new thing to work on", `${field("description", "Task", "text", task?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(task?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, task?.type)}</select></label>${timer}`, async data => {
+   *  `timed` opens the form with the timer on and its time in focus. With a `suggestion`, the form starts from
+   *  what an agent suggested, and saving adds it to the user's tasks as they adjusted it. */
+  function taskDialog(task?: TaskItem, options: {timed?: boolean; suggestion?: SuggestionItem} = {}) {
+    const offer = task ? undefined : options.suggestion;
+    const draft = task ?? offer;
+    const timed = options.timed ?? !!draft?.due;
+    const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">Timer</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}Timed task</strong><small>Set when it should be finished. Due by tonight, it gets a timer above the board.</small></span></label><label class="timed-due">Finish by<input type="datetime-local" name="due" value="${e(draft?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
+    const why = offer ? `<p class="dialog-suggestion">${icons.spark}<span>Suggested by <b>${e(offer.agent)}</b>${offer.source ? ` from ${e(offer.source)}` : ""}${offer.reason ? `: ${e(offer.reason)}` : "."}</span></p>` : "";
+    dialog(task ? "Edit task" : offer ? "Adjust, then add it" : "A new thing to work on", `${why}${field("description", "Task", "text", draft?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(draft?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, draft?.type)}</select></label>${timer}`, async data => {
       const due = data.get("timed") ? String(data.get("due") ?? "") : "";
+      if (offer) { await acceptSuggestion(offer, {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due}); return; }
       if (task) await flushTask(task.description);
       await request(task ? "task_update" : "task_add", {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due, originalDescription: task?.description});
       await reload();
       if (due && due !== task?.due) { state.notice = `“${data.get("description")}” is timed: finish by ${formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}.`; status(); }
-    });
+    }, offer ? "Add to my tasks" : "Save");
     const form = root.querySelector<HTMLElement>("dialog.editor-dialog .timed-field");
     const toggle = form?.querySelector<HTMLInputElement>('[name="timed"]');
     const input = form?.querySelector<HTMLInputElement>('[name="due"]');

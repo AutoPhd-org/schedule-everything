@@ -33,7 +33,7 @@
   <tr>
     <td width="33%" valign="top">
       <h3>🧠 智能体负责规划</h3>
-      把你的生活讲给 Claude Code、Codex 或 Antigravity 听。<code>build-schedule</code> 技能会先了解你，再写出你的周计划；<code>plan-day</code> 会把今天的专注块安排成具体任务。
+      把你的生活讲给 Claude Code、Codex 或 Antigravity 听。<code>build-schedule</code> 技能会先了解你，再写出你的周计划；<code>plan-day</code> 会把今天的专注块安排成具体任务；<code>suggest-tasks</code> 会从你的邮件和日历中找出待办，放到任务板上等你确认或拒绝。
     </td>
     <td width="33%" valign="top">
       <h3>⏰ 不会被忽略的提醒</h3>
@@ -239,6 +239,7 @@ rmd web --no-phone    # 关闭手机访问，并让所有手机退出登录
 | `rmd ddl` · `rmd ddl add <事件> <月.日> [--repeat weekly\|biweekly\|monthly]` · `rmd ddl rm <事件>…` | 列出、添加和删除截止日期，包括重复的截止日期 |
 | `rmd track [id…]` | 记录今天的习惯（不带 ID 时逐项询问） |
 | `rmd sync [--json \| --apply FILE \| --clear]` | 显示、保存或清除今日计划；`plan-day` 使用 `--json` 和 `--apply` |
+| `rmd suggest [ls [--json]]` · `rmd suggest add "任务" 8 [--type T] [--reason …]` · `rmd suggest rm <id>…` | 列出、添加或撤回 AI 智能体建议的任务；是否采纳由你在任务板上决定 |
 | `rmd check [--dir DIR] [--json]` | 校验配置目录并给出路径 |
 | `rmd mode [j\|p]` | 查看或切换 J / P 模式 |
 | `rmd switch <n>` | 启用 `user_config_<n>` 并重载提醒 |
@@ -281,7 +282,7 @@ rmd web --no-phone    # 关闭手机访问，并让所有手机退出登录
 | --- | --- |
 | [`crates/rmd`](crates/rmd) | Rust 编写的 `rmd`：命令行、提醒服务、本地 Web 服务器、PDF 报告 |
 | [`web`](web) | TypeScript 编写的浏览器工作区，由 Vite 打包到 `crates/rmd/web-static` |
-| [`plugins/schedule-everything`](plugins/schedule-everything) | 智能体插件及其 `build-schedule` 和 `plan-day` 技能 |
+| [`plugins/schedule-everything`](plugins/schedule-everything) | 智能体插件及其 `build-schedule`、`plan-day` 和 `suggest-tasks` 技能 |
 | [`config`](config) | 安装脚本复制到新配置根目录的模板 |
 | [`documentation`](documentation) | Docusaurus 文档站点 |
 | [`tests/golden`](tests/golden) | `cargo test` 回放的命令行与浏览器 API 记录用例 |
