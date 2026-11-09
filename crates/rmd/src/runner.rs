@@ -745,6 +745,13 @@ pub fn main() -> i32 {
         config.daily_summary_time(),
         config.habit_prompt_time(),
     ));
+    // With phone access on, paired phones expect the workspace whenever this
+    // computer is up, so it starts with the reminders.
+    std::thread::spawn(|| {
+        if let Some(message) = crate::commands::browser::serve_phones() {
+            log_runtime_event(&message);
+        }
+    });
     ScheduleRunner::new(config, weekly).run()
 }
 

@@ -184,8 +184,14 @@ pub struct WebArgs {
     #[arg(long, value_name = "PORT", default_value_t = 0, value_parser = parse_port)]
     pub port: u16,
     /// Only restart a running server that is on outdated code; never start one or open a tab
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["phone", "no_phone"])]
     pub if_running: bool,
+    /// Let your phone use the workspace over Wi-Fi or Tailscale, and show its pairing code
+    #[arg(long, conflicts_with = "no_phone")]
+    pub phone: bool,
+    /// Turn phone access off and sign every phone out
+    #[arg(long)]
+    pub no_phone: bool,
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
@@ -904,7 +910,18 @@ fn run_user_command(command: Command) -> i32 {
 fn dispatch(command: Command) -> i32 {
     use commands::{completion, deadlines, habits, history, service, status, sync, tasks};
     match command {
-        Command::Web(a) => commands::browser::browser_command(a.no_open, a.port, a.if_running),
+        Command::Web(a) => commands::browser::browser_command(commands::browser::WebRequest {
+            no_open: a.no_open,
+            port: a.port,
+            if_running: a.if_running,
+            phone: if a.phone {
+                Some(true)
+            } else if a.no_phone {
+                Some(false)
+            } else {
+                None
+            },
+        }),
         Command::Add(a) => tasks::add_task(a.task.as_deref(), a.priority, a.task_type, a.postpone),
         Command::Rm(a) => tasks::delete_task(&a.tasks),
         Command::Cancel(a) => tasks::cancel_task(&a.tasks),
@@ -1032,7 +1049,11 @@ mod tests {
         );
         assert_eq!(
             parse_ok(&["web", "--no-open", "--port", "8765"]),
-            Command::Web(WebArgs { no_open: true, port: 8765, if_running: false })
+            Command::Web(WebArgs { no_open: true, port: 8765, if_running: false, phone: false, no_phone: false })
+        );
+        assert_eq!(
+            parse_ok(&["web", "--phone"]),
+            Command::Web(WebArgs { no_open: false, port: 0, if_running: false, phone: true, no_phone: false })
         );
         assert_eq!(
             parse_ok(&["sync", "--apply", "-"]),
@@ -1083,6 +1104,10 @@ mod tests {
         assert_eq!(
             error_message(&["sync", "--json", "--clear"]),
             "usage: rmd sync [-h] [--json | --apply FILE | --clear]\nrmd sync: error: argument --clear: not allowed with argument --json"
+        );
+        assert_eq!(
+            error_message(&["web", "--phone", "--no-phone"]),
+            "usage: rmd web [-h] [--no-open] [--port PORT] [--if-running] [--phone] [--no-phone]\nrmd web: error: argument --no-phone: not allowed with argument --phone"
         );
         assert_eq!(
             error_message(&["frobnicate"]),
@@ -1153,7 +1178,7 @@ mod tests {
         );
         assert_eq!(
             help_text(&["web"]),
-            "usage: rmd web [-h] [--no-open] [--port PORT] [--if-running]\n\noptions:\n  -h, --help    show this help message and exit\n  --no-open     Start the local server without opening a browser\n  --port PORT   Local port for a new server (default: automatically chosen)\n  --if-running  Only restart a running server that is on outdated code; never\n                start one or open a tab\n"
+            "usage: rmd web [-h] [--no-open] [--port PORT] [--if-running] [--phone] [--no-phone]\n\noptions:\n  -h, --help    show this help message and exit\n  --no-open     Start the local server without opening a browser\n  --port PORT   Local port for a new server (default: automatically chosen)\n  --if-running  Only restart a running server that is on outdated code; never\n                start one or open a tab\n  --phone       Let your phone use the workspace over Wi-Fi or Tailscale, and\n                show its pairing code\n  --no-phone    Turn phone access off and sign every phone out\n"
         );
         let root = strip_ansi(&help_text(&[]));
         assert!(root.starts_with("usage: rmd [-h] <command> ...\n\nrmd CLI - Manage your schedule management system\n\noptions:\n  -h, --help    show this help message and exit\n\nAvailable commands:\n  <command>\n    web         Open the local browser workspace (reuses an existing tab)\n"));
