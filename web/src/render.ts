@@ -7,6 +7,7 @@ import { boardGroups, boardOrder, boardTaskCard, foldSwitch, groupTasks, layoutS
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { dayPanel } from "./daily";
+import { bindGlossary, glossaryPage, showInGlossary, updateGlossaryValues, type GlossaryContext } from "./glossary";
 import { bindTilt, burst, farewell, reducedMotion, type Farewell } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
 import { bindCategoryPanel, bindPluginControls, bindPluginPage, bindPluginTimers, bindTaskExtras, categoryBar, categoryPanel, describeSuggestion, groupIcon, pluginById, pluginNav, pluginOfType, pluginPage, pluginPageId, pluginsCard, pluginTimers, subtasksFor, taskExtra, tickPluginClocks, type PluginHost } from "./plugins";
@@ -23,7 +24,7 @@ import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, l
 export { escapeHtml, groupTasks };
 
 /** A plugin's page is `plugin:<id>` (see plugins.ts). */
-type Page = "today" | "schedule" | "routines" | "activity" | "settings" | `plugin:${string}`;
+type Page = "today" | "schedule" | "routines" | "activity" | "glossary" | "settings" | `plugin:${string}`;
 type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
 type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; treeLimit: number; loading: boolean};
@@ -43,7 +44,7 @@ type AgentTab = "claude" | "codex" | "antigravity";
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
 /** Deadline timers the user closed, by deadline name and date (see timerKey). */
-type State = {page: Page; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null};
+type State = {page: Page; glossary: string | null; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -87,9 +88,13 @@ function saveClosedTimers(closed: Set<string>, today: string): void {
 }
 
 /** Each page with its name, marked for translation and translated where it is drawn. */
-const PAGES: [Exclude<Page, `plugin:${string}`>, string][] = [["today", msg("Overview")], ["schedule", msg("Schedule")], ["routines", msg("Routines & deadlines")], ["activity", msg("Activity")], ["settings", msg("Settings")]];
+const PAGES: [Exclude<Page, `plugin:${string}`>, string][] = [["today", msg("Overview")], ["schedule", msg("Schedule")], ["routines", msg("Routines & deadlines")], ["activity", msg("Activity")], ["glossary", msg("Glossary")], ["settings", msg("Settings")]];
 const GALLERY_PAGE = 60;
 const TREE_PAGE = 300;
+/** How long a notice stays before it goes away on its own, and how long it lingers once the pointer or focus
+ *  that held it leaves. */
+const NOTICE_MS = 10_000;
+const NOTICE_LINGER_MS = 2_000;
 const REPOSITORY = "AutoPhd-org/schedule-everything";
 const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string}> = {
   claude: {name: "Claude Code", steps: [`claude plugin marketplace add ${REPOSITORY}`, "claude plugin install schedule-everything@schedule-everything"], note: msg("Inside a Claude Code session you can run the same steps as /plugin marketplace add and /plugin install.")},
@@ -134,7 +139,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   let appearance = themePreference();
   applyTheme(appearance);
   const state: State = {
-    page: "today", snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", undo: null, config: null,
+    page: "today", glossary: null, snapshot: null, workspace: null, agentTab: "claude", search: "", busy: false, notice: "", undo: null, config: null,
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
@@ -251,13 +256,33 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     region.classList.remove("leaving");
     region.classList.toggle("visible", !!text);
     region.classList.toggle("busy", state.busy);
+    timeNotice();
   }
+  /** A notice goes away on its own NOTICE_MS after it appears (and its chance to undo with it). Redraws that show
+   *  the same notice keep its clock; "Working on it…" waits for the work to end. While the pointer rests on the
+   *  notice or focus is inside it, it stays, and leaves shortly after. */
+  let noticeTimer = 0;
+  let timedNotice = "";
+  function timeNotice(delay = NOTICE_MS) {
+    if (state.busy || !state.notice) { window.clearTimeout(noticeTimer); timedNotice = ""; return; }
+    if (timedNotice === state.notice && delay === NOTICE_MS) return;
+    window.clearTimeout(noticeTimer);
+    timedNotice = state.notice;
+    noticeTimer = window.setTimeout(() => {
+      if (signal.aborted || state.notice !== timedNotice) return;
+      const region = root.querySelector<HTMLElement>("#notice");
+      if (region && (region.matches(":hover") || region.contains(document.activeElement))) { timeNotice(NOTICE_LINGER_MS); return; }
+      dismissNotice();
+    }, delay);
+  }
+  signal.addEventListener("abort", () => window.clearTimeout(noticeTimer));
   /** Let the notice slide away; a newer notice that arrives meanwhile replaces it. */
   function dismissNotice() {
     const region = root.querySelector<HTMLElement>("#notice");
     if (state.busy || !state.notice || !region) return;
     state.notice = "";
     state.undo = null;
+    timeNotice();
     if (reducedMotion()) { status(); return; }
     region.style.setProperty("--h", `${region.offsetHeight}px`);
     region.classList.add("leaving");
@@ -276,17 +301,54 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const {run} = state.undo!;
     void action(run);
   }
-  function navigate(page: Page) {
+  /** Open a page. `week` opens Activity on the weekly overview. */
+  function navigate(page: Page, options: {week?: boolean} = {}) {
     state.page = page;
     Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null, subtaskComposer: null});
     // Opening a page, even the one already open, places the task board afresh.
     freshBoard();
     state.calendar.day = null;
-    if (page === "activity") state.activity.view = "gallery";
-    draw();
+    if (page === "activity") {
+      state.activity.view = options.week ? "week" : "gallery";
+      if (options.week) state.activity.week = state.activity.summary;
+    }
+    draw(options.week);
     scrollTop();
     if (page === "activity") void refreshActivity();
     if (page === "today") void refreshDaily();
+    if (page === "glossary") void refreshGlossary();
+  }
+
+  // ----- Glossary ------------------------------------------------------------------------------------------
+
+  const glossaryContext = (s: Snapshot): GlossaryContext => ({snapshot: s, daily: state.daily, week: state.activity.summary, weighted: state.prefs.weighted, now: Date.now()});
+  /** Open the glossary at a metric or a section (see glossary.ts). */
+  function openGlossary(target: string | null) {
+    navigate("glossary");
+    if (target) showInGlossary(root, target, reducedMotion());
+  }
+  /** The glossary shows your own numbers beside the metrics: load today's and this week's, then fill them in. */
+  async function refreshGlossary() {
+    try {
+      const [daily, week] = await Promise.all([request<DailyOverview>("daily_overview", {}), request<WeeklyOverview>("weekly_overview", {})]);
+      if (isDaily(daily)) state.daily = daily;
+      if (isOverview(week)) state.activity.summary = week;
+    } catch { /* The glossary keeps the numbers it had. */ }
+    if (state.page === "glossary" && state.snapshot && root.isConnected) updateGlossaryValues(root, glossaryContext(state.snapshot));
+  }
+  /** Follow a glossary link to where a metric shows. */
+  function jumpFromGlossary(target: string) {
+    if (target === "week") navigate("activity", {week: true});
+    else if (target === "day") {
+      navigate("today");
+      if (state.prefs.dayFolded) { state.prefs.dayFolded = false; savePrefs(state.prefs); redrawDaily(); }
+      root.querySelector<HTMLElement>("#day-panel")?.scrollIntoView?.({behavior: reducedMotion() ? "auto" : "smooth", block: "start"});
+    }
+    else if (target === "board") {
+      navigate("today");
+      root.querySelector<HTMLElement>("#board-area")?.scrollIntoView?.({behavior: reducedMotion() ? "auto" : "smooth", block: "start"});
+    }
+    else if (target === "activity" || target === "settings" || target.startsWith("plugin:")) navigate(target as Page);
   }
   /** Forget where the board's groups were, so the next draw orders and places them anew. Only opening a page,
    *  switching mode or layout, and Refresh do this: changes made on the board leave every group in its place. */
@@ -319,7 +381,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const plugin = pluginPageId(state.page) === null ? null : pluginById(s, pluginPageId(state.page)!);
     if (pluginPageId(state.page) !== null && !plugin) { state.page = "today"; drawn = {page: state.page, mode}; }
     const title = plugin ? e(plugin.name) : t(PAGES.find(([id]) => id === state.page)![1]);
-    const page = plugin ? pluginPage(plugin, host) : state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : settings(s);
+    const page = plugin ? pluginPage(plugin, host) : state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : state.page === "glossary" ? glossaryPage(glossaryContext(s)) : settings(s);
     root.innerHTML = `<div class="workspace mode-${mode}"><aside class="sidebar"><a class="brand" href="#" aria-label="${t("Schedule Everything overview")}"><span class="brand-mark">${icons.sprout}</span><span>schedule<span class="brand-sub">everything</span></span></a><div class="workspace-label">${t("YOUR WORKSPACE")}</div>
       <nav aria-label="${t("Main navigation")}">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(t(label))}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${t(label)}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}${pluginNav(s, state.page)}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? t("P mode") : t("J mode")}</strong><span>${mode === "p" ? t("Flexible, task-first") : t("Structured day")}</span></div></div><span class="local-dot"></span> ${t("Saved on your computer")}<p>${t("One day, one thing at a time.")}</p></div></aside>
@@ -393,6 +455,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       root.querySelector<HTMLElement>("[data-day-fold]")?.focus({preventScroll: true});
     };
     root.querySelectorAll<HTMLButtonElement>("#day-panel [data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
+    root.querySelectorAll<HTMLButtonElement>("#day-panel [data-glossary]").forEach(btn => btn.onclick = () => openGlossary(btn.dataset.glossary || null));
   }
 
   function bindShell(s: Snapshot) {
@@ -455,8 +518,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     }));
     root.querySelectorAll<HTMLButtonElement>("[data-agent-tab]").forEach(btn => btn.onclick = () => { state.agentTab = btn.dataset.agentTab as AgentTab; draw(); root.querySelector<HTMLElement>(`#agent-tab-${state.agentTab}`)?.focus(); });
     root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach(btn => btn.onclick = () => void copyText(btn.dataset.copy!));
+    root.querySelectorAll<HTMLButtonElement>("[data-glossary]").forEach(btn => btn.onclick = () => openGlossary(btn.dataset.glossary || null));
     if (state.page === "activity") bindActivity(s);
     if (state.page === "routines") bindCalendar(s);
+    if (state.page === "glossary") bindGlossary(root, {jump: jumpFromGlossary, reducedMotion: reducedMotion()});
     const plugin = pluginPageId(state.page) === null ? null : pluginById(s, pluginPageId(state.page)!);
     if (plugin) bindPluginPage(root, plugin, host);
     bindPluginControls(root, host);
@@ -1729,7 +1794,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || pluginPageId(state.page) !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity", "glossary"].includes(state.page) || pluginPageId(state.page) !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = t("Your existing workspace is ready."); status(); }, {signal});
   root.addEventListener("pointerdown", event => {
     if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();

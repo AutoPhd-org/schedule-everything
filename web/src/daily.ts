@@ -33,6 +33,7 @@ export function dayPanel({overview, snapshot: s, now, weighted, folded}: DayPane
   const head = `<header class="day-head">
       <div class="day-title"><p class="eyebrow">${icons.spark} ${t("DAILY OVERVIEW")}</p><h2>${t("Your day so far")}<span class="accent-dot">.</span></h2></div>
       <span class="pill">${e(formatDate(s.today.date, {weekday: "long", month: "long", day: "numeric"}))}</span>
+      ${folded ? "" : `<button type="button" class="text-button glossary-link" data-glossary="day">${icons.glossary}<span>${t("What do these numbers mean?")}</span></button>`}
       <button type="button" class="day-fold icon-button" data-day-fold aria-expanded="${!folded}" aria-controls="day-body" title="${folded ? t("Show the daily overview") : t("Fold into one line")}">${icons.chevron}<span class="sr-only">${folded ? t("Show the daily overview") : t("Fold the daily overview")}</span></button>
     </header>`;
   if (folded) {
@@ -110,7 +111,7 @@ function loadTile(s: Snapshot): string {
   const typeName = (id: string) => s.taskTypes[id] ?? s.tasks.find(task => task.type === id)?.typeName ?? id;
   const split = types.length ? `<div class="load-split" role="img" aria-label="${e(t("Workload by type: {types}", {types: types.map(([id, points]) => `${typeName(id)} ${points.toFixed(1)}`).join(", ")}))}">${types.map(([id, points]) => `<i class="${sw(typeSwatch(s.taskTypes, id))}" style="flex-grow:${points.toFixed(2)}" data-tip="${e(`${typeName(id)}: ${points.toFixed(1)}`)}"></i>`).join("")}</div>
       <div class="legend">${types.slice(0, 4).map(([id, points]) => `<span class="${sw(typeSwatch(s.taskTypes, id))}"><i></i>${e(typeName(id))} <b>${points.toFixed(1)}</b></span>`).join("")}</div>` : "";
-  return `<article class="dp-tile dp-load load-${load.level}"><p class="dp-label">${icons.gauge}${t("Workload")} <span class="dp-help" data-tip="${e(t(WORKLOAD_DEFINITION))}" tabindex="0" aria-label="${e(t(WORKLOAD_DEFINITION))}">?</span></p>
+  return `<article class="dp-tile dp-load load-${load.level}"><p class="dp-label">${icons.gauge}${t("Workload")} <button type="button" class="dp-help" data-glossary="workload" data-tip="${e(t(WORKLOAD_DEFINITION))}" aria-label="${e(`${t(WORKLOAD_DEFINITION)} ${t("Open the glossary.")}`)}">?</button></p>
       <div class="gauge" role="img" aria-label="${e(describeLoad(load))}"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="gauge-track" d="M10 62 A50 50 0 0 1 110 62"/><path class="gauge-fill" d="M10 62 A50 50 0 0 1 110 62" pathLength="100" stroke-dasharray="${(Math.min(load.points, scale) / scale * 100).toFixed(2)} 100"/>${ticks}</svg>
         <div class="gauge-read"><span class="gauge-icon">${info.icon}</span><strong>${load.points.toFixed(1)}</strong><span>${e(info.label)}</span></div></div>
       <p class="dp-note">${load.counted ? tn("{count} open task · importance {importance} on average · {done}% done", "{count} open tasks · importance {importance} on average · {done}% done", load.counted, {importance: load.importance ?? "", done: load.done}) : t("No open tasks.")}</p>

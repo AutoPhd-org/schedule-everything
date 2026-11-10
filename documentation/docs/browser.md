@@ -34,6 +34,7 @@ files can be repaired in the browser.
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
+| Glossary | Look up any number the workspace shows: what it measures, how it is counted, an example, your own current value, and where to find it |
 | Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; pick the interface language (English, 中文, Español, 한국어); choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
 
 ## J mode and P mode
@@ -242,7 +243,9 @@ and has an **Undo** button (or press **⌘Z** / **Ctrl+Z** when you are not typi
 in a field). Undo puts the task back where it was, with its importance, type,
 progress, finish-by time, postponed date, and deferral, and takes the completion out of your history and
 reports. Cancel and drop can be undone the same way. You can undo until the
-notice is dismissed or replaced by your next action.
+notice is dismissed or replaced by your next action. A notice goes away on its
+own after 10 seconds; while your pointer rests on it, or focus is inside it, it
+stays.
 
 To add a task to a group, click **Add a task** at the bottom of the group, type
 it, set its importance, and press **Enter**. The form stays open for the next
@@ -398,6 +401,18 @@ your workload as a gauge with its split by type, how far along today's timed
 work and all your open tasks are, your streak and habits, and the most
 important things you finished. Fold it into one line with the arrow in its
 corner; the choice is remembered in this browser.
+
+## Glossary
+
+The **Glossary** page explains every number in the workspace, from importance
+and workload to the weekly overview, the rhythm grid, and plugin metrics such as
+volume and the estimated one-rep max. Each metric has a small animated picture,
+how it is counted as a formula, an example, your own current value when there is
+one, and links to the places that show it. Search finds a metric by any word in
+its explanation; the workload card also lets you try how one task's importance
+and progress add to your workload. Open it from the sidebar, from **What do these
+numbers mean?** on the daily and weekly overviews, or from the **?** beside
+Workload.
 
 ## Plugins
 
