@@ -1,6 +1,6 @@
 {
   "exit": 0,
-  "stdout": "{\"ok\": true, \"data\": {\"description\": \"Call the bank\", \"deleted\": 1, \"undo\": {\"description\": \"Call the bank\", \"action\": \"dropped\", \"tasks\": [{\"index\": 4, \"task\": {\"description\": \"Call the bank\", \"priority\": 6, \"type\": \"1\"}}], \"procrastinated\": {\"since\": null}, \"logged\": [\"2026-11-09T18:30:00+00:00\"]}}}\n",
+  "stdout": "{\"ok\": true, \"data\": {\"description\": \"Call the bank\", \"deleted\": 1, \"undo\": {\"description\": \"Call the bank\", \"action\": \"dropped\", \"tasks\": [{\"index\": 4, \"task\": {\"description\": \"Call the bank\", \"priority\": 6, \"type\": \"1\"}}], \"procrastinated\": {\"since\": null}, \"logged\": [\"2026-11-09T18:30:00+00:00\"], \"pluginEntry\": null}}}\n",
   "stderr": "",
   "files": {
     "tasks/procrastinate.json": "[\n  {\n    \"description\": \"Fix CI pipeline\",\n    \"since\": \"2026-11-01\"\n  }\n]",

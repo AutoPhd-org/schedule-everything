@@ -31,6 +31,8 @@ export type TaskItem = {
   /** How far along the task is, 0–100. */
   progress?: number;
   subtasks?: Subtask[];
+  /** Data for the plugin that owns the task's type, such as a planned workout. */
+  plugin?: Record<string, unknown> | null;
 };
 
 /** A task an AI agent suggested (`rmd suggest add`). It is not a task yet: it waits on the board, marked as a
@@ -52,6 +54,29 @@ export type SuggestionItem = {
   /** Who suggested it, such as Claude. */
   agent: string;
   suggestedAt?: string | null;
+  /** Data for the plugin that owns its type, such as a workout the agent planned. */
+  plugin?: Record<string, unknown> | null;
+};
+
+/** A plugin: a task category with its own page, data, and log (see plugins.ts). It owns one task type, so its
+ *  tasks are ordinary tasks of that type. */
+export type PluginKind = "fitness" | "tracker";
+/** Where a plugin shows up: its own page, its metrics in Activity, a card in the timer row, and whether AI agents
+ *  see its description and data. */
+export type PluginSettings = {page: boolean; activity: boolean; timer: boolean; agent: boolean};
+/** One thing done: a finished task, a logged session or entry, a measurement. `at` is local time. */
+export type PluginLogEntry = {id: string; at: string; kind: string; task?: string; data: any};
+export type PluginItem = {
+  id: string;
+  kind: PluginKind;
+  name: string;
+  description: string;
+  icon: string | null;
+  type: string | null;
+  settings: PluginSettings;
+  state: Record<string, any>;
+  log: PluginLogEntry[];
+  createdAt?: string | null;
 };
 
 /** A timed task completed today that was due by tonight; it counts as finished work in today's progress. */
@@ -225,6 +250,7 @@ export type Snapshot = {
   timedDone?: TimedDone[];
   /** Tasks suggested by AI agents, waiting for review. */
   suggestions?: SuggestionItem[];
+  plugins?: PluginItem[];
 };
 
 export type BridgeClient = {

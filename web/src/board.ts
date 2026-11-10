@@ -57,6 +57,17 @@ export type BoardOptions = {
   subtaskComposer?: SubtaskComposer | null;
 };
 
+/** What plugins (plugins.ts) add to the board: a group's icon, controls on a task's card, a line about a
+ *  suggestion's plugin data, and which types a plugin owns (they are deleted with the plugin, not here). */
+export type BoardHooks = {
+  groupIcon?: (type: string) => string | null;
+  taskExtra?: (task: TaskItem, index: number) => string;
+  suggestionExtra?: (item: SuggestionItem) => string;
+  pluginType?: (type: string) => string | null;
+};
+let hooks: BoardHooks = {};
+export function setBoardHooks(next: BoardHooks): void { hooks = next; }
+
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true});
 /** Names as a list in the active language; English keeps the joiner it always used. */
 const nameList = (names: string[], english: string) => language() === "en" ? names.join(english) : new Intl.ListFormat(locale(), {type: "conjunction"}).format(names);
@@ -150,7 +161,7 @@ function shelfItem(group: TaskGroup, options: BoardOptions): string {
   const open = !!(deleting || composing);
   const classes = ["shelf-item", sw(typeSwatch(s.taskTypes, group.id)), open ? "is-open" : "", options.greet === group.id ? "greet" : "", options.menu === group.id ? "menu-open" : ""].filter(Boolean).join(" ");
   return `<article class="${classes}" data-group="${id}" style="--vt:${groupTransitionName(group.id)}">
-      <div class="shelf-head"><span class="shelf-icon" aria-hidden="true">${icons.tasks}</span>${title}<button type="button" class="shelf-add" data-compose="${id}" aria-label="${t("Add a task to {type}", {type: name})}" title="${t("Add a task")}">${icons.plus}</button>${typeMenu(group, s, null, options.menu === group.id)}</div>
+      <div class="shelf-head">${hooks.groupIcon?.(group.id) ?? `<span class="shelf-icon" aria-hidden="true">${icons.tasks}</span>`}${title}<button type="button" class="shelf-add" data-compose="${id}" aria-label="${t("Add a task to {type}", {type: name})}" title="${t("Add a task")}">${icons.plus}</button>${typeMenu(group, s, null, options.menu === group.id)}</div>
       ${deleting ? deletePanel(group, s, deleting.moveTo) : composing ? `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, composing)}</div>` : ""}
     </article>`;
 }
@@ -180,7 +191,7 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
   const badge = options.layout === "spread" ? `<span class="group-load load-${load.level}" data-tip="${e(describeLoad(load))}">${icons.gauge}<b>${load.points.toFixed(1)}</b></span>` : "";
   const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded && count ? "is-folded" : "", count || offers.length ? "" : "is-cleared", offers.length ? "has-suggestions" : "", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
   return `<article class="${classes}" data-group="${id}" data-load="${load.points}" style="--tilt:${(hash(group.id) % 5 - 2) * 0.6}deg; --shape:${hash(group.name) % 4}; --vt:${groupTransitionName(group.id)}; --g:${order}">
-    ${badge}<header class="group-heading"><span class="group-icon">${icons.tasks}</span>${title}${searching ? (count ? countBadge(count) : "") : typeMenu(group, s, count || !offers.length ? count : null, options.menu === group.id)}${toggle}</header>
+    ${badge}<header class="group-heading">${hooks.groupIcon?.(group.id) ?? `<span class="group-icon">${icons.tasks}</span>`}${title}${searching ? (count ? countBadge(count) : "") : typeMenu(group, s, count || !offers.length ? count : null, options.menu === group.id)}${toggle}</header>
     ${body}${review}
     ${deleting ? "" : `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, options.composer?.type === group.id ? options.composer : null)}</div>`}
   </article>`;
@@ -197,8 +208,9 @@ function typeMenu(group: TaskGroup, s: Snapshot, count: number | null, open: boo
   const name = e(group.name);
   // Deleting needs another type to remain for the tasks and deadlines.
   const lastType = group.id in s.taskTypes && Object.keys(s.taskTypes).length <= 1;
+  const plugin = hooks.pluginType?.(group.id) ?? null;
   return `<span class="group-badge ${open ? "is-open" : ""} ${count === null ? "no-count" : ""}">${count === null ? "" : countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="${t("Options for the type {type}", {type: name})}" title="${t("Rename or delete this type")}">${icons.more}</button>
-    ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>${t("Rename")}</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? `disabled title="${t("Keep at least one task type")}"` : ""}>${icons.trash}<span>${t("Delete type")}</span></button></span>` : ""}</span>`;
+    ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>${t("Rename")}</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? `disabled title="${t("Keep at least one task type")}"` : plugin ? `disabled title="${e(t("This type belongs to the plugin “{plugin}”. Remove the plugin in Settings first.", {plugin}))}"` : ""}>${icons.trash}<span>${t("Delete type")}</span></button></span>` : ""}</span>`;
 }
 
 /** Asks before deleting a type, and where its open tasks (required) and deadlines (optional) should go. */
@@ -234,6 +246,9 @@ function newTypeTile(open: {draft: string} | null): string {
     </form></div>`;
 }
 
+/** A task's card as the board draws it, for pages that list tasks of one type (a plugin's page). */
+export const boardTaskCard = (task: TaskItem, index: number, position: number, now = Date.now(), writing: SubtaskComposer | null = null) => taskCard(task, index, position, now, false, writing);
+
 function taskCard(task: TaskItem, index: number, position: number, now: number, added: boolean, writing: SubtaskComposer | null): string {
   const at = dueAt(task);
   const overdue = at !== null && at <= now;
@@ -252,7 +267,7 @@ function taskCard(task: TaskItem, index: number, position: number, now: number, 
     : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">${t("Make it a timed task…")}</button>`;
   // Without subtasks, a button beside the slider breaks the task down; from then on the subtasks set its progress.
   const breakDown = steps.length || writing ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(t("Add subtasks to {task}", {task: task.description}))}" title="${t("Break it into subtasks. Progress then follows them.")}">${icons.subtaskAdd}</button>`;
-  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {task}", {task: name})}" title="${t("Complete task")}">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: task.priority})}</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="${t("Edit {task}", {task: name})}">${t("Edit")}</button></div>${timer}${deferred}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>${t("More options")}</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">${t("Cancel · added by mistake")}</button><button type="button" data-task="${index}" data-operation="dropped">${t("Drop · no longer pursuing")}</button></details></div>`;
+  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {task}", {task: name})}" title="${t("Complete task")}">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: task.priority})}</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="${t("Edit {task}", {task: name})}">${t("Edit")}</button></div>${timer}${deferred}${hooks.taskExtra?.(task, index) ?? ""}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>${t("More options")}</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">${t("Cancel · added by mistake")}</button><button type="button" data-task="${index}" data-operation="dropped">${t("Drop · no longer pursuing")}</button></details></div>`;
 }
 
 /** A task's checklist: check a subtask off, remove it, or add another; the task's progress follows. */
@@ -295,6 +310,7 @@ export function suggestionCard(item: SuggestionItem, position: number, now = Dat
       <h4 class="suggestion-title">${name}</h4>
       <div class="suggestion-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: item.priority})}</span>${due}${later}</div>
       ${item.reason ? `<p class="suggestion-reason">${e(item.reason)}</p>` : ""}
+      ${hooks.suggestionExtra?.(item) ?? ""}
       <div class="suggestion-actions">
         <button type="button" class="suggestion-accept" data-suggestion-accept="${e(item.id)}" aria-label="${e(t("Add {task} to your tasks", {task: item.description}))}">${icons.check}<span>${t("Add to my tasks")}</span></button>
         <button type="button" class="suggestion-adjust" data-suggestion-adjust="${e(item.id)}" aria-label="${e(t("Adjust {task}, then add it", {task: item.description}))}" title="${t("Change it, then add it")}">${icons.edit}<span>${t("Adjust")}</span></button>

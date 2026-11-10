@@ -151,13 +151,14 @@ export function dueLabel(due: string, now: number): string {
   return formatDate(due, {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
 }
 
-export type TimerOptions = {snapshot: Snapshot; now: number; closed: ReadonlySet<string>; weighted?: boolean};
+/** `extras` are cards plugins add to the row (plugins.ts), after the timers. */
+export type TimerOptions = {snapshot: Snapshot; now: number; closed: ReadonlySet<string>; weighted?: boolean; extras?: string[]};
 
-export function timerStrip({snapshot: s, now, closed, weighted = false}: TimerOptions): string {
+export function timerStrip({snapshot: s, now, closed, weighted = false, extras = []}: TimerOptions): string {
   const timers = collectTimers(s, now, closed);
   const tasks = timers.filter(timer => timer.kind === "task").length;
-  const row = timers.length
-    ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}</div>`
+  const row = timers.length || extras.length
+    ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}${extras.join("")}</div>`
     : `<p class="timer-empty"><span class="timer-empty-icon">${icons.coffee}</span><span>${t("No timers right now. Make a task timed from its card or with <b>New task</b>; deadlines show here in their last 24 hours.")}</span></p>`;
   return `<section class="timers" aria-label="${t("Timers")}">${todayBar(todayProgress(s, now, weighted))}${row}</section>`;
 }

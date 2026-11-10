@@ -322,7 +322,7 @@ fn task_progress_of(task: &Dict) -> i64 {
     progress.clamp(0, 100)
 }
 
-fn require_subtasks(payload: &Dict) -> WebResult<Vec<Value>> {
+pub(crate) fn require_subtasks(payload: &Dict) -> WebResult<Vec<Value>> {
     let Some(Value::Array(raw)) = payload.get("subtasks") else {
         return Err(invalid("subtasks must be a list."));
     };
@@ -619,6 +619,12 @@ fn sorted_tasks() -> Vec<Value> {
                 "subtasks": subtasks_of(&task),
             }),
         ));
+        // Data for the plugin that owns the type, such as a planned workout, when there is any.
+        if let (Some(plugin), Some((_, _, Value::Object(row)))) =
+            (task.get("plugin").filter(|payload| payload.is_object()), normalized.last_mut())
+        {
+            row.insert("plugin".into(), plugin.clone());
+        }
     }
     normalized.sort_by_key(|(section, priority, _)| (*section, std::cmp::Reverse(*priority)));
     normalized.into_iter().map(|(_, _, row)| row).collect()
@@ -782,6 +788,7 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "history": history_rows(Some(5)),
         "timedDone": timed_done_today(current),
         "suggestions": crate::web::suggestions::snapshot_rows(),
+        "plugins": crate::plugins::snapshot_rows(&load_task_types()),
     }))
 }
 
@@ -861,6 +868,8 @@ pub fn task_add(payload: &Dict) -> WebResult {
         }
     }
     let due = require_due(payload)?;
+    let subtasks = if payload.contains_key("subtasks") { require_subtasks(payload)? } else { Vec::new() };
+    let plugin = crate::web::plugins::require_task_payload(payload.get("plugin"))?;
 
     let mut tasks = load_tasks();
     let mut new_task = Dict::new();
@@ -872,6 +881,16 @@ pub fn task_add(payload: &Dict) -> WebResult {
     }
     if let Some(due) = due {
         new_task.insert("due".into(), json!(due));
+    }
+    if !subtasks.is_empty() {
+        let progress = subtask_progress(&subtasks);
+        new_task.insert("subtasks".into(), Value::Array(subtasks));
+        if progress != 0 {
+            new_task.insert("progress".into(), json!(progress));
+        }
+    }
+    if let Some(plugin) = plugin {
+        new_task.insert("plugin".into(), plugin);
     }
     let new_task = Value::Object(new_task);
 
@@ -934,6 +953,16 @@ pub fn task_update(payload: &Dict) -> WebResult {
             }
             None => {
                 updated.shift_remove("due");
+            }
+        }
+    }
+    if payload.contains_key("plugin") {
+        match crate::web::plugins::require_task_payload(payload.get("plugin"))? {
+            Some(plugin) => {
+                updated.insert("plugin".into(), plugin);
+            }
+            None => {
+                updated.shift_remove("plugin");
             }
         }
     }
@@ -1025,8 +1054,18 @@ pub fn task_delete(payload: &Dict) -> WebResult {
     if deleted.is_empty() {
         return Err(WebError::new("not_found", format!("task not found: {description}")));
     }
+    let plugin_log = payload.get("pluginLog").filter(|log| !log.is_null());
+    if plugin_log.is_some_and(|log| !log.is_object()) {
+        return Err(invalid("pluginLog must be an object."));
+    }
     let remaining: Vec<Value> = tasks.into_iter().filter(|task| !field_is(task, "description", &description)).collect();
     save_tasks_or_error(&remaining)?;
+    // A completed task of a plugin's type is logged with the plugin too.
+    let plugin_entry = if action == "deleted" {
+        crate::web::plugins::log_completed_task(&deleted[0]["task"], plugin_log)?
+    } else {
+        None
+    };
     let mut logged = Vec::new();
     for item in &deleted {
         let entry = log_task_or_error(&action, &item["task"], None)?;
@@ -1051,6 +1090,7 @@ pub fn task_delete(payload: &Dict) -> WebResult {
             "tasks": deleted,
             "procrastinated": procrastinated,
             "logged": logged,
+            "pluginEntry": plugin_entry,
         },
     }))
 }
@@ -1148,6 +1188,7 @@ pub fn task_restore(payload: &Dict) -> WebResult {
     if let Some(Value::Object(procrastinated)) = payload.get("procrastinated") {
         restore_procrastinated(&description, procrastinated.get("since").and_then(Value::as_str))?;
     }
+    crate::web::plugins::unlog_completed_task(payload.get("pluginEntry"))?;
     Ok(json!({"description": description, "restored": count}))
 }
 
@@ -1568,6 +1609,11 @@ pub fn task_type_delete(payload: &Dict) -> WebResult {
         .collect();
     if !task_types.contains_key(&type_id) && owned.is_empty() {
         return Err(WebError::new("not_found", format!("task type not found: {type_id}")));
+    }
+    if let Some(plugin) = crate::web::plugins::owner_name(&type_id) {
+        return Err(invalid(format!(
+            "this type belongs to the plugin “{plugin}”. Remove the plugin in Settings first; its tasks then stay as a plain type."
+        )));
     }
     let remaining: Dict =
         task_types.iter().filter(|(key, _)| **key != type_id).map(|(k, v)| (k.clone(), v.clone())).collect();

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::py::{self, Dict};
 use crate::web::services::{self, WebError, WebResult};
-use crate::web::{insights, pyjson, suggestions, workspace};
+use crate::web::{insights, plugins, pyjson, suggestions, workspace};
 
 /// A browser API command.
 pub type Handler = fn(&Dict) -> WebResult;
@@ -24,7 +24,7 @@ fn sync_clear(_payload: &Dict) -> WebResult {
 
 /// Every command the browser can send (except `server_shutdown`, which only
 /// the HTTP server handles).
-pub const COMMANDS: [(&str, Handler); 29] = [
+pub const COMMANDS: [(&str, Handler); 35] = [
     ("config_read", workspace::config_read),
     ("config_save", workspace::config_save),
     ("workspace_info", workspace::workspace_info),
@@ -44,6 +44,12 @@ pub const COMMANDS: [(&str, Handler); 29] = [
     ("suggestion_accept", suggestions::suggestion_accept),
     ("suggestion_reject", suggestions::suggestion_reject),
     ("suggestion_undo", suggestions::suggestion_undo),
+    ("plugin_save", plugins::plugin_save),
+    ("plugin_delete", plugins::plugin_delete),
+    ("plugin_restore", plugins::plugin_restore),
+    ("plugin_state", plugins::plugin_state),
+    ("plugin_log", plugins::plugin_log),
+    ("plugin_log_delete", plugins::plugin_log_delete),
     ("weekly_overview", insights::weekly_overview),
     ("daily_overview", insights::daily_overview),
     ("conference_calendar", crate::conferences::conference_calendar),
