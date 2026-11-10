@@ -214,9 +214,13 @@ describe("activity gallery", () => {
     click('[data-filter-status="cancelled"]');
     expect([...root.querySelectorAll(".gallery-card h4")].map(el => el.textContent)).toEqual(["Wrong task"]);
     click('[data-filter-status="all"]');
-    click('[data-filter-type="2"]');
+    // Viewing one category filters the history and puts that category's summary where the week was.
+    click('[data-category="2"]');
     expect([...root.querySelectorAll(".gallery-card h4")].map(el => el.textContent)).toEqual(["Draft essay"]);
-    click('[data-filter-type="2"]');
+    expect(root.querySelector("#category-panel")?.textContent).toContain("Writing");
+    expect(root.querySelector(".week-entry")).toBeNull();
+    click('[data-category="2"]');
+    expect(root.querySelector(".week-entry")).not.toBeNull();
     click('[data-heat-day="2026-10-05"]');
     expect([...root.querySelectorAll(".gallery-card h4")].map(el => el.textContent)).toEqual(["Ship release"]);
     click('[data-action="clear-day"]'); await flush();

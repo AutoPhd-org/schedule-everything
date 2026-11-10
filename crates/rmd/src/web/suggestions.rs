@@ -14,7 +14,7 @@ use crate::suggestions::{
 };
 use crate::web::services::{
     WebError, WebResult, default_task_type, invalid, iso_date, load_task_types, log_task_or_error, os_error,
-    require_due, require_priority, require_text, save_tasks_or_error, today,
+    require_due, require_priority, require_subtasks, require_text, save_tasks_or_error, today,
 };
 
 fn web_error(error: SuggestionError) -> WebError {
@@ -90,6 +90,8 @@ pub fn suggestion_accept(payload: &Dict) -> WebResult {
     };
     let alarm_from =
         suggestion.get("alarm_from").and_then(Value::as_str).filter(|date| *date > iso_date(today()).as_str());
+    // The browser turns a plugin's data into steps, such as a workout's exercises.
+    let subtasks = if payload.contains_key("subtasks") { require_subtasks(payload)? } else { Vec::new() };
 
     let mut tasks = load_tasks();
     if tasks.iter().any(|task| is_task(task, &description)) {
@@ -104,6 +106,12 @@ pub fn suggestion_accept(payload: &Dict) -> WebResult {
     }
     if let Some(due) = due {
         task.insert("due".into(), json!(due));
+    }
+    if let Some(plugin) = suggestion.get("plugin").filter(|data| data.is_object()) {
+        task.insert("plugin".into(), plugin.clone());
+    }
+    if !subtasks.is_empty() {
+        task.insert("subtasks".into(), Value::Array(subtasks));
     }
     let task = Value::Object(task);
     tasks.push(task.clone());

@@ -4,6 +4,7 @@ pub mod api;
 pub mod fingerprint;
 pub mod insights;
 pub mod phone;
+pub mod plugins;
 pub mod pyjson;
 pub mod server;
 pub mod services;

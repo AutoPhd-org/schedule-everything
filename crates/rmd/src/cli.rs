@@ -322,6 +322,18 @@ pub struct SuggestAddArgs {
     /// Suggest it even though the user rejected it before
     #[arg(long)]
     pub again: bool,
+    /// Data for the plugin that owns the type, as a JSON object (e.g. a planned workout)
+    #[arg(long, value_name = "JSON", value_parser = parse_json_object)]
+    pub plugin_data: Option<String>,
+}
+
+/// Text that is a JSON object (kept as text, so the parsed arguments stay small).
+fn parse_json_object(text: &str) -> Result<String, String> {
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Object(_)) => Ok(text.to_string()),
+        Ok(_) => Err("expected a JSON object".to_string()),
+        Err(error) => Err(format!("invalid JSON: {error}")),
+    }
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
@@ -1026,6 +1038,7 @@ fn dispatch(command: Command) -> i32 {
                 source: a.source,
                 agent: a.agent,
                 again: a.again,
+                plugin_data: a.plugin_data.and_then(|text| serde_json::from_str(&text).ok()),
             }),
             Some(SuggestCommand::Rm(a)) => suggest::withdraw_command(&a.suggestions),
         },
@@ -1195,6 +1208,7 @@ mod tests {
                     source: Some("Gmail".into()),
                     agent: Some("Claude".into()),
                     again: true,
+                    plugin_data: None,
                 }))
             }
         );
@@ -1206,7 +1220,16 @@ mod tests {
         );
         assert_eq!(
             error_message(&["suggest", "add", "x", "0"]),
-            "usage: rmd suggest add [-h] [-t TASK_TYPE] [--due WHEN] [--postpone DAYS] [--reason TEXT] [--source TEXT] [--agent NAME] [--again] task PRIORITY\nrmd suggest add: error: argument PRIORITY: invalid choice: '0' (choose from 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
+            "usage: rmd suggest add [-h] [-t TASK_TYPE] [--due WHEN] [--postpone DAYS] [--reason TEXT] [--source TEXT] [--agent NAME] [--again] [--plugin-data JSON] task PRIORITY\nrmd suggest add: error: argument PRIORITY: invalid choice: '0' (choose from 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)"
+        );
+        let Command::Suggest { command: Some(SuggestCommand::Add(args)) } =
+            parse_ok(&["suggest", "add", "Leg day", "6", "--plugin-data", r#"{"workout": {"name": "Legs"}}"#])
+        else {
+            panic!("expected suggest add");
+        };
+        assert_eq!(args.plugin_data.as_deref(), Some(r#"{"workout": {"name": "Legs"}}"#));
+        assert!(
+            error_message(&["suggest", "add", "x", "5", "--plugin-data", "[1]"]).contains("expected a JSON object")
         );
     }
 

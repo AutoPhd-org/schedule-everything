@@ -3,12 +3,13 @@
 // today's timed tasks and for deadlines in their last 24 hours run above the board, and the daily overview
 // sums up the day. The theme follows the workload (workload.ts) unless that is turned off in Settings.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
-import { boardGroups, boardOrder, foldSwitch, groupTasks, layoutSwitch, masonry, spreadOut, taskBoard, typeShelf, type BoardView, type Composer, type SubtaskComposer } from "./board";
+import { boardGroups, boardOrder, boardTaskCard, foldSwitch, groupTasks, layoutSwitch, masonry, setBoardHooks, spreadOut, taskBoard, typeShelf, type BoardView, type Composer, type SubtaskComposer } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { dayPanel } from "./daily";
 import { bindTilt, burst, farewell, reducedMotion, type Farewell } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
+import { bindCategoryPanel, bindPluginControls, bindPluginPage, bindPluginTimers, bindTaskExtras, categoryBar, categoryPanel, describeSuggestion, groupIcon, pluginById, pluginNav, pluginOfType, pluginPage, pluginPageId, pluginsCard, pluginTimers, subtasksFor, taskExtra, tickPluginClocks, type PluginHost } from "./plugins";
 import { loadPrefs, savePrefs, type BoardLayout, type Prefs } from "./prefs";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, todayProgress, urgency } from "./timers";
@@ -21,7 +22,8 @@ import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, l
 
 export { escapeHtml, groupTasks };
 
-type Page = "today" | "schedule" | "routines" | "activity" | "settings";
+/** A plugin's page is `plugin:<id>` (see plugins.ts). */
+type Page = "today" | "schedule" | "routines" | "activity" | "settings" | `plugin:${string}`;
 type Mode = "j" | "p";
 type ConfigFile = {file: string; content: string; revision: string; activeId: number};
 type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: HistoryItem[] | null; summary: WeeklyOverview | null; week: WeeklyOverview | null; filter: GalleryFilter; limit: number; treeLimit: number; loading: boolean};
@@ -85,7 +87,7 @@ function saveClosedTimers(closed: Set<string>, today: string): void {
 }
 
 /** Each page with its name, marked for translation and translated where it is drawn. */
-const PAGES: [Page, string][] = [["today", msg("Overview")], ["schedule", msg("Schedule")], ["routines", msg("Routines & deadlines")], ["activity", msg("Activity")], ["settings", msg("Settings")]];
+const PAGES: [Exclude<Page, `plugin:${string}`>, string][] = [["today", msg("Overview")], ["schedule", msg("Schedule")], ["routines", msg("Routines & deadlines")], ["activity", msg("Activity")], ["settings", msg("Settings")]];
 const GALLERY_PAGE = 60;
 const TREE_PAGE = 300;
 const REPOSITORY = "AutoPhd-org/schedule-everything";
@@ -143,6 +145,30 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   };
   setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
+  /** What plugin modules may use of the shell. */
+  const host: PluginHost = {
+    root,
+    snapshot: () => state.snapshot!,
+    history: () => state.activity.items,
+    request: (command, payload = {}) => request(command, payload),
+    action: work => action(work),
+    reload: () => reload(),
+    redraw: () => { if (state.snapshot) draw(); },
+    notify: text => { state.notice = text; status(); },
+    offerUndo: (text, run) => { offerUndo(text, run); status(); },
+    navigate: page => navigate(page as Page),
+    bindTasks: scope => { const s = state.snapshot!; bindTasks(scope, s); bindProgress(scope, s); bindSubtasks(scope, s); bindTaskExtras(scope as HTMLElement, host); },
+    taskCard: (task, index, position) => boardTaskCard(task, index, position, Date.now(), state.board.subtaskComposer?.task === task.description ? state.board.subtaskComposer : null)
+  };
+  setBoardHooks({
+    groupIcon: type => state.snapshot ? groupIcon(state.snapshot, type) : null,
+    taskExtra: (task, index) => state.snapshot ? taskExtra(state.snapshot, task, index) : "",
+    suggestionExtra: item => {
+      const line = state.snapshot ? describeSuggestion(state.snapshot, item.type, item.plugin) : "";
+      return line ? `<p class="suggestion-plugin">${icons.zap}<span>${e(line)}</span></p>` : "";
+    },
+    pluginType: type => pluginOfType(state.snapshot, type)?.name ?? null
+  });
   let drawn: {page: Page; mode: Mode} | null = null;
   /** Progress and subtasks set on this page that the server has not confirmed yet, by task. */
   const progressPending = new Map<string, number>();
@@ -289,13 +315,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     // Redrawing the same page keeps it where it was scrolled, even if the board is briefly shorter meanwhile.
     const scroller = document.scrollingElement;
     const scrolled = samePage && scroller ? scroller.scrollTop : null;
-    const title = t(PAGES.find(([id]) => id === state.page)![1]);
-    const page = state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : settings(s);
+    // A plugin page whose plugin was removed falls back to the overview.
+    const plugin = pluginPageId(state.page) === null ? null : pluginById(s, pluginPageId(state.page)!);
+    if (pluginPageId(state.page) !== null && !plugin) { state.page = "today"; drawn = {page: state.page, mode}; }
+    const title = plugin ? e(plugin.name) : t(PAGES.find(([id]) => id === state.page)![1]);
+    const page = plugin ? pluginPage(plugin, host) : state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : settings(s);
     root.innerHTML = `<div class="workspace mode-${mode}"><aside class="sidebar"><a class="brand" href="#" aria-label="${t("Schedule Everything overview")}"><span class="brand-mark">${icons.sprout}</span><span>schedule<span class="brand-sub">everything</span></span></a><div class="workspace-label">${t("YOUR WORKSPACE")}</div>
-      <nav aria-label="${t("Main navigation")}">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(t(label))}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${t(label)}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
+      <nav aria-label="${t("Main navigation")}">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(t(label))}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${t(label)}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}${pluginNav(s, state.page)}</nav>
       <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? t("P mode") : t("J mode")}</strong><span>${mode === "p" ? t("Flexible, task-first") : t("Structured day")}</span></div></div><span class="local-dot"></span> ${t("Saved on your computer")}<p>${t("One day, one thing at a time.")}</p></div></aside>
       <main class="main"><header class="topbar"><span class="breadcrumb">${t("Workspace")} ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}${loadChip(s)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", t("Refresh"), icons.refresh, "button small ghost")}</header>
-      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="${t("Undo ({key})", {key: undoKey()})}">${icons.undo}<span>${t("Undo")}</span></button><button type="button" class="notice-close" data-notice-close aria-label="${t("Dismiss notification")}" title="${t("Dismiss (Esc)")}">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>${t("Let’s get your schedule ready.")}</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">${t("Build a schedule with your AI agent")}</button><button class="button ghost" type="button" data-page="settings">${t("Edit configuration")}</button></div>` : ""}${page}</div></main></div>`;
+      <div class="content page-${plugin ? "plugin" : state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="${t("Undo ({key})", {key: undoKey()})}">${icons.undo}<span>${t("Undo")}</span></button><button type="button" class="notice-close" data-notice-close aria-label="${t("Dismiss notification")}" title="${t("Dismiss (Esc)")}">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>${t("Let’s get your schedule ready.")}</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">${t("Build a schedule with your AI agent")}</button><button class="button ghost" type="button" data-page="settings">${t("Edit configuration")}</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
     state.board.fresh = false;
     if (scrolled !== null && scroller && Math.abs(scroller.scrollTop - scrolled) > 1) scroller.scrollTop = scrolled;
@@ -428,6 +457,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach(btn => btn.onclick = () => void copyText(btn.dataset.copy!));
     if (state.page === "activity") bindActivity(s);
     if (state.page === "routines") bindCalendar(s);
+    const plugin = pluginPageId(state.page) === null ? null : pluginById(s, pluginPageId(state.page)!);
+    if (plugin) bindPluginPage(root, plugin, host);
+    bindPluginControls(root, host);
   }
 
   async function runAction(id: string) {
@@ -686,7 +718,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       changeSubtasks(s, index, steps => [...steps, {text, done: false}], '#board-area form.subtask-form [name="subtaskText"]');
     });
   }
-  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted});
+  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted, extras: pluginTimers(s, Date.now())});
   const timerArea = (s: Snapshot) => `<div id="timer-strip" class="timer-strip">${timerStrip(timerOptions(s))}</div>`;
   /** Redraw only the timers, keeping the row where it was scrolled. */
   function redrawTimers(s: Snapshot) {
@@ -702,6 +734,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindProgress(scope, s);
     bindSubtasks(scope, s);
     bindTasks(scope, s);
+    bindPluginTimers(scope, host);
     scope.querySelectorAll<HTMLButtonElement>("[data-timer-close]").forEach(btn => btn.onclick = () => {
       const key = btn.dataset.timerClose!;
       const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? t("this deadline");
@@ -731,6 +764,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
    *  timer whose urgency changes, or a new day redraws the timers, since what they show changes. */
   let tickDay = "";
   function tick() {
+    tickPluginClocks(root, Date.now());
     const s = state.snapshot;
     if (!s || state.page !== "today" || !root.querySelector("#timer-strip")) return;
     const now = Date.now();
@@ -774,7 +808,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const area = root.querySelector<HTMLElement>("#board-area");
     const board = area?.querySelector<HTMLElement>("#task-board");
     const shelf = area?.querySelector<HTMLElement>("#task-shelf");
-    if (!area || !board || !shelf) return;
+    // A plugin page lists the plugin's tasks instead of the board: it is drawn again as a whole.
+    if (!area || !board || !shelf) { if (pluginPageId(state.page) !== null && state.snapshot) draw(); return; }
     syncBoardOrder(s);
     root.querySelector(".content")?.classList.remove("enter");
     board.classList.toggle("is-uniform", uniformBoard());
@@ -808,6 +843,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     scope.querySelectorAll<HTMLFormElement>("form.composer").forEach(form => bindComposer(form, s));
     bindTypes(scope, s);
     bindSuggestions(scope, s);
+    bindTaskExtras(scope, host);
   }
 
   // ----- Task board: suggestions from AI agents ----------------------------------
@@ -833,6 +869,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   /** Add a suggestion to the user's tasks, as it is or with `adjust` (description, priority, type, due), and greet
    *  it on the board as one of their own. The notice can take it back. */
   async function acceptSuggestion(item: SuggestionItem, adjust: Record<string, unknown> = {}) {
+    // Plugin data, such as a workout an agent planned, becomes the task's steps.
+    const steps = state.snapshot ? subtasksFor(state.snapshot, String(adjust.type ?? item.type), item.plugin) : [];
+    if (steps.length) adjust = {...adjust, subtasks: steps};
     const result = await request<{task: {description: string; type: string}; undo: Record<string, unknown>}>("suggestion_accept", {...adjust, id: item.id});
     const {description, type} = result.task;
     state.board.added = description;
@@ -1280,7 +1319,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const a = state.activity;
     if (a.view === "week" && a.week) return `<div class="page-heading"><div><p class="eyebrow">${icons.spark} ${t("WEEKLY OVERVIEW")}</p><h1>${t("Your week in color")}<span class="accent-dot">.</span></h1><p class="muted">${t("Compared with last week and the weeks before it.")}</p></div></div>${weeklyView(a.week)}`;
     const intro = a.layout === "tree" ? t("Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story.") : t("A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.");
-    return `<div class="page-heading"><div><p class="eyebrow">${t("LOOK HOW FAR YOU’VE COME")}</p><h1>${t("Little wins add up")}<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
+    const bar = a.items ? categoryBar(s, a.items, a.filter.type) : "";
+    const panel = a.items && a.filter.type ? categoryPanel(s, a.items, a.filter.type, Date.now()) : "";
+    return `<div class="page-heading"><div><p class="eyebrow">${t("LOOK HOW FAR YOU’VE COME")}</p><h1>${t("Little wins add up")}<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes, categoryBar: bar, categoryPanel: panel})}`;
   }
   /** Display choices for this browser: the board's layout, the workload theme (with what workload means, its
    *  levels, and where each level starts), and how today's progress counts tasks. */
@@ -1324,7 +1365,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -1362,6 +1403,15 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const resetPaging = () => { a.limit = GALLERY_PAGE; a.treeLimit = TREE_PAGE; };
     root.querySelectorAll<HTMLButtonElement>("[data-filter-status]").forEach(btn => btn.onclick = () => { a.filter.status = btn.dataset.filterStatus as HistoryStatus; resetPaging(); redrawGallery(); });
     root.querySelectorAll<HTMLButtonElement>("[data-filter-type]").forEach(btn => btn.onclick = () => { a.filter.type = a.filter.type === btn.dataset.filterType ? null : btn.dataset.filterType!; resetPaging(); redrawGallery(); });
+    root.querySelectorAll<HTMLButtonElement>("[data-category]").forEach(btn => btn.onclick = () => {
+      const category = btn.dataset.category || null;
+      a.filter.type = a.filter.type === category ? null : category;
+      a.filter.day = null;
+      resetPaging();
+      redrawGallery();
+      root.querySelector<HTMLElement>(`[data-category="${btn.dataset.category}"]`)?.focus({preventScroll: true});
+    });
+    bindCategoryPanel(root, host, a.filter.type);
     root.querySelectorAll<HTMLButtonElement>("[data-layout]").forEach(btn => btn.onclick = () => {
       const layout = btn.dataset.layout as HistoryLayout;
       if (layout === a.layout) return;
@@ -1679,7 +1729,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || pluginPageId(state.page) !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = t("Your existing workspace is ready."); status(); }, {signal});
   root.addEventListener("pointerdown", event => {
     if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();

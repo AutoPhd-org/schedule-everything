@@ -97,6 +97,13 @@ you and stops.
 4. Saves each with `rmd suggest add`, withdraws its earlier suggestions that
    no longer apply with `rmd suggest rm`, and tells you what it suggested.
 
+Workspace plugins you share with agents (**Visible to AI agents** in
+Settings → Plugins; see [Plugins](browser.md#plugins)) appear in
+`rmd suggest ls --json` with their description, data, and latest log entries.
+The agent can then suggest tasks for them, such as a leg workout when your legs
+have rested for a week, and attach the plan with `--plugin-data`. Plugins you
+did not share stay out of what the agent reads.
+
 The agent never adds tasks itself. Suggestions wait on the task board, dashed
 and labeled with who suggested them and why, until you click **Add to my
 tasks** (optionally after **Adjust**) or **Reject**. See

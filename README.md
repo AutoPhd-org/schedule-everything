@@ -241,9 +241,22 @@ started, how long it took, and how that compares with your other tasks.
   </tr>
 </table>
 
+### Plugins: fitness, guitar, Spanish, anything you track
+
+A plugin is a task category with its own page and tracking. Its tasks are
+ordinary tasks of its type, so they show on the board and in Activity, and you
+choose in Settings whether it gets its own page, its own metrics in Activity,
+a card in the timer row, and whether your AI agent may read it to suggest tasks.
+The built-in **Fitness** plugin has a body figure that lights up the muscles
+you trained this week, a workout builder with adjustable units (sets, reps,
+weight, rest), a live session with a rest timer, personal records, and body
+weight. Build your own trackers for practice time, new words, pages read, or
+anything else, each with weekly goals. Activity can be viewed by category, so
+your fitness history and metrics stand on their own.
+
 ### Settings
 
-Board, workload, and progress preferences; reminder preferences; task and
+Plugins; board, workload, and progress preferences; reminder preferences; task and
 deadline types; and an editor for your configuration files that checks every
 save with the same rules as `rmd check` and refuses to overwrite newer edits.
 

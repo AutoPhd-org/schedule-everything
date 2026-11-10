@@ -104,20 +104,27 @@ export function weekEntry(overview: WeeklyOverview | null): string {
 }
 
 /** The history page: weekly entry and rhythm on top, then filters and the history itself, drawn as a tree or a gallery.
- *  `region` is the rendered history (see galleryGroups and tree.ts's treeView). */
-export function galleryView(options: {items: HistoryItem[] | null; overview: WeeklyOverview | null; filter: GalleryFilter; layout: HistoryLayout; region: string; today: string; taskTypes: Record<string, string>}): string {
+ *  `region` is the rendered history (see galleryGroups and tree.ts's treeView). With a `categoryBar` (plugins.ts),
+ *  Activity can be viewed by one category (`filter.type`): `categoryPanel` then takes the weekly entry's place,
+ *  and the rhythm counts only that category. */
+export function galleryView(options: {items: HistoryItem[] | null; overview: WeeklyOverview | null; filter: GalleryFilter; layout: HistoryLayout; region: string; today: string; taskTypes: Record<string, string>; categoryBar?: string; categoryPanel?: string}): string {
   const {items, overview, filter, layout, today, taskTypes} = options;
   if (!items) return `<section class="activity-top">${weekEntry(overview)}<article class="card rhythm-card loading-shimmer" aria-busy="true"><h2>${t("Your rhythm")}</h2><p class="muted">${t("Loading your history…")}</p></article></section>`;
+  const byCategory = !!options.categoryBar && !!filter.type;
   const counts = {all: items.length, completed: 0, cancelled: 0, dropped: 0};
   for (const item of items) counts[statusOf(item)]++;
   const usedTypes = [...new Set(items.map(item => item.type).filter((type): type is string => !!type))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
   const typeName = (id: string) => taskTypes[id] ?? items.find(item => item.type === id)?.typeName ?? id;
   const tree = layout === "tree";
-  return `<section class="activity-top">${weekEntry(overview)}<article class="card rhythm-card"><div class="section-heading compact"><div><h2>${t("Your rhythm")}</h2><p class="muted">${tree ? t("Each square is a day. Pick one to jump there in the tree.") : t("Each square is a day. Pick one to see what you finished.")}</p></div></div>${rhythm(items, today, filter.day)}</article></section>
+  const rhythmCard = `<article class="card rhythm-card"><div class="section-heading compact"><div><h2>${t("Your rhythm")}</h2><p class="muted">${tree ? t("Each square is a day. Pick one to jump there in the tree.") : t("Each square is a day. Pick one to see what you finished.")}</p></div></div>${rhythm(byCategory ? items.filter(item => item.type === filter.type) : items, today, filter.day)}</article>`;
+  const top = byCategory
+    ? `<div id="category-panel" class="category-panel">${options.categoryPanel ?? ""}</div><section class="activity-top is-category">${rhythmCard}</section>`
+    : `<section class="activity-top">${weekEntry(overview)}${rhythmCard}</section>`;
+  return `${options.categoryBar ?? ""}${top}
     <div class="gallery-filters" role="toolbar" aria-label="${t("Filter task history")}">
       <div class="layout-switch" role="group" aria-label="${t("History layout")}">${([["tree", t("Tree"), icons.tree], ["gallery", t("Gallery"), icons.gallery]] as const).map(([id, label, image]) => `<button type="button" data-layout="${id}" aria-pressed="${layout === id}">${image}<span>${label}</span></button>`).join("")}</div>
       <div class="chip-row" role="group" aria-label="${t("Outcome")}">${(["all", "completed", "cancelled", "dropped"] as const).map(status => `<button type="button" class="chip ${status === "all" ? "" : OUTCOME_TONE[status]}" data-filter-status="${status}" aria-pressed="${filter.status === status}">${status === "all" ? icons.gallery : STATUS_ICON[status]}${status === "all" ? t("Everything") : t(STATUS_LABEL[status])}<b>${counts[status]}</b></button>`).join("")}</div>
-      ${usedTypes.length > 1 ? `<div class="chip-row" role="group" aria-label="${t("Task type")}">${usedTypes.map(type => `<button type="button" class="chip type-chip ${sw(typeSwatch(taskTypes, type))}" data-filter-type="${e(type)}" aria-pressed="${filter.type === type}"><i></i>${e(typeName(type))}</button>`).join("")}</div>` : ""}
+      ${usedTypes.length > 1 && !options.categoryBar ? `<div class="chip-row" role="group" aria-label="${t("Task type")}">${usedTypes.map(type => `<button type="button" class="chip type-chip ${sw(typeSwatch(taskTypes, type))}" data-filter-type="${e(type)}" aria-pressed="${filter.type === type}"><i></i>${e(typeName(type))}</button>`).join("")}</div>` : ""}
       <label class="search-pill">${icons.search}<span class="sr-only">${t("Search history")}</span><input name="gallerySearch" placeholder="${t("Search your wins…")}" value="${e(filter.query)}"></label>
       ${tree ? "" : `<label class="sort-pill"><span class="sr-only">${t("Sort")}</span><select name="gallerySort">${([["newest", t("Newest first")], ["oldest", t("Oldest first")], ["priority", t("Most important")], ["longest", t("Longest journey")]] as const).map(([value, label]) => `<option value="${value}" ${filter.sort === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`}
       ${filter.day ? `<button type="button" class="chip active-day" data-action="clear-day">${icons.schedule}${e(formatDate(filter.day, {weekday: "short", month: "short", day: "numeric"}))}${icons.close}</button>` : ""}

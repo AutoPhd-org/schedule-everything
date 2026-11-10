@@ -152,6 +152,20 @@ pub fn resolve_type(task_types: &Dict, value: &str) -> Option<String> {
     task_types.iter().find(|(_, name)| py::py_str(name).to_lowercase() == lowered).map(|(id, _)| id.clone())
 }
 
+/// The type of the plugin with this ID or name (ignoring case), so an agent
+/// can suggest a task for a plugin by the name it saw in `rmd suggest ls --json`.
+fn plugin_type(task_types: &Dict, value: &str) -> Option<String> {
+    let lowered = value.trim().to_lowercase();
+    crate::plugins::load_plugins()
+        .iter()
+        .find(|plugin| {
+            crate::plugins::id_of(plugin) == value.trim()
+                || plugin.get("name").and_then(Value::as_str).is_some_and(|name| name.to_lowercase() == lowered)
+        })
+        .and_then(crate::plugins::type_of)
+        .filter(|type_id| task_types.contains_key(type_id))
+}
+
 /// A local finish-by time as `YYYY-MM-DDTHH:MM`.
 pub fn parse_due(text: &str) -> SuggestionResult<String> {
     DUE_FORMATS
@@ -184,6 +198,9 @@ pub struct NewSuggestion {
     pub agent: Option<String>,
     /// Suggest it even though the user rejected the same task before.
     pub again: bool,
+    /// Data for the plugin that owns the task's type (`rmd suggest ls --json`
+    /// lists the plugins shared with agents), such as a planned workout.
+    pub plugin_data: Option<Value>,
 }
 
 /// Save a suggestion for the user to review. A pending suggestion with the
@@ -206,11 +223,16 @@ pub fn add_suggestion(new: &NewSuggestion) -> SuggestionResult<(Dict, bool)> {
     let task_types = load_task_types();
     let type_id = match new.task_type.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         None => default_task_type(&task_types),
-        Some(value) => resolve_type(&task_types, value).ok_or_else(|| {
-            let choices =
-                task_types.iter().map(|(id, name)| format!("{id}={}", py::py_str(name))).collect::<Vec<_>>().join(", ");
-            SuggestionError::Invalid(format!("unknown task type: {value}. Choose from: {choices}"))
-        })?,
+        Some(value) => {
+            resolve_type(&task_types, value).or_else(|| plugin_type(&task_types, value)).ok_or_else(|| {
+                let choices = task_types
+                    .iter()
+                    .map(|(id, name)| format!("{id}={}", py::py_str(name)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                SuggestionError::Invalid(format!("unknown task type: {value}. Choose from: {choices}"))
+            })?
+        }
     };
     let due = new.due.as_deref().filter(|d| !d.trim().is_empty()).map(parse_due).transpose()?;
     let alarm_from = match new.postpone {
@@ -226,6 +248,19 @@ pub fn add_suggestion(new: &NewSuggestion) -> SuggestionResult<(Dict, bool)> {
         }
     };
     let reason = one_line(new.reason.as_deref(), REASON_LIMIT, "the reason")?;
+    let plugin_data = match &new.plugin_data {
+        None | Some(Value::Null) => None,
+        Some(data @ Value::Object(_)) if crate::plugins::json_size(data) <= crate::plugins::ENTRY_LIMIT => {
+            Some(data.clone())
+        }
+        Some(Value::Object(_)) => {
+            return Err(SuggestionError::Invalid(format!(
+                "the plugin data can be at most {} KB.",
+                crate::plugins::ENTRY_LIMIT / 1000
+            )));
+        }
+        Some(_) => return Err(SuggestionError::Invalid("the plugin data must be a JSON object.".into())),
+    };
     let source = one_line(new.source.as_deref(), LABEL_LIMIT, "the source")?;
     let agent = one_line(new.agent.as_deref(), LABEL_LIMIT, "the agent name")?;
 
@@ -268,6 +303,9 @@ pub fn add_suggestion(new: &NewSuggestion) -> SuggestionResult<(Dict, bool)> {
     }
     if let Some(source) = source {
         item.insert("source".into(), json!(source));
+    }
+    if let Some(plugin_data) = plugin_data {
+        item.insert("plugin".into(), plugin_data);
     }
     item.insert("agent".into(), json!(agent.unwrap_or_else(|| DEFAULT_AGENT.to_string())));
     item.insert("status".into(), json!(PENDING));
@@ -334,6 +372,7 @@ pub fn suggestion_row(item: &Dict, task_types: &Dict) -> Value {
         "suggestedAt": text("suggested_at"),
         "status": status_of(item),
         "decidedAt": text("decided_at"),
+        "plugin": item.get("plugin").filter(|data| data.is_object()),
     })
 }
 
@@ -376,6 +415,7 @@ pub fn suggest_context() -> Value {
         "openTasks": open_tasks,
         "pending": pending_rows(&items, &task_types),
         "decided": decided.into_iter().map(|item| suggestion_row(item, &task_types)).collect::<Vec<_>>(),
+        "plugins": crate::plugins::agent_rows(&task_types),
         "limits": {"maxPending": MAX_PENDING, "keepDecidedDays": KEEP_DECIDED_DAYS},
     })
 }

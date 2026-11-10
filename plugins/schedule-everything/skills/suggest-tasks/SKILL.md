@@ -31,8 +31,37 @@ Schedule Everything and stop. It prints:
 - `decided`: suggestions the user accepted or rejected in the last
   `limits.keepDecidedDays` days, with `status` and `decidedAt`
 - `limits.maxPending`: how many suggestions can wait at once
+- `plugins`: the workspace plugins the user chose to share with agents (see
+  below); an empty list when they shared none
 
 Read `profile.md` if there is one. It tells you what matters to the user.
+
+### Workspace plugins
+
+A workspace plugin (not to be confused with this agent plugin) is a task
+category the user tracks in detail, such as fitness training, guitar practice,
+or a language. Each one owns a task type (`type`, `typeName`), so its tasks
+are ordinary tasks of that type. You see a plugin only when the user turned on
+**Visible to AI agents** for it. Each entry has:
+
+- `id`, `kind` (`fitness` or `tracker`), `name`, and `description`: what the
+  user wants from it, in their words. Read it first.
+- `state`: its data. A `fitness` plugin has `units` (`kg` or `lb`; weights are
+  always stored in kg), `goal` (workouts per week), `bodyGoal` (kg),
+  `routines` (saved workouts), and `exercises` (the user's own). A `tracker`
+  has `metrics` (`id`, `name`, `kind`: `minutes`, `number`, or `text`, `unit`,
+  and a weekly `goal`).
+- `recentLog`: the latest entries, newest first, each with `at` (local time),
+  `kind`, the `task` it finished, and `data`. Fitness logs `session`
+  (a workout with every set: `units[].exercise`, `units[].sets[]` of `reps`,
+  `weight`, `seconds`, `minutes`, `distance`), `task` (a planned workout
+  completed from the board), and `body` (`weight` in kg). A tracker logs
+  `entry` (`values` by metric id, and a `note`).
+
+Use this to suggest tasks that move the plugin forward: a workout when the
+user is behind on their weekly goal or a muscle group has rested for days, a
+practice session on the piece in their notes, the next lesson. Base each one on
+what the data shows, and say so in `--reason`.
 
 ## 2. Look for work the user has not captured
 
@@ -103,6 +132,28 @@ rmd suggest add "Reply to Prof. Lee about the rebuttal draft" 8 \
 - `--agent` is your name as the user knows you (Claude, Codex, ...).
 - Running the same description again updates the waiting suggestion instead
   of adding a second one.
+- For a workspace plugin, pass its `id` (or its type) as `--type`. A fitness
+  suggestion can carry the workout itself with `--plugin-data`; the user then
+  sees its exercises, and accepting it plans the workout with each exercise as
+  a step and a **Start workout** button:
+
+  ```bash
+  rmd suggest add "Leg day" 6 --type fitness \
+    --reason "Legs last trained Nov 2; 1 of 3 workouts done this week." \
+    --source "Fitness plugin" --agent Claude \
+    --plugin-data '{"workout": {"name": "Leg day", "units": [
+      {"exercise": "squat", "sets": 5, "reps": 5, "weight": 60, "rest": 120},
+      {"exercise": "rdl", "sets": 3, "reps": 10, "weight": 50},
+      {"exercise": "plank", "sets": 3, "seconds": 45}]}}'
+  ```
+
+  Each unit names an `exercise` and its parameters: `sets`, `reps`, `weight`
+  (kg), `seconds`, `minutes`, `distance` (km), and `rest` (seconds). Built-in
+  exercise IDs: `squat`, `deadlift`, `rdl`, `bench`, `incline`, `ohp`, `row`,
+  `pullup`, `pushup`, `dip`, `curl`, `triext`, `lateral`, `lunge`, `legpress`,
+  `calf`, `hipthrust`, `plank`, `sideplank`, `crunch`, `twist`, `burpee`, `run`,
+  `cycle`, `rope`, and `rower`; the user's own are in `state.exercises`. Keep
+  weights near what `recentLog` shows the user lifting.
 
 The command refuses a task that is already on the list, a task the user
 rejected before, and anything past the pending limit. Read its message and

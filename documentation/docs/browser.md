@@ -399,6 +399,67 @@ work and all your open tasks are, your streak and habits, and the most
 important things you finished. Fold it into one line with the arrow in its
 corner; the choice is remembered in this browser.
 
+## Plugins
+
+A plugin is a task category that needs more than a list: fitness training,
+guitar practice, learning Spanish. (These are workspace plugins; the plugin for
+your AI agent is a different thing, described below.) Each plugin owns one
+task type, so its tasks are ordinary tasks of that type: they sit in the type's
+group on the board, run in the timers, and land in the Activity history. On top
+of that, the plugin keeps its own data and log.
+
+Add one in **Settings → Plugins**, from a template (Fitness, Guitar practice,
+Language learning, Reading, or your own tracker). Name it, describe it, pick an
+icon, and choose a new task type or one you already have. Four switches decide
+where it shows up:
+
+- **Own page**: an entry under **Plugins** in the sidebar.
+- **Tracked in Activity**: its own metrics when Activity is viewed by its
+  category.
+- **In the timer row**: a card above the board, such as a workout in progress
+  or a practice timer.
+- **Visible to AI agents**: your agent reads its description and data with
+  `rmd suggest ls --json` and can suggest tasks for it. Off by default.
+
+Removing a plugin keeps its tasks as a plain type; Undo brings the plugin back.
+While a plugin owns a type, the board does not delete that type.
+
+### Fitness
+
+- **Body figure**: the front and back of a body, each muscle shaded by how many
+  sets worked it this week. Hover over a muscle for its sets and when it was
+  last trained; click it to find exercises for it.
+- **Workout builder**: add exercises from the library and adjust each unit
+  (sets, reps, weight, seconds, minutes, distance, rest) with − and +. It
+  estimates the time, volume, calories, and the muscles worked. Start it now,
+  plan it as a task (optionally timed), log it as done, or save it as a
+  routine. Five routines get you started.
+- **Live session**: check off each set (adjusting the reps and weight you
+  actually did), with a rest countdown that chimes when it ends. The session
+  survives a reload and shows in the timer row. Finishing it logs the workout
+  and completes its task.
+- **Progress**: workouts and volume per week against your goal, personal
+  records with an estimated one-rep max, body weight with a goal line, and
+  recent workouts. Weights can be shown in kg or lb.
+
+A planned workout is a task in the plugin's group, with each exercise as a
+step and a **Start workout** button.
+
+### Your own trackers
+
+A tracker records the metrics you define: minutes, numbers with a unit (a
+week counts their total, best, or average), or notes such as the piece or the
+lesson, each with an optional weekly goal. Log a session from its page, or run
+the practice timer and fill in the rest when you stop it. Every logged session
+is also a finished task in Activity.
+
+### Activity by category
+
+Above the Activity history, **View by category** shows one category at a time:
+its finished tasks per week, how many this week and last, and how long they
+took. A plugin tracked in Activity adds its own metrics there, such as the
+fitness body figure, records, and body weight.
+
 ## AI agent plugins
 
 Schedule building and daily planning happen in your own coding agent through
