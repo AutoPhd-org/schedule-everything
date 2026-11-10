@@ -3,10 +3,11 @@
 import {
   AlarmClock, ArrowDownRight, ArrowLeft, Ban, BellRing, CalendarClock, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp,
   ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Ellipsis, Feather, Repeat, Flag, Flame, Gauge,
-  GalleryHorizontalEnd, GripVertical, Hourglass, LayoutDashboard, LayoutGrid, Leaf, ListChecks, ListPlus, ListTodo, Monitor, Moon, Orbit, Palette,
+  GalleryHorizontalEnd, GripVertical, Hourglass, Languages, LayoutDashboard, LayoutGrid, Leaf, ListChecks, ListPlus, ListTodo, Monitor, Moon, Orbit, Palette,
   PartyPopper, Pencil, Plus, RefreshCw, Scale, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown,
   TrendingUp, Trophy, Undo2, Waves, X, Zap
 } from "lucide";
+import { locale, msg, t } from "./i18n";
 
 type SvgNode = readonly [tag: string, attrs: Record<string, string | number>, children?: readonly SvgNode[]];
 
@@ -31,7 +32,7 @@ export const icons = {
   tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft),
   more: icon(Ellipsis), undo: icon(Undo2), subtasks: icon(ListChecks), subtaskAdd: icon(ListPlus), next: icon(CornerDownRight),
   alarm: icon(AlarmClock), ringing: icon(BellRing), due: icon(CalendarClock), coffee: icon(Coffee), party: icon(PartyPopper),
-  gauge: icon(Gauge), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale)
+  gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale)
 };
 
 /** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */
@@ -41,7 +42,12 @@ export const liveClock = `<svg class="live-clock" width="19" height="19" viewBox
 export const PALETTE = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"] as const;
 export type Swatch = (typeof PALETTE)[number];
 export const isSwatch = (value: unknown): value is Swatch => typeof value === "string" && (PALETTE as readonly string[]).includes(value);
-export const swatchLabel = (swatch: Swatch) => swatch[0].toUpperCase() + swatch.slice(1);
+const SWATCH_NAMES: Record<Swatch, string> = {
+  blue: msg("Blue"), orange: msg("Orange"), aqua: msg("Aqua"), yellow: msg("Yellow"),
+  magenta: msg("Magenta"), green: msg("Green"), violet: msg("Violet"), red: msg("Red")
+};
+/** A color's name in the interface language. */
+export const swatchLabel = (swatch: Swatch) => t(SWATCH_NAMES[swatch]);
 
 const typeOrder = (taskTypes: Record<string, string>) => Object.keys(taskTypes).sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
 
@@ -72,15 +78,15 @@ export const empty = (text: string) => `<div class="empty"><span class="empty-bl
 export const button = (id: string, text: string, image = "", classes = "button") => `<button type="button" class="${classes}" data-action="${id}">${image}<span>${text}</span></button>`;
 export const field = (name: string, label: string, type = "text", value = "", attrs = "") => `<label>${label}<input name="${name}" type="${type}" value="${e(value)}" ${attrs}></label>`;
 
-export function swatchPicker(name: string, selected: Swatch | "" , autoLabel = "Auto"): string {
-  return `<fieldset class="swatch-picker"><legend>Color</legend><label class="swatch auto" title="${e(autoLabel)}"><input type="radio" name="${name}" value="" ${selected === "" ? "checked" : ""}><span aria-hidden="true"></span><b class="sr-only">${e(autoLabel)}</b></label>${PALETTE.map(color => `<label class="swatch sw-${color}" title="${swatchLabel(color)}"><input type="radio" name="${name}" value="${color}" ${selected === color ? "checked" : ""}><span aria-hidden="true"></span><b class="sr-only">${swatchLabel(color)}</b></label>`).join("")}</fieldset>`;
+export function swatchPicker(name: string, selected: Swatch | "" , autoLabel = t("Auto")): string {
+  return `<fieldset class="swatch-picker"><legend>${t("Color")}</legend><label class="swatch auto" title="${e(autoLabel)}"><input type="radio" name="${name}" value="" ${selected === "" ? "checked" : ""}><span aria-hidden="true"></span><b class="sr-only">${e(autoLabel)}</b></label>${PALETTE.map(color => `<label class="swatch sw-${color}" title="${swatchLabel(color)}"><input type="radio" name="${name}" value="${color}" ${selected === color ? "checked" : ""}><span aria-hidden="true"></span><b class="sr-only">${swatchLabel(color)}</b></label>`).join("")}</fieldset>`;
 }
 
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
-/** Format an ISO date (YYYY-MM-DD) or datetime in local time without UTC shifts. */
+/** Format an ISO date (YYYY-MM-DD) or datetime in local time without UTC shifts, in the interface language. */
 export function formatDate(value: string, options: Intl.DateTimeFormatOptions): string {
-  const key = JSON.stringify(options);
-  if (!dateFormats.has(key)) dateFormats.set(key, new Intl.DateTimeFormat(undefined, options));
+  const key = `${locale()} ${JSON.stringify(options)}`;
+  if (!dateFormats.has(key)) dateFormats.set(key, new Intl.DateTimeFormat(locale(), options));
   return dateFormats.get(key)!.format(parseLocal(value));
 }
 export function parseLocal(value: string): Date {
@@ -100,7 +106,7 @@ export function addDays(iso: string, days: number): string {
 export const dayDiff = (from: string, to: string) => Math.round((parseLocal(to.slice(0, 10)).getTime() - parseLocal(from.slice(0, 10)).getTime()) / 86400000);
 
 export function formatHours(hours: number): string {
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
-  if (hours < 48) return `${Math.round(hours * 10) / 10}h`;
-  return `${Math.round(hours / 24 * 10) / 10}d`;
+  if (hours < 1) return t("{n}m", {n: Math.max(1, Math.round(hours * 60))});
+  if (hours < 48) return t("{n}h", {n: Math.round(hours * 10) / 10});
+  return t("{n}d", {n: Math.round(hours / 24 * 10) / 10});
 }

@@ -576,8 +576,8 @@ fn picker_multi_select_and_toggle_apply_values() {
     tui.handle_key(Key::Down);
     tui.handle_key(Key::Down);
     tui.handle_key(Key::Enter);
-    assert_eq!(get(&tui, "settings", "language"), Some(json!("zh")));
-    assert_eq!(tui.message, "Set language = zh");
+    assert_eq!(get(&tui, "settings", "language"), Some(json!("es")));
+    assert_eq!(tui.message, "Set language = es");
 
     open_field(&mut tui, "skip_days");
     assert_eq!(tui.picker_selected, BTreeSet::from([0]));
@@ -659,7 +659,7 @@ fn edit_panels_match_the_python_text() {
     let (_dir, mut tui) = editor(FIXTURE);
     open_section(&mut tui, "settings");
     open_field(&mut tui, "language");
-    assert_eq!(plain(&mut tui), "  ▸ en\n    zh\n\n\n  [↑↓] Move  [Enter] Apply\n  [Esc] Cancel");
+    assert_eq!(plain(&mut tui), "  ▸ en\n    zh\n    es\n    ko\n\n\n  [↑↓] Move  [Enter] Apply\n  [Esc] Cancel");
     tui.handle_key(Key::Esc);
     set(&mut tui, "settings", "alarm_interval", json!(10));
     tui.handle_key(Key::Char('q'));

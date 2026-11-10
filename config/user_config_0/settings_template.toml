@@ -3,7 +3,7 @@ sound_file = "/System/Library/Sounds/Ping.aiff"
 alarm_interval = 5  # seconds between alarm repeats
 max_alarm_duration = 300  # maximum alarm duration in seconds (5 minutes)
 skip_days = ["sunday"]
-language = "en"  # Language: "en" for English, "zh" for Chinese. Default is "en".
+language = "en"  # Language: "en" English, "zh" Chinese (中文), "es" Spanish (Español), "ko" Korean (한국어). Default is "en".
 show_tasks_after_change = true  # If true, rmd add/rm prints the rmd ls task table after saving.
 
 [time_blocks]

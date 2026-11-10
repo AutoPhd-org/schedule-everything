@@ -1,5 +1,6 @@
 // Motion helpers: celebratory bursts, the way a task leaves the board, and pointer-driven tilt. All of it is
 // skipped when reduced motion is requested.
+import { msg, t } from "./i18n";
 import { icons } from "./ui";
 
 export function reducedMotion(): boolean {
@@ -73,15 +74,15 @@ export type Exit = {
 };
 
 const TAGS: Record<Farewell, {label: string; icon: string}> = {
-  deleted: {label: "Done", icon: icons.check},
-  cancelled: {label: "Cancelled", icon: icons.ban},
-  dropped: {label: "Dropped", icon: icons.dropped}
+  deleted: {label: msg("Done"), icon: icons.check},
+  cancelled: {label: msg("Cancelled"), icon: icons.ban},
+  dropped: {label: msg("Dropped"), icon: icons.dropped}
 };
 
 /** A small label that floats up from a point and fades, naming what just happened. */
 function tag(at: Point, kind: Farewell): void {
   const label = layer(`float-tag tone-${kind}`, at, 1200);
-  label.innerHTML = `${TAGS[kind].icon}<span>${TAGS[kind].label}</span>`;
+  label.innerHTML = `${TAGS[kind].icon}<span>${t(TAGS[kind].label)}</span>`;
 }
 
 type Step = {keyframes: Keyframe[]; delay: number; duration: number; easing: string};

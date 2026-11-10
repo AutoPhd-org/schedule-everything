@@ -15,12 +15,13 @@ use chrono::NaiveDate;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::commands::settings::SettingsModel;
 use crate::config::{ScheduleConfig, WeeklySchedule};
 use crate::config_check::{config_file_name, validate_content};
 use crate::data::load_mode;
-use crate::paths;
 use crate::py::{self, Dict};
 use crate::web::services::{WebError, WebResult, invalid, os_error, require_text, utf8_error};
+use crate::{i18n, paths};
 
 /// Seconds a service command (`rmd update`, ...) may run.
 const SERVICE_TIMEOUT_SECONDS: u64 = 120;
@@ -147,7 +148,8 @@ fn config_save_with(payload: &Dict, reload: impl FnOnce() -> Dict) -> WebResult 
     Ok(Value::Object(result))
 }
 
-/// Config sets, the active one, the root directory, and the j/p mode.
+/// Config sets, the active one, the root directory, the j/p mode, and the
+/// interface language.
 pub fn workspace_info(_payload: &Dict) -> WebResult {
     let runtime_paths = paths::runtime();
     Ok(json!({
@@ -155,7 +157,74 @@ pub fn workspace_info(_payload: &Dict) -> WebResult {
         "activeId": runtime_paths.active_id,
         "rootDir": runtime_paths.root_dir.display().to_string(),
         "mode": load_mode(),
+        "language": i18n::get_language(),
     }))
+}
+
+/// Save `[settings] language`, which the browser, the CLI, and the reminder
+/// popups all follow. Returns the language now in effect (`REMINDER_LANG`
+/// still wins over the setting).
+pub fn language_set(payload: &Dict) -> WebResult {
+    let requested = require_text(payload, "language")?;
+    let Some(language) = i18n::normalize_language(&requested) else {
+        return Err(invalid(format!("unsupported language: {requested}. Use one of {}.", i18n::LANGUAGES.join(", "))));
+    };
+    let settings_path = crate::web::services::snapshot_runtime_paths().settings_path;
+    if let Some(edited) = with_language(&read(&settings_path)?, language) {
+        std::fs::write(&settings_path, edited).map_err(|e| {
+            WebError::new("storage_error", format!("failed to save settings: {}", os_error(&e, &settings_path)))
+        })?;
+    } else {
+        let mut model = SettingsModel::new(&settings_path)
+            .map_err(|e| WebError::new("config_error", format!("failed to load settings: {e}")))?;
+        model.set("settings", "language", json!(language));
+        model.save().map_err(|e| WebError::new("storage_error", format!("failed to save settings: {e}")))?;
+    }
+    Ok(json!({"language": i18n::get_language()}))
+}
+
+/// `content` (a settings.toml) with `[settings] language` set to `language`,
+/// changing only that line so the file's comments and layout stay as they
+/// are. `None` when it cannot be done that way and still mean the same as the
+/// file with only the language changed; the caller then rewrites the file.
+fn with_language(content: &str, language: &str) -> Option<String> {
+    let assignment = format!("language = \"{language}\"");
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let mut section = String::new();
+    let mut header = None;
+    let mut replaced = false;
+    for (index, line) in lines.iter_mut().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('[') {
+            section = trimmed.trim_start_matches('[').split(']').next().unwrap_or_default().trim().to_string();
+            if section == "settings" {
+                header = Some(index);
+            }
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue };
+        if section != "settings" || key.trim() != "language" {
+            continue;
+        }
+        // Keep whatever follows the quoted value, such as a comment.
+        let value = value.trim_start();
+        let quote = value.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+        let rest = &value[value[1..].find(quote)? + 2..];
+        *line = format!("{}{assignment}{rest}", &line[..line.len() - trimmed.len()]);
+        replaced = true;
+        break;
+    }
+    if !replaced {
+        match header {
+            Some(index) => lines.insert(index + 1, assignment),
+            None => lines.splice(0..0, ["[settings]".to_string(), assignment, String::new()]).for_each(drop),
+        }
+    }
+    let edited = lines.join("\n") + "\n";
+    let mut expected = crate::config::parse_toml_str(content).ok()?;
+    let settings = expected.entry("settings").or_insert_with(|| json!({})).as_object_mut()?;
+    settings.insert("language".into(), json!(language));
+    (crate::config::parse_toml_str(&edited).ok()? == expected).then_some(edited)
 }
 
 /// Run this `rmd` binary with `args`; returns the exit code, stdout, and
@@ -382,6 +451,54 @@ mod tests {
         assert_eq!(info["activeId"], json!(0));
         assert_eq!(info["mode"], json!("j"));
         assert_eq!(info["rootDir"], json!(paths::resolve(env.root()).display().to_string()));
+        assert_eq!(info["language"], json!("en"));
+    }
+
+    #[test]
+    fn language_edits_only_its_own_line() {
+        let template = "# Settings\n[settings]\nalarm_interval = 5  # seconds\nlanguage = \"en\"  # \"en\", \"zh\", \"es\", or \"ko\"\n\n[task_types]\n1 = \"Work\"\n";
+        assert_eq!(
+            with_language(template, "ko").unwrap(),
+            template.replace("language = \"en\"  #", "language = \"ko\"  #")
+        );
+        assert_eq!(with_language("[settings]\nlanguage='zh'\n", "es").unwrap(), "[settings]\nlanguage = \"es\"\n");
+        // A language key in another table is not the setting; the setting goes under [settings].
+        assert_eq!(
+            with_language("[tasks]\nlanguage = \"x\"\n\n[settings]\nsound = 1 # loud\n", "zh").unwrap(),
+            "[tasks]\nlanguage = \"x\"\n\n[settings]\nlanguage = \"zh\"\nsound = 1 # loud\n"
+        );
+        assert_eq!(with_language("", "ko").unwrap(), "[settings]\nlanguage = \"ko\"\n\n");
+        assert_eq!(
+            with_language("# mine\n[task_types]\n1 = \"Work\"\n", "es").unwrap(),
+            "[settings]\nlanguage = \"es\"\n\n# mine\n[task_types]\n1 = \"Work\"\n"
+        );
+        // Shapes it cannot edit in place are left to the full rewrite.
+        assert_eq!(with_language("[settings]\nlanguage = [\"en\"]\n", "zh"), None);
+        assert_eq!(with_language("[settings]\n\"language\" = \"en\"\n", "zh"), None);
+        assert_eq!(with_language("not toml [", "zh"), None);
+    }
+
+    #[test]
+    fn language_set_saves_the_setting_everyone_follows() {
+        let env = TestEnv::with_fixture();
+        for (requested, saved) in [("ko", "ko"), ("Español", "es"), ("zh-CN", "zh"), ("en", "en")] {
+            let result = language_set(&payload(json!({"language": requested}))).unwrap();
+            assert_eq!(result, json!({"language": saved}), "{requested}");
+            assert_eq!(workspace_info(&Dict::new()).unwrap()["language"], json!(saved));
+            let settings = std::fs::read_to_string(env.root().join("user_config_0/settings.toml")).unwrap();
+            assert!(settings.contains(&format!("language = \"{saved}\"")), "{settings}");
+        }
+        let error = language_set(&payload(json!({"language": "fr"}))).unwrap_err();
+        assert_eq!(
+            (error.code.as_str(), error.message.as_str()),
+            ("invalid_input", "unsupported language: fr. Use one of en, zh, es, ko.")
+        );
+        assert_eq!(language_set(&Dict::new()).unwrap_err().code, "invalid_input");
+        let settings = std::fs::read_to_string(env.root().join("user_config_0/settings.toml")).unwrap();
+        assert!(settings.contains("alarm_interval = 5  # seconds between alarm repeats"), "{settings}");
+        // A file the line edit cannot handle is rewritten whole, and still gets the language.
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = [\"en\"]\n");
+        assert_eq!(language_set(&payload(json!({"language": "ko"}))).unwrap(), json!({"language": "ko"}));
     }
 
     #[test]

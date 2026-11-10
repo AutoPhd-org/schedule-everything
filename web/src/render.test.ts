@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "./i18n";
 import { groupTasks, renderApp } from "./render";
 import type { BridgeClient, Snapshot } from "./types";
 
@@ -252,5 +253,43 @@ describe('browser workspace',()=>{
     expect(root.textContent).toContain('Types are managed on the task board');
     click('.page-settings [data-page="today"]');
     expect(root.querySelector('#task-shelf .new-type')).not.toBeNull();
+  });
+});
+
+describe('interface language', () => {
+  afterEach(() => setLanguage('en'));
+
+  it('draws in the language the workspace reports and saves a new choice for the CLI too', async () => {
+    let saved = 'zh';
+    send.mockImplementation(async (command: string, payload: {language?: string}) => {
+      if (command === 'status_snapshot') return structuredClone(snapshot);
+      if (command === 'workspace_info') return {configIds: [0], activeId: 0, mode: 'j', rootDir: '/local/config', language: saved};
+      if (command === 'language_set') { saved = payload.language!; return {language: saved}; }
+      return {};
+    });
+    await renderApp(root, client);
+    expect(document.documentElement.lang).toBe('zh-CN');
+    expect(root.querySelector('[data-page="settings"]')!.getAttribute('title')).toBe('设置');
+    click('[data-page="settings"]');
+    await flush();
+    expect(root.querySelector('.language-card h2')!.textContent).toContain('界面语言');
+    expect(root.querySelector('[data-language="zh"]')!.getAttribute('aria-pressed')).toBe('true');
+    click('[data-language="ko"]');
+    for (let i = 0; i < 4; i++) await flush();
+    expect(send).toHaveBeenCalledWith('language_set', {language: 'ko'});
+    expect(document.documentElement.lang).toBe('ko-KR');
+    expect(root.querySelector('[data-language="ko"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('.language-card h2')!.textContent).toContain('인터페이스 언어');
+    expect(root.querySelector('.notice-text')!.textContent).toContain('한국어');
+    expect(window.localStorage.getItem('schedule-everything-language')).toBe('ko');
+  });
+
+  it('stays in English when the workspace names no language', async () => {
+    await renderApp(root, client);
+    click('[data-page="settings"]');
+    await flush();
+    expect(document.documentElement.lang).toMatch(/^en/);
+    expect(root.querySelector('.language-card h2')!.textContent).toContain('Interface language');
+    expect(root.querySelector('[data-language="en"]')!.getAttribute('aria-pressed')).toBe('true');
   });
 });

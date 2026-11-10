@@ -1,5 +1,6 @@
 // Small SVG and HTML chart primitives: progress rings, organic blob art, and comparison chips.
 // Charts use CSS custom properties for color so they follow the light and dark themes.
+import { t } from "./i18n";
 import { e, hash, icons, sw, type Swatch } from "./ui";
 
 /** Seeded pseudo-random generator so generated art is stable between renders. */
@@ -54,16 +55,17 @@ export function ring(options: {value: number | null; compare?: number | null; si
   return `<figure class="ring ${tone}" style="--size:${size}px" role="img" aria-label="${e(label)}"><svg viewBox="0 0 120 120">${outer}${inner}</svg><figcaption>${center ?? (value === null ? "–" : `${pct(value)}%`)}</figcaption></figure>`;
 }
 
-/** Signed comparison chip with an icon, so direction is never conveyed by color alone. */
+/** Signed comparison chip with an icon, so direction is never conveyed by color alone. `label` is display text
+ *  (the caller translates it); it fills the chip's phrases, such as "{amount} vs {label}". */
 export function delta(current: number | null, reference: number | null, options: {label: string; unit?: string; digits?: number; invert?: boolean; format?: (value: number) => string}): string {
-  if (current === null || reference === null) return `<span class="delta flat">${icons.zap}<span>No ${e(options.label)} yet</span></span>`;
+  if (current === null || reference === null) return `<span class="delta flat">${icons.zap}<span>${t("No {label} yet", {label: e(options.label)})}</span></span>`;
   const diff = current - reference;
   const digits = options.digits ?? 0;
   const rounded = Math.round(diff * 10 ** digits) / 10 ** digits;
-  if (rounded === 0) return `<span class="delta flat"><b aria-hidden="true">=</b><span>Same as ${e(options.label)}</span></span>`;
+  if (rounded === 0) return `<span class="delta flat"><b aria-hidden="true">=</b><span>${t("Same as {label}", {label: e(options.label)})}</span></span>`;
   const better = options.invert ? rounded < 0 : rounded > 0;
   const amount = options.format ? options.format(Math.abs(diff)) : `${Math.abs(rounded)}${options.unit ?? ""}`;
-  return `<span class="delta ${better ? "up" : "down"}">${rounded > 0 ? icons.up : icons.down}<span>${rounded > 0 ? "+" : "−"}${e(amount)} vs ${e(options.label)}</span></span>`;
+  return `<span class="delta ${better ? "up" : "down"}">${rounded > 0 ? icons.up : icons.down}<span>${t("{amount} vs {label}", {amount: `${rounded > 0 ? "+" : "−"}${e(amount)}`, label: e(options.label)})}</span></span>`;
 }
 
 export const pctText = (value: number | null) => value === null ? "–" : `${Math.round(value * 100)}%`;

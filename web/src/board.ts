@@ -13,6 +13,7 @@
 // board under the cursor. They are placed afresh when the page is opened again (see boardOrder).
 // Rendering is pure (state in, HTML out); render.ts owns the board state and binding.
 import { ring } from "./charts";
+import { language, locale, t, tn } from "./i18n";
 import type { BoardLayout } from "./prefs";
 import { dueAt, dueLabel, clockText, isOverdue, progressControl, progressOf } from "./timers";
 import type { Snapshot, SuggestionItem, TaskItem } from "./types";
@@ -57,7 +58,8 @@ export type BoardOptions = {
 };
 
 const byId = (a: string, b: string) => a.localeCompare(b, undefined, {numeric: true});
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+/** Names as a list in the active language; English keeps the joiner it always used. */
+const nameList = (names: string[], english: string) => language() === "en" ? names.join(english) : new Intl.ListFormat(locale(), {type: "conjunction"}).format(names);
 /** The name used for a view transition, stable for a group across redraws. */
 export const groupTransitionName = (id: string) => `tg-${hash(id).toString(36)}`;
 
@@ -71,8 +73,8 @@ export function groupTasks(snapshot: Snapshot, now = Date.now()): TaskGroup[] {
     return groups.get(id)!;
   };
   for (const id of Object.keys(snapshot.taskTypes).sort(byId)) group(id, snapshot.taskTypes[id]);
-  for (const task of snapshot.tasks) group(task.type, snapshot.taskTypes[task.type] ?? task.typeName ?? "Other").tasks.push(task);
-  for (const item of snapshot.suggestions ?? []) group(item.type, snapshot.taskTypes[item.type] ?? item.typeName ?? "Other").suggestions.push(item);
+  for (const task of snapshot.tasks) group(task.type, snapshot.taskTypes[task.type] ?? task.typeName ?? t("Other")).tasks.push(task);
+  for (const item of snapshot.suggestions ?? []) group(item.type, snapshot.taskTypes[item.type] ?? item.typeName ?? t("Other")).suggestions.push(item);
   for (const item of groups.values()) {
     if (!item.tasks.length) continue;
     item.average = Math.round(item.tasks.reduce((sum, task) => sum + task.priority, 0) / item.tasks.length * 10) / 10;
@@ -120,7 +122,7 @@ export function taskBoard(options: BoardOptions): string {
   // Types without tasks wait on the shelf below the board (see typeShelf).
   const matches = (text: string) => text.toLowerCase().includes(needle);
   const groups = needle ? onBoard.map(group => ({...group, tasks: group.tasks.filter(task => matches(task.description)), suggestions: group.suggestions.filter(item => matches(item.description))})).filter(busy) : onBoard;
-  if (!groups.length) return empty(needle ? "No tasks match your search." : "No open tasks. Add one to a type below, or use New task.");
+  if (!groups.length) return empty(needle ? t("No tasks match your search.") : t("No open tasks. Add one to a type below, or use New task."));
   return groups.map((group, order) => groupCard(group, order, options, !needle && options.isFolded(group.id), !!needle)).join("");
 }
 
@@ -131,9 +133,9 @@ export function typeShelf(options: BoardOptions): string {
   const onBoard = new Set(boardGroups(options.snapshot, options.order, options.now).map(group => group.id));
   const waiting = groupTasks(options.snapshot, options.now).filter(group => !busy(group) && !onBoard.has(group.id));
   const heading = waiting.length
-    ? `<header class="shelf-heading"><h3>Types without tasks <span class="count">${waiting.length}</span></h3><p>Add a task to one and it moves up to the board.</p></header>`
+    ? `<header class="shelf-heading"><h3>${t("Types without tasks")} <span class="count">${waiting.length}</span></h3><p>${t("Add a task to one and it moves up to the board.")}</p></header>`
     : "";
-  return `<section class="type-shelf ${waiting.length ? "" : "is-bare"}" aria-label="Types without tasks">${heading}<div class="shelf-items">${waiting.map(group => shelfItem(group, options)).join("")}${newTypeTile(options.newType ?? null)}</div></section>`;
+  return `<section class="type-shelf ${waiting.length ? "" : "is-bare"}" aria-label="${t("Types without tasks")}">${heading}<div class="shelf-items">${waiting.map(group => shelfItem(group, options)).join("")}${newTypeTile(options.newType ?? null)}</div></section>`;
 }
 
 function shelfItem(group: TaskGroup, options: BoardOptions): string {
@@ -143,12 +145,12 @@ function shelfItem(group: TaskGroup, options: BoardOptions): string {
   const deleting = options.deleting?.id === group.id ? options.deleting : null;
   const composing = options.composer?.type === group.id ? options.composer : null;
   const title = options.renaming === group.id
-    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="Name of this type" enterkeyhint="done">`
-    : `<h4 data-type-title="${id}" title="Double-click to rename">${name}</h4>`;
+    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="${t("Name of this type")}" enterkeyhint="done">`
+    : `<h4 data-type-title="${id}" title="${t("Double-click to rename")}">${name}</h4>`;
   const open = !!(deleting || composing);
   const classes = ["shelf-item", sw(typeSwatch(s.taskTypes, group.id)), open ? "is-open" : "", options.greet === group.id ? "greet" : "", options.menu === group.id ? "menu-open" : ""].filter(Boolean).join(" ");
   return `<article class="${classes}" data-group="${id}" style="--vt:${groupTransitionName(group.id)}">
-      <div class="shelf-head"><span class="shelf-icon" aria-hidden="true">${icons.tasks}</span>${title}<button type="button" class="shelf-add" data-compose="${id}" aria-label="Add a task to ${name}" title="Add a task">${icons.plus}</button>${typeMenu(group, s, null, options.menu === group.id)}</div>
+      <div class="shelf-head"><span class="shelf-icon" aria-hidden="true">${icons.tasks}</span>${title}<button type="button" class="shelf-add" data-compose="${id}" aria-label="${t("Add a task to {type}", {type: name})}" title="${t("Add a task")}">${icons.plus}</button>${typeMenu(group, s, null, options.menu === group.id)}</div>
       ${deleting ? deletePanel(group, s, deleting.moveTo) : composing ? `<div class="compose-slot ${options.opening === group.id ? "opening" : ""}">${composer(group, composing)}</div>` : ""}
     </article>`;
 }
@@ -162,10 +164,10 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
   const greeted = !!options.added && group.tasks.some(task => task.description === options.added);
   const deleting = !searching && options.deleting?.id === group.id ? options.deleting : null;
   const load = workload(group.tasks, s.today.date);
-  const toggle = searching || !count ? "" : `<button type="button" class="group-toggle" data-group-toggle="${id}" aria-expanded="${!folded}" aria-label="${folded ? "Show the tasks in" : "Fold"} ${name}" title="${folded ? "Show tasks" : "Fold into a summary"}">${icons.chevron}</button>`;
+  const toggle = searching || !count ? "" : `<button type="button" class="group-toggle" data-group-toggle="${id}" aria-expanded="${!folded}" aria-label="${folded ? t("Show the tasks in {type}", {type: name}) : t("Fold {type}", {type: name})}" title="${folded ? t("Show tasks") : t("Fold into a summary")}">${icons.chevron}</button>`;
   const title = !searching && options.renaming === group.id
-    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="Name of this type" enterkeyhint="done">`
-    : `<h3 data-type-title="${id}" ${searching ? "" : 'title="Double-click to rename"'}>${name}</h3>`;
+    ? `<input class="type-name-input" name="typeName" data-type-name-input="${id}" value="${name}" maxlength="60" autocomplete="off" aria-label="${t("Name of this type")}" enterkeyhint="done">`
+    : `<h3 data-type-title="${id}" ${searching ? "" : `title="${t("Double-click to rename")}"`}>${name}</h3>`;
   const writing = options.subtaskComposer;
   const offers = group.suggestions;
   const body = deleting ? deletePanel(group, s, deleting.moveTo)
@@ -185,9 +187,9 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
 }
 
 /** A group whose tasks were all finished since the page opened keeps its place until the page is opened again. */
-const cleared = () => `<div class="group-cleared"><span class="cleared-icon" aria-hidden="true">${icons.party}</span><p><strong>All done here.</strong><span>This type moves to the shelf the next time you open the page.</span></p></div>`;
+const cleared = () => `<div class="group-cleared"><span class="cleared-icon" aria-hidden="true">${icons.party}</span><p><strong>${t("All done here.")}</strong><span>${t("This type moves to the shelf the next time you open the page.")}</span></p></div>`;
 
-const countBadge = (count: number) => `<span class="group-count" title="${plural(count, "task")}">${count}</span>`;
+const countBadge = (count: number) => `<span class="group-count" title="${tn("{count} task", "{count} tasks", count)}">${count}</span>`;
 
 /** The task count (when given), which gives way to a menu button on hover or focus: rename or delete the type. */
 function typeMenu(group: TaskGroup, s: Snapshot, count: number | null, open: boolean): string {
@@ -195,8 +197,8 @@ function typeMenu(group: TaskGroup, s: Snapshot, count: number | null, open: boo
   const name = e(group.name);
   // Deleting needs another type to remain for the tasks and deadlines.
   const lastType = group.id in s.taskTypes && Object.keys(s.taskTypes).length <= 1;
-  return `<span class="group-badge ${open ? "is-open" : ""} ${count === null ? "no-count" : ""}">${count === null ? "" : countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="Options for the type ${name}" title="Rename or delete this type">${icons.more}</button>
-    ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>Rename</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? 'disabled title="Keep at least one task type"' : ""}>${icons.trash}<span>Delete type</span></button></span>` : ""}</span>`;
+  return `<span class="group-badge ${open ? "is-open" : ""} ${count === null ? "no-count" : ""}">${count === null ? "" : countBadge(count)}<button type="button" class="group-more" data-type-menu="${id}" aria-haspopup="menu" aria-expanded="${open}" aria-label="${t("Options for the type {type}", {type: name})}" title="${t("Rename or delete this type")}">${icons.more}</button>
+    ${open ? `<span class="type-menu" role="menu" aria-label="${name}"><button type="button" role="menuitem" data-type-rename="${id}">${icons.edit}<span>${t("Rename")}</span></button><button type="button" role="menuitem" class="danger" data-type-delete="${id}" ${lastType ? `disabled title="${t("Keep at least one task type")}"` : ""}>${icons.trash}<span>${t("Delete type")}</span></button></span>` : ""}</span>`;
 }
 
 /** Asks before deleting a type, and where its open tasks (required) and deadlines (optional) should go. */
@@ -206,23 +208,29 @@ function deletePanel(group: TaskGroup, s: Snapshot, moveTo: string): string {
   const deadlines = s.deadlines.filter(item => item.type === group.id).length;
   const targets = Object.keys(s.taskTypes).filter(id => id !== group.id).sort(byId);
   const choice = targets.includes(moveTo) ? moveTo : tasks ? targets[0] : "";
-  const what = [tasks ? plural(tasks, "task") : "", deadlines ? plural(deadlines, "deadline") : ""].filter(Boolean).join(" and ");
-  const move = what ? `<label class="type-move"><span>Its ${what} ${tasks + deadlines === 1 ? "moves" : "move"} to</span><select name="moveTo" data-type-move>${tasks ? "" : `<option value="">No type</option>`}${targets.map(id => `<option value="${e(id)}" ${id === choice ? "selected" : ""}>${e(s.taskTypes[id])}</option>`).join("")}</select></label>`
-    : `<p class="type-delete-note">No tasks or deadlines use it.</p>`;
-  return `<div class="type-delete" role="group" aria-label="Delete the type ${name}">
-      <p class="type-delete-title">Delete “${name}”?</p>
+  // Where its tasks and deadlines go, as one sentence for each mix of counts.
+  const moves = tasks && deadlines
+    ? tasks === 1
+      ? tn("Its {tasks} task and {count} deadline move to", "Its {tasks} task and {count} deadlines move to", deadlines, {tasks})
+      : tn("Its {tasks} tasks and {count} deadline move to", "Its {tasks} tasks and {count} deadlines move to", deadlines, {tasks})
+    : tasks ? tn("Its {count} task moves to", "Its {count} tasks move to", tasks)
+    : deadlines ? tn("Its {count} deadline moves to", "Its {count} deadlines move to", deadlines) : "";
+  const move = moves ? `<label class="type-move"><span>${moves}</span><select name="moveTo" data-type-move>${tasks ? "" : `<option value="">${t("No type")}</option>`}${targets.map(id => `<option value="${e(id)}" ${id === choice ? "selected" : ""}>${e(s.taskTypes[id])}</option>`).join("")}</select></label>`
+    : `<p class="type-delete-note">${t("No tasks or deadlines use it.")}</p>`;
+  return `<div class="type-delete" role="group" aria-label="${t("Delete the type {type}", {type: name})}">
+      <p class="type-delete-title">${t("Delete “{type}”?", {type: name})}</p>
       ${move}
-      <div class="type-delete-actions"><button type="button" class="button small delete-type" data-type-delete-confirm="${e(group.id)}">${icons.trash}<span>Delete type</span></button><button type="button" class="button small ghost" data-type-delete-cancel>Keep it</button></div>
+      <div class="type-delete-actions"><button type="button" class="button small delete-type" data-type-delete-confirm="${e(group.id)}">${icons.trash}<span>${t("Delete type")}</span></button><button type="button" class="button small ghost" data-type-delete-cancel>${t("Keep it")}</button></div>
     </div>`;
 }
 
 /** The last item on the shelf: a button that becomes a form for naming a new type. */
 function newTypeTile(open: {draft: string} | null): string {
-  if (!open) return `<div class="new-type" data-slot="new-type"><button type="button" class="new-type-button" data-type-new><span class="new-type-icon">${icons.plus}</span><span>New type</span></button></div>`;
+  if (!open) return `<div class="new-type" data-slot="new-type"><button type="button" class="new-type-button" data-type-new><span class="new-type-icon">${icons.plus}</span><span>${t("New type")}</span></button></div>`;
   return `<div class="new-type is-open" data-slot="new-type"><form class="new-type-form" autocomplete="off">
       <span class="new-type-icon">${icons.tasks}</span>
-      <input name="newTypeName" aria-label="Name of the new type" placeholder="Name a new type…" maxlength="60" value="${e(open.draft)}" enterkeyhint="done">
-      <div class="new-type-actions"><button type="submit" class="composer-add">${icons.enter}<span>Add type</span></button><button type="button" class="composer-close" data-type-new-cancel aria-label="Close the new type form" title="Close (Esc)">${icons.close}</button></div>
+      <input name="newTypeName" aria-label="${t("Name of the new type")}" placeholder="${t("Name a new type…")}" maxlength="60" value="${e(open.draft)}" enterkeyhint="done">
+      <div class="new-type-actions"><button type="submit" class="composer-add">${icons.enter}<span>${t("Add type")}</span></button><button type="button" class="composer-close" data-type-new-cancel aria-label="${t("Close the new type form")}" title="${t("Close (Esc)")}">${icons.close}</button></div>
     </form></div>`;
 }
 
@@ -238,38 +246,39 @@ function taskCard(task: TaskItem, index: number, position: number, now: number, 
   const timer = at !== null
     ? `<p class="task-detail task-timer">${icons.clock}<span><span data-clock="due">${clockText("due", at, now)}</span> ${e(dueLabel(task.due!, now))} · <span data-clock="short">${clockText("short", at, now)}</span> <span data-clock="word">${clockText("word", at, now)}</span></span></p>`
     : "";
-  const deferred = task.procrastinated ? `<p class="task-detail">${icons.hourglass}${e(`Deferred${task.procrastinateDays === null ? "" : ` · ${task.procrastinateDays} days`}`)}</p>` : "";
+  const deferred = task.procrastinated ? `<p class="task-detail">${icons.hourglass}${e(task.procrastinateDays === null ? t("Deferred") : t("Deferred · {days} days", {days: task.procrastinateDays}))}</p>` : "";
   const timing = at !== null
-    ? `<button type="button" class="neutral" data-task="${index}" data-operation="timer">Change the finish time…</button><button type="button" class="neutral" data-task="${index}" data-operation="untime">Stop timing · make it a normal task</button>`
-    : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">Make it a timed task…</button>`;
+    ? `<button type="button" class="neutral" data-task="${index}" data-operation="timer">${t("Change the finish time…")}</button><button type="button" class="neutral" data-task="${index}" data-operation="untime">${t("Stop timing · make it a normal task")}</button>`
+    : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">${t("Make it a timed task…")}</button>`;
   // Without subtasks, a button beside the slider breaks the task down; from then on the subtasks set its progress.
-  const breakDown = steps.length || writing ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(`Add subtasks to ${task.description}`)}" title="Break it into subtasks. Progress then follows them.">${icons.subtaskAdd}</button>`;
-  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}" title="Complete task">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} Importance ${task.priority}/10</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="Edit ${name}">Edit</button></div>${timer}${deferred}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>More options</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">Cancel · added by mistake</button><button type="button" data-task="${index}" data-operation="dropped">Drop · no longer pursuing</button></details></div>`;
+  const breakDown = steps.length || writing ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(t("Add subtasks to {task}", {task: task.description}))}" title="${t("Break it into subtasks. Progress then follows them.")}">${icons.subtaskAdd}</button>`;
+  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {task}", {task: name})}" title="${t("Complete task")}">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: task.priority})}</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="${t("Edit {task}", {task: name})}">${t("Edit")}</button></div>${timer}${deferred}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>${t("More options")}</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">${t("Cancel · added by mistake")}</button><button type="button" data-task="${index}" data-operation="dropped">${t("Drop · no longer pursuing")}</button></details></div>`;
 }
 
 /** A task's checklist: check a subtask off, remove it, or add another; the task's progress follows. */
 function subtaskList(task: TaskItem, index: number, writing: SubtaskComposer | null): string {
   const steps = task.subtasks ?? [];
-  const items = steps.map((step, i) => `<li class="subtask ${step.done ? "is-done" : ""}" style="--s:${i}"><label class="subtask-label"><input type="checkbox" data-subtask="${index}" data-step="${i}" ${step.done ? "checked" : ""}><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="subtask-text">${e(step.text)}</span></label><button type="button" class="subtask-remove" data-subtask-remove="${index}" data-step="${i}" aria-label="${e(`Remove the subtask ${step.text}`)}" title="Remove">${icons.close}</button></li>`).join("");
+  const items = steps.map((step, i) => `<li class="subtask ${step.done ? "is-done" : ""}" style="--s:${i}"><label class="subtask-label"><input type="checkbox" data-subtask="${index}" data-step="${i}" ${step.done ? "checked" : ""}><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="subtask-text">${e(step.text)}</span></label><button type="button" class="subtask-remove" data-subtask-remove="${index}" data-step="${i}" aria-label="${e(t("Remove the subtask {subtask}", {subtask: step.text}))}" title="${t("Remove")}">${icons.close}</button></li>`).join("");
   const field = writing
-    ? `<form class="subtask-form" data-subtask-form="${index}" autocomplete="off"><span class="subtask-form-icon" aria-hidden="true">${icons.next}</span><input name="subtaskText" maxlength="200" placeholder="${steps.length ? "Another subtask…" : "First subtask…"}" value="${e(writing.draft)}" aria-label="${e(`New subtask for ${task.description}`)}" enterkeyhint="done"><button type="submit" class="subtask-submit" aria-label="Add the subtask" title="Add (Enter)">${icons.enter}</button><button type="button" class="subtask-close" data-subtask-close aria-label="Close the new subtask field" title="Close (Esc)">${icons.close}</button></form>`
-    : `<button type="button" class="subtask-add" data-subtask-open="${index}">${icons.plus}<span>Add a subtask</span></button>`;
+    ? `<form class="subtask-form" data-subtask-form="${index}" autocomplete="off"><span class="subtask-form-icon" aria-hidden="true">${icons.next}</span><input name="subtaskText" maxlength="200" placeholder="${steps.length ? t("Another subtask…") : t("First subtask…")}" value="${e(writing.draft)}" aria-label="${e(t("New subtask for {task}", {task: task.description}))}" enterkeyhint="done"><button type="submit" class="subtask-submit" aria-label="${t("Add the subtask")}" title="${t("Add (Enter)")}">${icons.enter}</button><button type="button" class="subtask-close" data-subtask-close aria-label="${t("Close the new subtask field")}" title="${t("Close (Esc)")}">${icons.close}</button></form>`
+    : `<button type="button" class="subtask-add" data-subtask-open="${index}">${icons.plus}<span>${t("Add a subtask")}</span></button>`;
   const allDone = steps.length > 0 && steps.every(step => step.done);
-  return `<div class="subtasks ${allDone ? "is-done" : ""}">${steps.length ? `<ul class="subtask-list" aria-label="${e(`Subtasks of ${task.description}`)}">${items}</ul>` : ""}${field}</div>`;
+  return `<div class="subtasks ${allDone ? "is-done" : ""}">${steps.length ? `<ul class="subtask-list" aria-label="${e(t("Subtasks of {task}", {task: task.description}))}">${items}</ul>` : ""}${field}</div>`;
 }
 
 /** A folded group's suggestions: how many wait for review, as a button that opens the group to show them. */
 function suggestionNote(group: TaskGroup): string {
   const count = group.suggestions.length;
   const agents = [...new Set(group.suggestions.map(item => item.agent))];
-  return `<button type="button" class="suggestion-note" data-group-toggle="${e(group.id)}" aria-label="${e(`Show ${plural(count, "suggested task")} from ${agents.join(" and ")} in ${group.name}`)}">${icons.spark}<span><b>${count}</b> suggested by ${e(agents.join(", "))}</span><span class="suggestion-note-go">Review ${icons.arrow}</span></button>`;
+  const label = tn("Show {count} suggested task from {agents} in {type}", "Show {count} suggested tasks from {agents} in {type}", count, {agents: nameList(agents, " and "), type: group.name});
+  return `<button type="button" class="suggestion-note" data-group-toggle="${e(group.id)}" aria-label="${e(label)}">${icons.spark}<span>${t("<b>{count}</b> suggested by {agents}", {count, agents: e(nameList(agents, ", "))})}</span><span class="suggestion-note-go">${t("Review")} ${icons.arrow}</span></button>`;
 }
 
 /** The suggestions in a group, under a label that says they are not tasks yet. */
 function suggestionList(group: TaskGroup, tasks: number, now: number): string {
   const count = group.suggestions.length;
-  const label = `<p class="suggestion-label">${icons.spark}<span>${count === 1 ? "Suggested for you" : `${count} suggested for you`}</span><span class="suggestion-hint">Not on your list until you add ${count === 1 ? "it" : "them"}</span></p>`;
-  return `<section class="suggestion-list ${tasks ? "" : "is-alone"}" aria-label="${e(`Suggested tasks in ${group.name}`)}">${label}${group.suggestions.map((item, position) => suggestionCard(item, position, now)).join("")}</section>`;
+  const label = `<p class="suggestion-label">${icons.spark}<span>${tn("Suggested for you", "{count} suggested for you", count)}</span><span class="suggestion-hint">${tn("Not on your list until you add it", "Not on your list until you add them", count)}</span></p>`;
+  return `<section class="suggestion-list ${tasks ? "" : "is-alone"}" aria-label="${e(t("Suggested tasks in {type}", {type: group.name}))}">${label}${group.suggestions.map((item, position) => suggestionCard(item, position, now)).join("")}</section>`;
 }
 
 /** A suggested task: who suggested it and where they found it, what it would be, why, and the choice to add it to
@@ -277,18 +286,19 @@ function suggestionList(group: TaskGroup, tasks: number, now: number): string {
 export function suggestionCard(item: SuggestionItem, position: number, now = Date.now()): string {
   const name = e(item.description);
   const level = item.priority >= 8 ? "high" : item.priority >= 5 ? "medium" : "low";
-  const due = item.due ? `<span class="suggestion-fact">${icons.clock}Finish by ${e(dueLabel(item.due, now))}</span>` : "";
-  const later = item.alarmFrom && item.alarmFrom > isoDay(new Date(now)) ? `<span class="suggestion-fact">${icons.hourglass}Reminders from ${e(formatDate(item.alarmFrom, {month: "short", day: "numeric"}))}</span>` : "";
-  const from = item.source ? ` <span class="suggestion-source">· from ${e(item.source)}</span>` : "";
+  const due = item.due ? `<span class="suggestion-fact">${icons.clock}${t("Finish by {time}", {time: e(dueLabel(item.due, now))})}</span>` : "";
+  const later = item.alarmFrom && item.alarmFrom > isoDay(new Date(now)) ? `<span class="suggestion-fact">${icons.hourglass}${t("Reminders from {date}", {date: e(formatDate(item.alarmFrom, {month: "short", day: "numeric"}))})}</span>` : "";
+  // Where the agent found it is a note of its own after who suggested it.
+  const from = item.source ? ` <span class="suggestion-source">${t("· from {source}", {source: e(item.source)})}</span>` : "";
   return `<article class="suggestion" data-suggestion="${e(item.id)}" style="--i:${position}">
-      <p class="suggestion-from">${icons.spark}<span>Suggested by <b>${e(item.agent)}</b>${from}</span></p>
+      <p class="suggestion-from">${icons.spark}<span>${t("Suggested by <b>{agent}</b>", {agent: e(item.agent)})}${from}</span></p>
       <h4 class="suggestion-title">${name}</h4>
-      <div class="suggestion-meta"><span class="priority p-${level}">${icons.flag} Importance ${item.priority}/10</span>${due}${later}</div>
+      <div class="suggestion-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: item.priority})}</span>${due}${later}</div>
       ${item.reason ? `<p class="suggestion-reason">${e(item.reason)}</p>` : ""}
       <div class="suggestion-actions">
-        <button type="button" class="suggestion-accept" data-suggestion-accept="${e(item.id)}" aria-label="${e(`Add ${item.description} to your tasks`)}">${icons.check}<span>Add to my tasks</span></button>
-        <button type="button" class="suggestion-adjust" data-suggestion-adjust="${e(item.id)}" aria-label="${e(`Adjust ${item.description}, then add it`)}" title="Change it, then add it">${icons.edit}<span>Adjust</span></button>
-        <button type="button" class="suggestion-reject" data-suggestion-reject="${e(item.id)}" aria-label="${e(`Reject ${item.description}`)}" title="Not for me">${icons.close}<span>Reject</span></button>
+        <button type="button" class="suggestion-accept" data-suggestion-accept="${e(item.id)}" aria-label="${e(t("Add {task} to your tasks", {task: item.description}))}">${icons.check}<span>${t("Add to my tasks")}</span></button>
+        <button type="button" class="suggestion-adjust" data-suggestion-adjust="${e(item.id)}" aria-label="${e(t("Adjust {task}, then add it", {task: item.description}))}" title="${t("Change it, then add it")}">${icons.edit}<span>${t("Adjust")}</span></button>
+        <button type="button" class="suggestion-reject" data-suggestion-reject="${e(item.id)}" aria-label="${e(t("Reject {task}", {task: item.description}))}" title="${t("Not for me")}">${icons.close}<span>${t("Reject")}</span></button>
       </div>
     </article>`;
 }
@@ -308,34 +318,39 @@ function groupSummary(group: TaskGroup, total: number): string {
   }).join("");
   const share = total ? group.tasks.length / total : 0;
   const chips = [
-    group.high ? `<span class="tg-chip high">${icons.flag}${group.high} important</span>` : "",
-    group.overdue ? `<span class="tg-chip overdue">${icons.clock}${group.overdue} overdue</span>` : "",
-    group.timed > group.overdue ? `<span class="tg-chip">${icons.clock}${group.timed - group.overdue} timed</span>` : "",
-    group.deferred ? `<span class="tg-chip deferred">${icons.hourglass}${group.deferred} deferred</span>` : "",
-    group.steps ? `<span class="tg-chip steps">${icons.subtasks}${group.stepsDone}/${group.steps} subtasks</span>` : ""
+    group.high ? `<span class="tg-chip high">${icons.flag}${t("{n} important", {n: group.high})}</span>` : "",
+    group.overdue ? `<span class="tg-chip overdue">${icons.clock}${t("{n} overdue", {n: group.overdue})}</span>` : "",
+    group.timed > group.overdue ? `<span class="tg-chip">${icons.clock}${t("{n} timed", {n: group.timed - group.overdue})}</span>` : "",
+    group.deferred ? `<span class="tg-chip deferred">${icons.hourglass}${t("{n} deferred", {n: group.deferred})}</span>` : "",
+    group.steps ? `<span class="tg-chip steps">${icons.subtasks}${t("{done}/{total} subtasks", {done: group.stepsDone, total: group.steps})}</span>` : ""
   ].join("");
   const progress = group.progress ?? 0;
   const finished = group.tasks.filter(task => progressOf(task) === 100).length;
   const spread = group.tasks.map(task => task.priority);
+  const size = group.tasks.length;
+  const rated = tn("{count} task rated from {low} to {high} out of 10", "{count} tasks rated from {low} to {high} out of 10", size, {low: Math.min(...spread), high: Math.max(...spread)});
+  const along = finished
+    ? tn("Average progress {progress}%, {finished} of {count} task at 100%", "Average progress {progress}%, {finished} of {count} tasks at 100%", size, {progress, finished})
+    : t("Average progress {progress}%", {progress});
   return `<div class="tg-summary">
-      ${ring({value: average / 10, size: 66, label: `Average importance ${average} out of 10`, center: average.toFixed(1), tone: ""})}
-      <div class="tg-stats"><span class="tg-label">Average importance</span>
-        <div class="tg-strip" role="img" aria-label="${e(`${plural(group.tasks.length, "task")} rated from ${Math.min(...spread)} to ${Math.max(...spread)} out of 10`)}">${dots}<b class="tg-avg" style="--x:${((Math.max(1, Math.min(10, average)) - 1) / 9).toFixed(3)}"></b></div>
+      ${ring({value: average / 10, size: 66, label: t("Average importance {n} out of 10", {n: average}), center: average.toFixed(1), tone: ""})}
+      <div class="tg-stats"><span class="tg-label">${t("Average importance")}</span>
+        <div class="tg-strip" role="img" aria-label="${e(rated)}">${dots}<b class="tg-avg" style="--x:${((Math.max(1, Math.min(10, average)) - 1) / 9).toFixed(3)}"></b></div>
         <span class="tg-scale" aria-hidden="true"><span>1</span><span>10</span></span></div>
-      <div class="tg-progress ${progress === 100 ? "is-full" : ""}" role="img" aria-label="${e(`Average progress ${progress}%${finished ? `, ${finished} of ${plural(group.tasks.length, "task")} at 100%` : ""}`)}"><span class="tg-label">Progress</span><span class="tg-progress-bar" style="--w:${(progress / 100).toFixed(3)}" aria-hidden="true"></span><b>${progress}%</b>${finished ? `<span class="tg-progress-note">${finished} at 100%</span>` : ""}</div>
-      <div class="tg-meta"><span class="tg-share"><span class="tg-share-bar" style="--w:${share.toFixed(3)}" aria-hidden="true"></span>${Math.round(share * 100)}% of open tasks</span>${chips}</div>
+      <div class="tg-progress ${progress === 100 ? "is-full" : ""}" role="img" aria-label="${e(along)}"><span class="tg-label">${t("Progress")}</span><span class="tg-progress-bar" style="--w:${(progress / 100).toFixed(3)}" aria-hidden="true"></span><b>${progress}%</b>${finished ? `<span class="tg-progress-note">${t("{n} at 100%", {n: finished})}</span>` : ""}</div>
+      <div class="tg-meta"><span class="tg-share"><span class="tg-share-bar" style="--w:${share.toFixed(3)}" aria-hidden="true"></span>${t("{percent}% of open tasks", {percent: Math.round(share * 100)})}</span>${chips}</div>
     </div>`;
 }
 
 function composer(group: TaskGroup, open: Composer | null): string {
-  if (!open) return `<button type="button" class="add-inline" data-compose="${e(group.id)}">${icons.plus}<span>Add a task</span></button>`;
+  if (!open) return `<button type="button" class="add-inline" data-compose="${e(group.id)}">${icons.plus}<span>${t("Add a task")}</span></button>`;
   const priority = open.priority;
   return `<form class="composer" data-composer="${e(group.id)}" autocomplete="off">
-      <input name="composerText" aria-label="New task in ${e(group.name)}" placeholder="What needs doing?" maxlength="500" value="${e(open.draft)}" enterkeyhint="done">
+      <input name="composerText" aria-label="${t("New task in {type}", {type: e(group.name)})}" placeholder="${t("What needs doing?")}" maxlength="500" value="${e(open.draft)}" enterkeyhint="done">
       <div class="composer-row">
-        <label class="composer-importance"><span>Importance</span><input type="range" class="importance-range" name="composerPriority" min="1" max="10" step="1" value="${priority}" style="--p:${((priority - 1) / 9).toFixed(3)}" aria-label="Importance, 1 to 10"><b>${priority}</b></label>
-        <button type="submit" class="composer-add" title="Add task (Enter)">${icons.enter}<span>Add</span></button>
-        <button type="button" class="composer-close" data-compose-close aria-label="Close the new task form" title="Close (Esc)">${icons.close}</button>
+        <label class="composer-importance"><span>${t("Importance")}</span><input type="range" class="importance-range" name="composerPriority" min="1" max="10" step="1" value="${priority}" style="--p:${((priority - 1) / 9).toFixed(3)}" aria-label="${t("Importance, 1 to 10")}"><b>${priority}</b></label>
+        <button type="submit" class="composer-add" title="${t("Add task (Enter)")}">${icons.enter}<span>${t("Add")}</span></button>
+        <button type="button" class="composer-close" data-compose-close aria-label="${t("Close the new task form")}" title="${t("Close (Esc)")}">${icons.close}</button>
       </div>
     </form>`;
 }
@@ -517,10 +532,10 @@ export function spreadOut(board: HTMLElement, fresh = false): void {
 
 export function foldSwitch(view: BoardView): string {
   const folded = view === "folded";
-  return `<div class="fold-switch ${folded ? "is-folded" : ""}" role="group" aria-label="Task board view"><span class="fold-thumb" aria-hidden="true"></span><button type="button" data-board-view="expanded" aria-pressed="${!folded}" title="Show every task">${icons.expand}<span>Expand</span></button><button type="button" data-board-view="folded" aria-pressed="${folded}" title="Fold each group into a summary">${icons.fold}<span>Fold</span></button></div>`;
+  return `<div class="fold-switch ${folded ? "is-folded" : ""}" role="group" aria-label="${t("Task board view")}"><span class="fold-thumb" aria-hidden="true"></span><button type="button" data-board-view="expanded" aria-pressed="${!folded}" title="${t("Show every task")}">${icons.expand}<span>${t("Expand")}</span></button><button type="button" data-board-view="folded" aria-pressed="${folded}" title="${t("Fold each group into a summary")}">${icons.fold}<span>${t("Fold")}</span></button></div>`;
 }
 
 export function layoutSwitch(layout: BoardLayout): string {
   const spread = layout === "spread";
-  return `<div class="layout-toggle ${spread ? "is-spread" : ""}" role="group" aria-label="Task board layout"><span class="fold-thumb" aria-hidden="true"></span><button type="button" data-board-layout="compact" aria-pressed="${!spread}" title="Compact · groups packed in rows, those with more important work first">${icons.grid}<span>Compact</span></button><button type="button" data-board-layout="spread" aria-pressed="${spread}" title="Spread · groups placed by workload, the heaviest in the middle and lighter ones farther out">${icons.orbit}<span>Spread</span></button></div>`;
+  return `<div class="layout-toggle ${spread ? "is-spread" : ""}" role="group" aria-label="${t("Task board layout")}"><span class="fold-thumb" aria-hidden="true"></span><button type="button" data-board-layout="compact" aria-pressed="${!spread}" title="${t("Compact · groups packed in rows, those with more important work first")}">${icons.grid}<span>${t("Compact")}</span></button><button type="button" data-board-layout="spread" aria-pressed="${spread}" title="${t("Spread · groups placed by workload, the heaviest in the middle and lighter ones farther out")}">${icons.orbit}<span>${t("Spread")}</span></button></div>`;
 }

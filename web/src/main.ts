@@ -1,9 +1,11 @@
 import "./styles.css";
 import { browserClient, connect } from "./api";
+import { restoreLanguage, t } from "./i18n";
 import { renderApp } from "./render";
 import { watchSystemTheme } from "./theme";
 
 watchSystemTheme();
+restoreLanguage();
 const root = document.querySelector<HTMLElement>("#app")!;
 window.addEventListener("hashchange", () => {
   if (new URLSearchParams(location.hash.slice(1)).has("token")) location.reload();
@@ -13,10 +15,10 @@ async function main() {
     const events = await connect();
     events.addEventListener("activate", () => {
       window.focus();
-      document.title = "Your workspace is ready · Schedule Everything";
+      document.title = `${t("Your workspace is ready")} · Schedule Everything`;
       root.dispatchEvent(new Event("workspace-activate"));
     });
-    events.onerror = () => { document.title = "Reconnecting · Schedule Everything"; };
+    events.onerror = () => { document.title = `${t("Reconnecting")} · Schedule Everything`; };
     events.addEventListener("ready", () => { document.title = "Schedule Everything"; });
     const refreshTimer = window.setInterval(() => root.dispatchEvent(new Event("workspace-refresh")), 30000);
     root.addEventListener("workspace-closed", () => { events.close(); window.clearInterval(refreshTimer); });

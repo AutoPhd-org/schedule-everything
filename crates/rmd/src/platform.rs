@@ -150,8 +150,14 @@ pub fn show_large_dialog(
     crate::dialogs::show_large_dialog(message, buttons, default_button, title, timeout)
 }
 
+/// The label of the button that stops a ringing alarm, in the active language.
+pub fn stop_alarm_label() -> String {
+    crate::i18n::t("Stop alarm")
+}
+
 fn show_dialog_macos(message: &str) -> String {
-    let button = "停止闹铃";
+    let label = stop_alarm_label();
+    let button = label.as_str();
     if let Some(clicked) = show_large_dialog(message, &[button], button, "Reminder", None) {
         return clicked;
     }

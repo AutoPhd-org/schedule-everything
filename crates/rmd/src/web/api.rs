@@ -24,10 +24,11 @@ fn sync_clear(_payload: &Dict) -> WebResult {
 
 /// Every command the browser can send (except `server_shutdown`, which only
 /// the HTTP server handles).
-pub const COMMANDS: [(&str, Handler); 28] = [
+pub const COMMANDS: [(&str, Handler); 29] = [
     ("config_read", workspace::config_read),
     ("config_save", workspace::config_save),
     ("workspace_info", workspace::workspace_info),
+    ("language_set", workspace::language_set),
     ("service_action", workspace::service_action),
     ("export_pdf", workspace::export_pdf),
     ("status_snapshot", services::status_snapshot),

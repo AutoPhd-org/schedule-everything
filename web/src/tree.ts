@@ -4,6 +4,7 @@
 // bindTree adds the scroll effects: a focus band at the viewport's center, a minimap, and keyboard steps.
 import { leadHours, STATUS_ICON, STATUS_LABEL, statusOf } from "./activity";
 import { reducedMotion } from "./effects";
+import { t, tn } from "./i18n";
 import type { HistoryItem } from "./types";
 import { addDays, dayDiff, e, formatDate, formatHours, icons, parseLocal, sw, typeSwatch, type Swatch } from "./ui";
 
@@ -37,7 +38,7 @@ export function treeLanes(items: HistoryItem[], taskTypes: Record<string, string
   const single = ids.length === 1;
   return ids.map((id, lane) => ({
     id, lane, tone: typeSwatch(taskTypes, id),
-    name: id === null ? "Other" : taskTypes[id] ?? items.find(item => item.type === id)?.typeName ?? id,
+    name: id === null ? t("Other") : taskTypes[id] ?? items.find(item => item.type === id)?.typeName ?? id,
     side: single || lane % 2 ? 1 : -1,
     depth: single ? 1 : Math.floor(lane / 2) + 1
   }));
@@ -63,9 +64,9 @@ export function axisTones(items: HistoryItem[], taskTypes: Record<string, string
   });
 }
 
-const dayLabel = (day: string, today: string) => day === today ? "Today" : day === addDays(today, -1) ? "Yesterday"
+const dayLabel = (day: string, today: string) => day === today ? t("Today") : day === addDays(today, -1) ? t("Yesterday")
   : formatDate(day, {weekday: "short", month: "short", day: "numeric", ...(day.slice(0, 4) === today.slice(0, 4) ? {} : {year: "numeric"})});
-const quietLabel = (days: number) => days >= 60 ? `About ${Math.round(days / 30)} quiet months` : `${days} quiet days`;
+const quietLabel = (days: number) => days >= 60 ? tn("About {count} quiet month", "About {count} quiet months", Math.round(days / 30)) : tn("{count} quiet day", "{count} quiet days", days);
 
 /** Place events (newest first) on the axis. Events are at least one row apart, longer pauses add space,
  *  and a new day leaves room for its label. y is measured down from the newest event. */
@@ -117,7 +118,7 @@ function nodeHtml(node: TreeNode, index: number, order: number): string {
   const when = formatDate(item.endedAt, {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
   return `<div class="tree-node side-${lane.side < 0 ? "l" : "r"} status-${status} ${sw(lane.tone)} ${item.priority >= 8 ? "major" : ""}" data-y="${node.y}" data-day="${node.day}" data-tone="${lane.tone ?? ""}" data-type-name="${e(lane.name)}" style="--y:${node.y}px; --side:${lane.side}; --depth:${lane.depth}; --lane:${lane.lane}; --s:${10 + Math.max(1, Math.min(10, item.priority))}px; --i:${Math.min(order, 14)}">
     <svg class="tn-branch" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="M0 24 C 45 24 55 0 100 0" vector-effect="non-scaling-stroke"/></svg>
-    <button type="button" class="tn-card" data-history="${index}" aria-haspopup="dialog" aria-label="${e(`${item.description} · ${lane.name} · ${STATUS_LABEL[status]} ${when}`)}"><span class="tn-dot" aria-hidden="true"></span><span class="tn-body"><strong>${e(item.description)}</strong><small><time datetime="${e(item.endedAt)}">${e(formatDate(item.endedAt, {hour: "numeric", minute: "2-digit"}))}</time><span>${icons.hourglass}${formatHours(leadHours(item))}</span>${status === "completed" ? "" : `<span class="tn-status">${STATUS_ICON[status]}${STATUS_LABEL[status]}</span>`}</small></span></button>
+    <button type="button" class="tn-card" data-history="${index}" aria-haspopup="dialog" aria-label="${e(`${item.description} · ${lane.name} · ${t(STATUS_LABEL[status])} ${when}`)}"><span class="tn-dot" aria-hidden="true"></span><span class="tn-body"><strong>${e(item.description)}</strong><small><time datetime="${e(item.endedAt)}">${e(formatDate(item.endedAt, {hour: "numeric", minute: "2-digit"}))}</time><span>${icons.hourglass}${formatHours(leadHours(item))}</span>${status === "completed" ? "" : `<span class="tn-status">${STATUS_ICON[status]}${t(STATUS_LABEL[status])}</span>`}</small></span></button>
   </div>`;
 }
 
@@ -178,8 +179,8 @@ export function treeView(options: {items: HistoryItem[]; total: number; indexOf:
   const lead = nodes[0] ? `${e(dayLabel(nodes[0].day, today))}` : "";
   // Lanes share the room beside the trunk, however many types there are; see --step in styles.css.
   const depths = Math.max(1, ...lanes.map(lane => lane.depth));
-  return `<section class="tree ${lanes.length === 1 ? "single" : ""}" data-tree aria-label="Task history tree, newest first" style="--depths:${depths}; --lane-gaps:${Math.max(1, lanes.length - 1)}">
-    <header class="tree-head"><p class="tree-readout"><i class="tr-dot" aria-hidden="true"></i><strong data-tree-range>${lead}</strong><span data-tree-summary>${total} ${total === 1 ? "event" : "events"}</span></p><p class="tree-hint">Hover over an event for details · scroll to travel back in time · ↑ ↓ step through events · drag the map to jump</p></header>
+  return `<section class="tree ${lanes.length === 1 ? "single" : ""}" data-tree aria-label="${t("Task history tree, newest first")}" style="--depths:${depths}; --lane-gaps:${Math.max(1, lanes.length - 1)}">
+    <header class="tree-head"><p class="tree-readout"><i class="tr-dot" aria-hidden="true"></i><strong data-tree-range>${lead}</strong><span data-tree-summary>${tn("{count} event", "{count} events", total)}</span></p><p class="tree-hint">${t("Hover over an event for details · scroll to travel back in time · ↑ ↓ step through events · drag the map to jump")}</p></header>
     <div class="tree-body">
       <div class="tree-stage">
         <div class="tree-lanes" data-tree-lanes aria-hidden="true" style="--rows:${Math.min(2, lanes.length)}">${lanes.map(lane => `<span class="tree-lane-head ${sw(lane.tone)}" data-tip="${e(lane.name)}" style="${lanePlace(lane)}; --row:${(lane.depth - 1) % 2}"><b>${e(lane.name)}</b></span>`).join("")}</div>
@@ -192,8 +193,8 @@ export function treeView(options: {items: HistoryItem[]; total: number; indexOf:
               <div class="tree-crown ${sw(nodes[0]?.axis.tone ?? null)}" aria-hidden="true" style="--y:${top}px"><span>${icons.sprout}</span></div>
               ${nodes.map((node, i) => node.marks.map(markHtml).join("") + nodeHtml(node, options.indexOf(node.item), i)).join("")}
               <div class="tree-root ${sw(last?.axis.tone ?? null)}" style="--y:${bottom}px"><svg class="tr-roots" viewBox="0 0 120 34" aria-hidden="true"><path d="M60 0 C 60 16 38 20 14 30 M60 0 C 60 14 60 24 60 32 M60 0 C 60 16 82 20 106 30"/></svg>${remaining > 0
-                ? `<button type="button" class="button small" data-tree-more>${icons.plus}<span>Grow ${Math.min(options.step, remaining)} older ${Math.min(options.step, remaining) === 1 ? "event" : "events"}</span></button>`
-                : last ? `<span class="tr-label">Earliest · ${e(formatDate(last.day, {month: "short", day: "numeric", year: "numeric"}))}</span>` : ""}</div>
+                ? `<button type="button" class="button small" data-tree-more>${icons.plus}<span>${tn("Grow {count} older event", "Grow {count} older events", Math.min(options.step, remaining))}</span></button>`
+                : last ? `<span class="tr-label">${t("Earliest · {date}", {date: e(formatDate(last.day, {month: "short", day: "numeric", year: "numeric"}))})}</span>` : ""}</div>
             </div>
           </div>
         </div>
@@ -297,13 +298,13 @@ export function bindTree(scope: ParentNode, onView?: (range: TreeViewRange) => v
     const [leader, lead] = ranked[0] ?? ["", {weight: 0, tone: ""}];
     tree.style.setProperty("--view-c", lead.tone ? `var(--c-${lead.tone})` : "var(--accent)");
     if (count) {
-      rangeText.textContent = newest === oldest ? formatDate(newest, {weekday: "short", month: "short", day: "numeric"}) : `${shortDay(oldest)} – ${shortDay(newest)}`;
-      summaryText.textContent = `${count} ${count === 1 ? "event" : "events"} · ${ranked.length === 1 ? `all ${leader}` : lead.weight / totalWeight >= 0.5 ? `mostly ${leader}` : `a mix, led by ${leader}`}`;
+      rangeText.textContent = newest === oldest ? formatDate(newest, {weekday: "short", month: "short", day: "numeric"}) : t("{from} – {to}", {from: shortDay(oldest), to: shortDay(newest)});
+      summaryText.textContent = `${tn("{count} event", "{count} events", count)} · ${ranked.length === 1 ? t("all {type}", {type: leader}) : lead.weight / totalWeight >= 0.5 ? t("mostly {type}", {type: leader}) : t("a mix, led by {type}", {type: leader})}`;
     } else {
       const below = Math.min(nodes.length - 1, firstAt(center));
       const above = Math.max(0, below - 1);
-      rangeText.textContent = `${shortDay(nodes[below].dataset.day!)} – ${shortDay(nodes[above].dataset.day!)}`;
-      summaryText.textContent = "A quiet stretch";
+      rangeText.textContent = t("{from} – {to}", {from: shortDay(nodes[below].dataset.day!), to: shortDay(nodes[above].dataset.day!)});
+      summaryText.textContent = t("A quiet stretch");
     }
     if (frame) {
       const from = Math.min(height, Math.max(0, center - half));

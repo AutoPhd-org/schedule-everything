@@ -133,6 +133,7 @@ pub(crate) static ZH_TRANSLATIONS: &[(&str, &str)] = &[
     ("Showing {shown} of {total} tasks (type: {type_name})", "显示 {shown} / {total} 个任务（类型：{type_name}）"),
     ("Start", "开始"),
     ("Status", "状态"),
+    ("Stop alarm", "停止闹铃"),
     ("Suggested tasks", "建议的任务"),
     ("Suggestion", "建议"),
     ("Task '{task_description}'", "任务 '{task_description}'"),

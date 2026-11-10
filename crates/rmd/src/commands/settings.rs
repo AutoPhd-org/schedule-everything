@@ -103,7 +103,7 @@ pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 12] = [
         FieldMeta::range(EditorType::Number, "Max alarm duration in seconds", 10, 3600),
     ),
     (("settings", "skip_days"), FieldMeta::choices(EditorType::MultiSelect, "Days to skip all reminders", &WEEKDAYS)),
-    (("settings", "language"), FieldMeta::choices(EditorType::Picker, "UI language", &["en", "zh"])),
+    (("settings", "language"), FieldMeta::choices(EditorType::Picker, "UI language", &crate::i18n::LANGUAGES)),
     (("settings", "show_tasks_after_change"), FieldMeta::new(EditorType::Toggle, "Print task list after rmd add/rm")),
     (("tasks", "daily_urgent"), FieldMeta::new(EditorType::TimeList, "Times for urgent task reminders (HH:MM)")),
     (("tasks", "ddl_urgent"), FieldMeta::new(EditorType::TimeList, "Times for deadline reminders (HH:MM)")),

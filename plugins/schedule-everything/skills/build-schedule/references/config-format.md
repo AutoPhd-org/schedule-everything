@@ -15,7 +15,7 @@ sound_file = "/System/Library/Sounds/Ping.aiff"
 alarm_interval = 5          # seconds between alarm repeats
 max_alarm_duration = 300    # seconds
 skip_days = ["sunday"]      # weekdays with no reminders
-language = "en"             # "en" or "zh"
+language = "en"             # "en", "zh", "es", or "ko"
 show_tasks_after_change = true
 
 [time_blocks]               # name = length in minutes; a block alarm also fires when it ends
