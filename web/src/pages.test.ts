@@ -1,6 +1,7 @@
 // Tests for P/J overview layouts, the activity gallery and weekly overview, and the year calendar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { filterHistory, groupHistory, defaultGalleryFilter } from "./activity";
+import { GLOSSARY_IDS } from "./glossary";
 import { axisTones, layoutTree, packLabels, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
@@ -693,5 +694,95 @@ describe("page helpers", () => {
     const groups = groupHistory(filterHistory(history, defaultGalleryFilter()), "2026-10-05", "newest");
     expect(groups.map(group => group.label)).toEqual(["This week", "Last week", "September 2026"]);
     expect(groups[2].items.map(item => item.description)).toEqual(["Draft essay", "<img src=x onerror=alert(1)>"]);
+  });
+});
+
+describe("glossary", () => {
+  const openGlossary = async () => { await renderApp(root, client); click('[data-page="glossary"]'); await flush(); await flush(); };
+  const card = (id: string) => root.querySelector<HTMLElement>(`#g-${id}`)!;
+  const yours = (id: string) => card(id).querySelector(".g-yours b")?.textContent;
+
+  it("explains every metric with a picture, how it is counted, and the user's own number", async () => {
+    await openGlossary();
+    expect(root.querySelector('[data-page="glossary"]')?.getAttribute("aria-current")).toBe("page");
+    expect(root.querySelector("h1")?.textContent).toContain("Every number, explained");
+    expect([...root.querySelectorAll<HTMLElement>(".g-term")].map(term => term.dataset.term)).toEqual(GLOSSARY_IDS);
+    expect(root.querySelectorAll(".g-section")).toHaveLength(5);
+    for (const term of root.querySelectorAll(".g-term")) {
+      expect(term.querySelector(".g-art .g-art-inner")?.innerHTML).not.toBe("");
+      expect(term.querySelectorAll(".g-where .g-spot").length).toBeGreaterThan(0);
+    }
+    expect(card("workload").querySelector(".g-eq")?.textContent).toBe("ΣImportance÷ 10×Share still left");
+    // Without IntersectionObserver every picture plays at once.
+    expect(root.querySelectorAll(".g-term.is-seen")).toHaveLength(GLOSSARY_IDS.length);
+    expect(yours("finished-today")).toBe(String(daily.completed));
+    expect(yours("usual-day")).toBe("2.5");
+    expect(yours("streak")).toBe("4 days");
+    expect(yours("week-completed")).toBe(String(overview.current.completed));
+    expect(yours("habits")).toBe("50%");
+    // Importance 10 and 6, untouched: 1.0 + 0.6.
+    expect(yours("workload")).toContain("1.6");
+    expect(card("workload").querySelector(".g-level.is-you")?.textContent).toContain("Light");
+    expect(send).toHaveBeenCalledWith("weekly_overview", {});
+  });
+
+  it("finds metrics as you type and says when nothing matches", async () => {
+    await openGlossary();
+    const search = root.querySelector<HTMLInputElement>('[name="glossarySearch"]')!;
+    const visible = () => [...root.querySelectorAll<HTMLElement>(".g-term")].filter(term => !term.hidden).map(term => term.dataset.term);
+    search.value = "median";
+    search.dispatchEvent(new Event("input"));
+    expect(visible()).toEqual(["median-time"]);
+    expect([...root.querySelectorAll<HTMLElement>(".g-section")].filter(section => !section.hidden).map(section => section.dataset.section)).toEqual(["week"]);
+    expect(root.querySelector<HTMLElement>(".g-none")!.hidden).toBe(true);
+    search.value = "no such metric";
+    search.dispatchEvent(new Event("input"));
+    expect(visible()).toEqual([]);
+    expect(root.querySelector<HTMLElement>(".g-none")!.hidden).toBe(false);
+    search.value = "";
+    search.dispatchEvent(new Event("input"));
+    expect(visible()).toHaveLength(GLOSSARY_IDS.length);
+  });
+
+  it("lets you try how one task weighs on the workload", async () => {
+    await openGlossary();
+    const set = (name: string, value: string) => { const input = root.querySelector<HTMLInputElement>(`[name="${name}"]`)!; input.value = value; input.dispatchEvent(new Event("input")); };
+    set("gTryImportance", "6");
+    set("gTryProgress", "50");
+    expect(root.querySelector('[data-try="points"]')?.textContent).toBe("0.3");
+    expect(root.querySelector('[data-try="progress"]')?.textContent).toBe("50%");
+    set("gTryProgress", "100");
+    expect(root.querySelector('[data-try="points"]')?.textContent).toBe("0");
+  });
+
+  it("links each metric to where it shows", async () => {
+    await openGlossary();
+    click('#g-finished-today [data-glossary-jump="day"]');
+    await flush();
+    expect(root.querySelector('[data-page="today"]')?.getAttribute("aria-current")).toBe("page");
+    expect(root.querySelector("#day-panel")).not.toBeNull();
+    click('[data-page="glossary"]');
+    await flush(); await flush();
+    click('#g-week-completed [data-glossary-jump="week"]');
+    await flush(); await flush();
+    expect(root.querySelector('[data-page="activity"]')?.getAttribute("aria-current")).toBe("page");
+    expect(root.querySelector(".week-bento")).not.toBeNull();
+    expect(root.querySelector('#g-volume [data-glossary-jump="settings"]')).toBeNull();
+  });
+
+  it("opens from the daily and weekly overviews, at the metric asked about", async () => {
+    await renderApp(root, client);
+    await flush();
+    click('#day-panel [data-glossary="workload"]');
+    await flush();
+    expect(root.querySelector('[data-page="glossary"]')?.getAttribute("aria-current")).toBe("page");
+    expect(card("workload").classList.contains("is-flash")).toBe(true);
+    expect(document.activeElement).toBe(card("workload"));
+    click('[data-page="activity"]');
+    await flush(); await flush();
+    click('[data-action="open-week"]');
+    click('.week-bar [data-glossary="week"]');
+    await flush();
+    expect(root.querySelector("h1")?.textContent).toContain("Every number, explained");
   });
 });

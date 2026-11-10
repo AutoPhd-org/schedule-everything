@@ -1,11 +1,12 @@
 // Shared markup helpers, icons, and color assignments for the browser workspace.
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
-  AlarmClock, ArrowDownRight, ArrowLeft, Ban, BellRing, CalendarClock, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp,
-  ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Ellipsis, Feather, Repeat, Flag, Flame, Gauge,
-  GalleryHorizontalEnd, GripVertical, Hourglass, Languages, LayoutDashboard, LayoutGrid, Leaf, ListChecks, ListPlus, ListTodo, Monitor, Moon, Orbit, Palette,
-  PartyPopper, Pencil, Plus, RefreshCw, Scale, Search, Settings2, Shuffle, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown,
-  TrendingUp, Trophy, Undo2, Waves, X, Zap
+  AlarmClock, ArrowDownRight, ArrowLeft, Ban, BicepsFlexed, Blocks, BookOpenText, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown,
+  ChevronLeft, ChevronRight, ChevronsDownUp, BellRing, ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Crown,
+  Dumbbell, Ellipsis, Feather, Repeat, Flag, Flame, Gauge, GalleryHorizontalEnd, GripVertical, History, Hourglass, Languages, LayoutDashboard,
+  LayoutGrid, Leaf, Lightbulb, ListChecks, ListPlus, ListTodo, MapPin, Medal, Monitor, Moon, Orbit, Palette, PartyPopper, Pencil, Percent, Plus,
+  Puzzle, RefreshCw, Scale, Search, Settings2, Shuffle, Sigma, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
+  Trophy, Undo2, Waves, X, Zap
 } from "lucide";
 import { locale, msg, t } from "./i18n";
 
@@ -32,7 +33,10 @@ export const icons = {
   tree: icon(TreeDeciduous), chevron: icon(ChevronDown), expand: icon(ChevronsUpDown), fold: icon(ChevronsDownUp), enter: icon(CornerDownLeft),
   more: icon(Ellipsis), undo: icon(Undo2), subtasks: icon(ListChecks), subtaskAdd: icon(ListPlus), next: icon(CornerDownRight),
   alarm: icon(AlarmClock), ringing: icon(BellRing), due: icon(CalendarClock), coffee: icon(Coffee), party: icon(PartyPopper),
-  gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale)
+  gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale),
+  glossary: icon(BookOpenText), blocks: icon(Blocks), week: icon(CalendarRange), history: icon(History), puzzle: icon(Puzzle), sigma: icon(Sigma),
+  bulb: icon(Lightbulb), pin: icon(MapPin), crown: icon(Crown), percent: icon(Percent), dumbbell: icon(Dumbbell), medal: icon(Medal),
+  muscle: icon(BicepsFlexed)
 };
 
 /** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */

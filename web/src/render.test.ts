@@ -239,6 +239,30 @@ describe('browser workspace',()=>{
     expect(notice.classList.contains('visible')).toBe(false);
     expect(notice.classList.contains('leaving')).toBe(false);
   });
+  it('lets a notice go away on its own after 10 seconds, but not while the pointer rests on it',async()=>{
+    vi.stubGlobal('matchMedia',vi.fn((query:string)=>({matches:query.includes('reduced-motion'),addEventListener:vi.fn()})));
+    vi.useRealTimers();vi.useFakeTimers({toFake:['Date','setTimeout','clearTimeout']});vi.setSystemTime(new Date(2026,9,5,12,0));
+    const tick=(ms:number)=>vi.advanceTimersByTimeAsync(ms);
+    const visible=()=>root.querySelector<HTMLElement>('#notice')!.classList.contains('visible');
+    await renderApp(root,client);
+    click('[data-task="0"][data-operation="deleted"]');await tick(0);await tick(0);
+    expect(visible()).toBe(true);
+    await tick(9_900);
+    expect(visible()).toBe(true);
+    await tick(100);
+    expect(visible()).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>('[data-notice-undo]')!.hidden).toBe(true);
+    // A notice the pointer rests on stays, and leaves soon after the pointer does.
+    click('[data-task="0"][data-operation="deleted"]');await tick(0);await tick(0);
+    const notice=root.querySelector<HTMLElement>('#notice')!;
+    const matches=notice.matches.bind(notice);
+    const hover=vi.spyOn(notice,'matches').mockImplementation(selector=>selector===':hover'||matches(selector));
+    await tick(15_000);
+    expect(visible()).toBe(true);
+    hover.mockRestore();
+    await tick(2_000);
+    expect(visible()).toBe(false);
+  });
   it('switches themes without discarding unsaved form contents',async()=>{
     await renderApp(root,client);click('[data-compose="1"]');
     const draft=root.querySelector<HTMLInputElement>('form.composer [name="composerText"]')!;draft.value='An unsaved task';
