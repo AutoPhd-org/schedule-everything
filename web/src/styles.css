@@ -1637,8 +1637,9 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .content.enter .day-panel .highlight { animation: rise .6s var(--ease) both; animation-delay: calc(.2s + var(--i) * 90ms); }
 
 /* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
-.display-card h2 { display: flex; align-items: center; gap: 8px; }
-.display-card h2 svg { color: var(--accent); }
+.display-card h2, .language-card h2 { display: flex; align-items: center; gap: 8px; }
+.display-card h2 svg, .language-card h2 svg { color: var(--accent); }
+.language-switch { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 12px; }
 .setting-block { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 18px 0 6px; }
 .setting-copy { display: grid; gap: 3px; min-width: 0; flex: 1 1 240px; }
 .setting-copy strong { font-size: 13px; color: var(--text); }

@@ -132,7 +132,7 @@ fn habit_sort_key(habit_id: &str) -> (u8, String) {
     (1, habit_id.to_string())
 }
 
-/// Turn a habit description into a yes/no question:
+/// Turn a habit description into a yes/no question in the active language:
 /// `"Exercise"` -> `"Did you exercise today?"`.
 pub fn habit_question(description: &str) -> String {
     let text = description.trim();
@@ -145,8 +145,11 @@ pub fn habit_question(description: &str) -> String {
     if text.to_lowercase().starts_with("did you ") {
         return format!("{text}?");
     }
-    if get_language() == "zh" {
-        return format!("今天你 {text} 了吗？");
+    match get_language() {
+        "zh" => return format!("今天你 {text} 了吗？"),
+        "es" => return format!("¿Cumpliste «{text}» hoy?"),
+        "ko" => return format!("오늘 {text} 했나요?"),
+        _ => {}
     }
     let mut chars = text.chars();
     let text = match chars.next() {
@@ -343,6 +346,17 @@ mod tests {
         env.set_var("REMINDER_LANG", "zh");
         assert_eq!(habit_question("早起"), "今天你 早起 了吗？");
         assert_eq!(habit_question("Did you read?"), "Did you read?");
+    }
+
+    #[test]
+    fn habit_questions_in_spanish_and_korean() {
+        let mut env = TestEnv::new();
+        env.set_var("REMINDER_LANG", "es");
+        assert_eq!(habit_question("Meditar 10 minutos"), "¿Cumpliste «Meditar 10 minutos» hoy?");
+        assert_eq!(habit_question("   "), "¿Completaste este hábito hoy?");
+        env.set_var("REMINDER_LANG", "ko");
+        assert_eq!(habit_question("운동"), "오늘 운동 했나요?");
+        assert_eq!(habit_question("¿Leíste?"), "¿Leíste?");
     }
 
     #[test]

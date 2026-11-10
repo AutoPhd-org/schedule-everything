@@ -3,6 +3,7 @@
 // at 100%. Tasks postponed to a later day do not count yet. The total picks the workspace's theme (the
 // [data-load] rules in styles.css), and each group's own workload places it in the spread board layout.
 // Where Steady, Busy, and Heavy start is a display preference set in Settings (see setLoadThresholds).
+import { msg, t, tn } from "./i18n";
 import { progressOf } from "./timers";
 import type { TaskItem } from "./types";
 import { icons } from "./ui";
@@ -21,13 +22,13 @@ export const roundLoad = (points: number) => Math.round(points * 10) / 10;
 /** A workload number as the Settings page writes it: one decimal at most, so 9 rather than 9.0. */
 export const loadNumber = (points: number) => String(roundLoad(points));
 
-/** Why these numbers cannot start the levels, or null when they can: each must be a number above 0 (so Light
- *  keeps some room), at most MAX_THRESHOLD, and higher than the one before. */
+/** Why these numbers cannot start the levels, in the interface language, or null when they can: each must be a
+ *  number above 0 (so Light keeps some room), at most MAX_THRESHOLD, and higher than the one before. */
 export function thresholdProblem(values: readonly number[]): string | null {
-  if (values.length !== 3 || values.some(value => !Number.isFinite(value))) return "Enter a number for each level.";
-  if (values.some(value => roundLoad(value) <= 0)) return "Each level needs to start above 0.";
-  if (values.some(value => roundLoad(value) > MAX_THRESHOLD)) return `Keep each number at ${MAX_THRESHOLD} or below.`;
-  if (!(roundLoad(values[0]) < roundLoad(values[1]) && roundLoad(values[1]) < roundLoad(values[2]))) return "Each level needs to start higher than the one before it.";
+  if (values.length !== 3 || values.some(value => !Number.isFinite(value))) return t("Enter a number for each level.");
+  if (values.some(value => roundLoad(value) <= 0)) return t("Each level needs to start above 0.");
+  if (values.some(value => roundLoad(value) > MAX_THRESHOLD)) return t("Keep each number at {max} or below.", {max: MAX_THRESHOLD});
+  if (!(roundLoad(values[0]) < roundLoad(values[1]) && roundLoad(values[1]) < roundLoad(values[2]))) return t("Each level needs to start higher than the one before it.");
   return null;
 }
 /** Saved numbers, if they can start the levels; otherwise null. */
@@ -36,17 +37,20 @@ export function asThresholds(value: unknown): LoadThresholds | null {
   return [roundLoad(value[0]), roundLoad(value[1]), roundLoad(value[2])];
 }
 
+/** Labels and notes are message keys here; levelInfo() and loadLevels() hand them out translated. */
 const LEVELS: readonly Omit<LevelInfo, "below">[] = [
-  {id: "clear", label: "All clear", icon: icons.light, note: "Nothing left to do. Enjoy the quiet."},
-  {id: "light", label: "Light", icon: icons.leaf, note: "Plenty of room in your day."},
-  {id: "steady", label: "Steady", icon: icons.waves, note: "A full but manageable day."},
-  {id: "busy", label: "Busy", icon: icons.zap, note: "A lot on your plate. Pick what matters most."},
-  {id: "heavy", label: "Heavy", icon: icons.flame, note: "More than a day’s work. Consider deferring or dropping something."}
+  {id: "clear", label: msg("All clear"), icon: icons.light, note: msg("Nothing left to do. Enjoy the quiet.")},
+  {id: "light", label: msg("Light"), icon: icons.leaf, note: msg("Plenty of room in your day.")},
+  {id: "steady", label: msg("Steady"), icon: icons.waves, note: msg("A full but manageable day.")},
+  {id: "busy", label: msg("Busy"), icon: icons.zap, note: msg("A lot on your plate. Pick what matters most.")},
+  {id: "heavy", label: msg("Heavy"), icon: icons.flame, note: msg("More than a day’s work. Consider deferring or dropping something.")}
 ];
 const levelsFor = ([steady, busy, heavy]: LoadThresholds): LevelInfo[] =>
   LEVELS.map((level, i) => ({...level, below: [0.05, steady, busy, heavy, Infinity][i]}));
 let thresholds: LoadThresholds = DEFAULT_THRESHOLDS;
 let levels = levelsFor(thresholds);
+/** A level with its label and note in the interface language. */
+const translated = (level: LevelInfo): LevelInfo => ({...level, label: t(level.label), note: t(level.note)});
 
 /** Set where the levels start, for every workload judged from now on. */
 export function setLoadThresholds(values: LoadThresholds): void {
@@ -54,18 +58,21 @@ export function setLoadThresholds(values: LoadThresholds): void {
   levels = levelsFor(thresholds);
 }
 export const loadThresholds = (): LoadThresholds => thresholds;
-/** From the lightest up; each level holds workloads below `below` (after rounding to one decimal). */
-export const loadLevels = (): readonly LevelInfo[] => levels;
-/** Each level's range in words, as Settings lists them. */
+/** From the lightest up; each level holds workloads below `below` (after rounding to one decimal). Labels and
+ *  notes are in the interface language. */
+export const loadLevels = (): readonly LevelInfo[] => levels.map(translated);
+/** Each level's range in words (in the interface language), as Settings lists them. */
 export function levelRanges(): string[] {
   const [steady, busy, heavy] = thresholds.map(loadNumber);
-  return ["0", `under ${steady}`, `${steady} – ${busy}`, `${busy} – ${heavy}`, `${heavy} and up`];
+  return ["0", t("under {n}", {n: steady}), `${steady} – ${busy}`, `${busy} – ${heavy}`, t("{n} and up", {n: heavy})];
 }
 /** Where gauges top out: a third past the start of Heavy. */
 export const loadScale = () => roundLoad(thresholds[2] * 4 / 3);
-export const WORKLOAD_DEFINITION = "Workload counts every open task by its importance out of 10, times the share of it still left. Tasks postponed to a later day wait until then.";
+/** A message key: pass it through t() where it is shown. */
+export const WORKLOAD_DEFINITION = msg("Workload counts every open task by its importance out of 10, times the share of it still left. Tasks postponed to a later day wait until then.");
 
-export const levelInfo = (level: LoadLevel): LevelInfo => levels.find(item => item.id === level)!;
+/** A level, its label and note in the interface language. */
+export const levelInfo = (level: LoadLevel): LevelInfo => translated(levels.find(item => item.id === level)!);
 export const levelOf = (points: number): LoadLevel => levels.find(item => roundLoad(points) < item.below)!.id;
 export const isPostponed = (task: Pick<TaskItem, "alarmFrom">, today: string) => !!task.alarmFrom && task.alarmFrom > today;
 /** One task's share of the workload. */
@@ -97,8 +104,10 @@ export function workload(tasks: readonly TaskItem[], today: string): Workload {
   };
 }
 
-/** The workload in a sentence, for tooltips and screen readers. */
+/** The workload in a sentence, in the interface language, for tooltips and screen readers. Not escaped. */
 export function describeLoad(load: Workload): string {
-  const tasks = `${load.counted} open ${load.counted === 1 ? "task" : "tasks"}`;
-  return `Workload ${load.points.toFixed(1)} · ${levelInfo(load.level).label}. ${tasks}${load.importance === null ? "" : `, importance ${load.importance} on average, ${load.done}% done`}.`;
+  const vars = {points: load.points.toFixed(1), level: levelInfo(load.level).label};
+  return load.importance === null
+    ? tn("Workload {points} · {level}. {count} open task.", "Workload {points} · {level}. {count} open tasks.", load.counted, vars)
+    : tn("Workload {points} · {level}. {count} open task, importance {importance} on average, {done}% done.", "Workload {points} · {level}. {count} open tasks, importance {importance} on average, {done}% done.", load.counted, {...vars, importance: load.importance, done: load.done});
 }

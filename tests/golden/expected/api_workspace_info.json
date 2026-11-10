@@ -1,6 +1,6 @@
 {
   "exit": 0,
-  "stdout": "{\"ok\": true, \"data\": {\"configIds\": [0], \"activeId\": 0, \"rootDir\": \"<ROOT>\", \"mode\": \"j\"}}\n",
+  "stdout": "{\"ok\": true, \"data\": {\"configIds\": [0], \"activeId\": 0, \"rootDir\": \"<ROOT>\", \"mode\": \"j\", \"language\": \"en\"}}\n",
   "stderr": "",
   "files": {},
   "deleted": []

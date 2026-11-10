@@ -1,49 +1,76 @@
-//! Bilingual (English / Simplified Chinese) user-facing text.
+//! User-facing text in English, Simplified Chinese, Spanish, or Korean.
 //!
 //! The active language comes from `REMINDER_LANG`, then `[settings] language`
 //! in the active `settings.toml`, then English. Source strings are the English
-//! text; [`t`] looks them up in the translation table (`i18n_table.rs`).
+//! text; [`t`] looks them up in the active language's translation table
+//! (`i18n_table.rs` for Chinese, `i18n_table_es.rs`, `i18n_table_ko.rs`), and
+//! falls back to the English.
 
 use serde_json::Value;
 
 use crate::i18n_table::ZH_TRANSLATIONS;
+use crate::i18n_table_es::ES_TRANSLATIONS;
+use crate::i18n_table_ko::KO_TRANSLATIONS;
 
-/// Active language: `"en"` or `"zh"`.
+/// Language codes `[settings] language` accepts, in the order pickers offer them.
+pub const LANGUAGES: [&str; 4] = ["en", "zh", "es", "ko"];
+
+/// Active language: `"en"`, `"zh"`, `"es"`, or `"ko"`.
 pub fn get_language() -> &'static str {
     if let Ok(env_lang) = std::env::var("REMINDER_LANG")
         && !env_lang.is_empty()
     {
-        return if is_chinese(&env_lang) { "zh" } else { "en" };
+        return normalize_language(&env_lang).unwrap_or("en");
     }
     let settings_path = crate::paths::runtime().settings_path;
     if settings_path.exists()
         && let Ok(config) = crate::config::load_toml_file(&settings_path)
         && let Some(Value::Object(settings)) = config.get("settings")
         && let Some(Value::String(lang)) = settings.get("language")
-        && is_chinese(lang)
     {
-        return "zh";
+        return normalize_language(lang).unwrap_or("en");
     }
     "en"
 }
 
-fn is_chinese(lang: &str) -> bool {
-    matches!(lang.to_lowercase().as_str(), "zh" | "cn" | "chinese")
+/// The language code a setting or locale names, if it is one we have: `zh`,
+/// `zh-CN`, `cn`, `chinese`, `中文`; `es`, `es_MX`, `spanish`, `español`;
+/// `ko`, `ko-KR`, `kr`, `korean`, `한국어`; `en`, `en-GB`, `english`.
+pub fn normalize_language(lang: &str) -> Option<&'static str> {
+    let lowered = lang.trim().to_lowercase();
+    let base = lowered.split(['-', '_', '.']).next().unwrap_or("");
+    match base {
+        "zh" | "cn" | "chinese" | "中文" | "简体中文" => Some("zh"),
+        "es" | "spanish" | "español" | "espanol" => Some("es"),
+        "ko" | "kr" | "korean" | "한국어" => Some("ko"),
+        "en" | "english" => Some("en"),
+        _ => None,
+    }
+}
+
+fn table(lang: &str) -> Option<&'static [(&'static str, &'static str)]> {
+    match lang {
+        "zh" => Some(ZH_TRANSLATIONS),
+        "es" => Some(ES_TRANSLATIONS),
+        "ko" => Some(KO_TRANSLATIONS),
+        _ => None,
+    }
+}
+
+/// Translation of an English source string into `lang`, if there is one.
+pub fn lookup(lang: &str, text: &str) -> Option<&'static str> {
+    let table = table(lang)?;
+    table.binary_search_by(|(key, _)| key.as_bytes().cmp(text.as_bytes())).ok().map(|i| table[i].1)
 }
 
 /// Chinese translation of an English source string, if there is one.
 pub fn zh(text: &str) -> Option<&'static str> {
-    ZH_TRANSLATIONS.binary_search_by(|(key, _)| key.as_bytes().cmp(text.as_bytes())).ok().map(|i| ZH_TRANSLATIONS[i].1)
+    lookup("zh", text)
 }
 
 /// Translate to the active language (Python `_t`).
 pub fn t(text: &str) -> String {
-    if get_language() == "zh"
-        && let Some(translated) = zh(text)
-    {
-        return translated.to_string();
-    }
-    text.to_string()
+    lookup(get_language(), text).unwrap_or(text).to_string()
 }
 
 /// Python `str.format(**kwargs)` for `{name}` placeholders (with `{{`/`}}`).
@@ -97,10 +124,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn table_is_sorted_for_binary_search() {
-        assert!(ZH_TRANSLATIONS.windows(2).all(|w| w[0].0.as_bytes() < w[1].0.as_bytes()));
+    fn tables_are_sorted_for_binary_search() {
+        for lang in ["zh", "es", "ko"] {
+            let table = table(lang).unwrap();
+            assert!(table.windows(2).all(|w| w[0].0.as_bytes() < w[1].0.as_bytes()), "{lang}");
+        }
         assert_eq!(zh("rmd CLI"), Some("rmd 命令行工具"));
         assert_eq!(zh("no such string"), None);
+        assert_eq!(lookup("en", "rmd CLI"), None);
+    }
+
+    /// Spanish and Korean translate exactly the strings Chinese does, and keep
+    /// each one's placeholders and surrounding whitespace.
+    #[test]
+    fn every_language_translates_the_same_strings() {
+        fn placeholders(text: &str) -> Vec<String> {
+            let mut names: Vec<String> = text
+                .split('{')
+                .skip(1)
+                .filter_map(|part| part.split_once('}').map(|(name, _)| name.to_string()))
+                .collect();
+            names.sort();
+            names
+        }
+        let keys: Vec<&str> = ZH_TRANSLATIONS.iter().map(|(key, _)| *key).collect();
+        for (lang, table) in [("es", ES_TRANSLATIONS), ("ko", KO_TRANSLATIONS)] {
+            assert_eq!(table.iter().map(|(key, _)| *key).collect::<Vec<_>>(), keys, "{lang}");
+            for (key, text) in table {
+                assert_eq!(placeholders(key), placeholders(text), "{lang}: {key}");
+                assert_eq!(key.len() - key.trim_start().len(), text.len() - text.trim_start().len(), "{lang}: {key}");
+                assert_eq!(key.ends_with(' '), text.ends_with(' '), "{lang}: {key}");
+                assert_eq!(key.matches('\n').count(), text.matches('\n').count(), "{lang}: {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn normalizes_language_names() {
+        for (value, code) in [
+            ("zh", "zh"),
+            ("zh_CN.UTF-8", "zh"),
+            ("Chinese", "zh"),
+            ("中文", "zh"),
+            ("es", "es"),
+            ("es-MX", "es"),
+            ("Español", "es"),
+            ("ko", "ko"),
+            ("ko_KR", "ko"),
+            ("kr", "ko"),
+            ("한국어", "ko"),
+            ("en-GB", "en"),
+        ] {
+            assert_eq!(normalize_language(value), Some(code), "{value}");
+        }
+        assert_eq!(normalize_language("fr"), None);
+        assert_eq!(normalize_language(""), None);
     }
 
     #[test]
@@ -131,8 +209,14 @@ mod language_tests {
             assert_eq!(get_language(), "zh", "{value}");
         }
         assert_eq!(t("📋 No tasks found"), "📋 未找到任务");
+        env.set_var("REMINDER_LANG", "ko_KR.UTF-8");
+        assert_eq!(get_language(), "ko");
         env.set_var("REMINDER_LANG", "en");
         assert_eq!(get_language(), "en");
+    }
+
+    fn es_text(key: &str) -> &'static str {
+        lookup("es", key).unwrap()
     }
 
     #[test]
@@ -140,6 +224,13 @@ mod language_tests {
         let env = TestEnv::new();
         env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"zh\"\n");
         assert_eq!(get_language(), "zh");
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"es\"\n");
+        assert_eq!(get_language(), "es");
+        assert_eq!(t("📋 No tasks found"), es_text("📋 No tasks found"));
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"korean\"\n");
+        assert_eq!(get_language(), "ko");
+        env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"fr\"\n");
+        assert_eq!(get_language(), "en");
         env.write("user_config_0/settings.toml", "[settings]\nlanguage = \"en\"\n");
         assert_eq!(get_language(), "en");
         env.write("user_config_0/settings.toml", "not toml [");

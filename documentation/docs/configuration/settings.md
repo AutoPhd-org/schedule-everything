@@ -38,7 +38,7 @@ show_tasks_after_add = false
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `language` | string | `"en"` | Preferred language. Supported values are `"en"` (English) and `"zh"` (Chinese / 中文). Can also be overridden temporarily via the `REMINDER_LANG` environment variable. |
+| `language` | string | `"en"` | Interface language for the CLI, reminder popups, and the browser workspace. Supported values are `"en"` (English), `"zh"` (Chinese / 中文), `"es"` (Spanish / Español), and `"ko"` (Korean / 한국어). The browser's **Settings → Language** picker writes this value. Can also be overridden temporarily via the `REMINDER_LANG` environment variable. |
 | `sound_file` | string | `"/System/Library/Sounds/Ping.aiff"` | Path to the sound file for notifications |
 | `alarm_interval` | integer | `5` | Seconds between repeated alerts |
 | `max_alarm_duration` | integer | `300` | Maximum duration for alerts in seconds (5 minutes) |

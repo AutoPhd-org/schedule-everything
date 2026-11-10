@@ -188,7 +188,8 @@ export type DailyOverview = {
   highlights: {description: string; priority: number; type: string; endedAt: string}[];
 };
 
-export type Workspace = {configIds: number[]; activeId: number; rootDir: string; mode: string};
+/** `language` is `[settings] language` as the server reads it (see i18n.ts). */
+export type Workspace = {configIds: number[]; activeId: number; rootDir: string; mode: string; language?: string};
 
 export type Snapshot = {
   config: {

@@ -7,6 +7,7 @@
 // included; it can weigh each task by its importance. Rendering is pure (state in, HTML out); render.ts ticks
 // the clocks every second and binds the controls.
 import { deadlineSwatch } from "./calendar";
+import { msg, t, tn } from "./i18n";
 import type { DeadlineItem, Snapshot, TaskItem } from "./types";
 import { e, formatDate, icons, isoDay, liveClock, parseLocal, sw, typeSwatch } from "./ui";
 
@@ -117,24 +118,24 @@ export function clock(ms: number): string {
   const total = Math.floor(Math.abs(ms) / 1000);
   const days = Math.floor(total / 86400);
   const hours = Math.floor(total % 86400 / 3600);
-  if (days) return `${days}d ${hours}h`;
+  if (days) return t("{days}d {hours}h", {days, hours});
   return `${pad(hours)}:${pad(Math.floor(total % 3600 / 60))}:${pad(total % 60)}`;
 }
 /** A short span for task cards: `2h 14m`, `45m`, `3d 2h`. */
 export function span(ms: number): string {
   const minutes = Math.floor(Math.abs(ms) / 60000);
-  if (minutes < 1) return "<1m";
+  if (minutes < 1) return t("<1m");
   const days = Math.floor(minutes / 1440);
   const hours = Math.floor(minutes % 1440 / 60);
-  return days ? `${days}d ${hours}h` : hours ? `${hours}h ${pad(minutes % 60)}m` : `${minutes}m`;
+  return days ? t("{days}d {hours}h", {days, hours}) : hours ? t("{hours}h {minutes}m", {hours, minutes: pad(minutes % 60)}) : t("{n}m", {n: minutes});
 }
 /** The text of a ticking element, by its `data-clock`: a "clock" or a "short" span of time, or the words around
  *  it, which change once the time has passed ("word": left or overdue; "by": by or was due; "due": Due or Was due). */
 export function clockText(kind: string | undefined, at: number, now: number): string {
   const ahead = at > now;
-  if (kind === "word") return ahead ? "left" : "overdue";
-  if (kind === "by") return ahead ? "by" : "was due";
-  if (kind === "due") return ahead ? "Due" : "Was due";
+  if (kind === "word") return ahead ? t("left") : t("overdue");
+  if (kind === "by") return ahead ? t("by") : t("was due");
+  if (kind === "due") return ahead ? t("Due") : t("Was due");
   return kind === "short" ? span(at - now) : clock(at - now);
 }
 
@@ -145,8 +146,8 @@ export function dueLabel(due: string, now: number): string {
   const time = formatDate(due, {hour: "numeric", minute: "2-digit"});
   const offset = Math.round((parseLocal(`${day}T12:00`).getTime() - parseLocal(`${today}T12:00`).getTime()) / DAY);
   if (offset === 0) return time;
-  if (offset === 1) return `tomorrow ${time}`;
-  if (offset === -1) return `yesterday ${time}`;
+  if (offset === 1) return t("tomorrow {time}", {time});
+  if (offset === -1) return t("yesterday {time}", {time});
   return formatDate(due, {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
 }
 
@@ -156,36 +157,36 @@ export function timerStrip({snapshot: s, now, closed, weighted = false}: TimerOp
   const timers = collectTimers(s, now, closed);
   const tasks = timers.filter(timer => timer.kind === "task").length;
   const row = timers.length
-    ? `<div class="timer-row" role="list" aria-label="${tasks} task ${tasks === 1 ? "timer" : "timers"} and ${timers.length - tasks} deadline ${timers.length - tasks === 1 ? "timer" : "timers"}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}</div>`
-    : `<p class="timer-empty"><span class="timer-empty-icon">${icons.coffee}</span><span>No timers right now. Make a task timed from its card or with <b>New task</b>; deadlines show here in their last 24 hours.</span></p>`;
-  return `<section class="timers" aria-label="Timers">${todayBar(todayProgress(s, now, weighted))}${row}</section>`;
+    ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}</div>`
+    : `<p class="timer-empty"><span class="timer-empty-icon">${icons.coffee}</span><span>${t("No timers right now. Make a task timed from its card or with <b>New task</b>; deadlines show here in their last 24 hours.")}</span></p>`;
+  return `<section class="timers" aria-label="${t("Timers")}">${todayBar(todayProgress(s, now, weighted))}${row}</section>`;
 }
 
 function todayBar(today: TodayProgress): string {
   const percent = Math.round(today.value * 100);
   const total = today.parts.length;
   const meta = total
-    ? [`<span class="today-done">${icons.check}${today.done} of ${total} done</span>`, today.overdue ? `<span class="today-overdue">${icons.ringing}${today.overdue} overdue</span>` : ""].filter(Boolean).join(" · ")
-    : "No timed tasks due today";
+    ? [`<span class="today-done">${icons.check}${t("{done} of {total} done", {done: today.done, total})}</span>`, today.overdue ? `<span class="today-overdue">${icons.ringing}${t("{count} overdue", {count: today.overdue})}</span>` : ""].filter(Boolean).join(" · ")
+    : t("No timed tasks due today");
   const segments = total
-    ? today.parts.map(part => `<i class="${part.done ? "is-done" : ""} ${part.overdue ? "is-overdue" : ""}" style="--p:${(part.progress / 100).toFixed(2)}; flex-grow:${today.weighted ? partWeight(part) : 1}" title="${e(`${part.description} · ${part.done ? "done" : `${part.progress}%`}${today.weighted ? ` · importance ${part.priority}` : ""}`)}"></i>`).join("")
+    ? today.parts.map(part => `<i class="${part.done ? "is-done" : ""} ${part.overdue ? "is-overdue" : ""}" style="--p:${(part.progress / 100).toFixed(2)}; flex-grow:${today.weighted ? partWeight(part) : 1}" title="${e(`${part.description} · ${part.done ? t("done") : `${part.progress}%`}${today.weighted ? ` · ${t("importance {n}", {n: part.priority})}` : ""}`)}"></i>`).join("")
     : `<i class="is-blank" style="--p:0"></i>`;
-  const weighting = today.weighted ? `<span class="today-weighted" data-tip="Each task counts by its importance: an importance-9 task moves the bar three times as much as an importance-3 one. Change it in Settings.">${icons.scale}<span>By importance</span></span>` : "";
+  const weighting = today.weighted ? `<span class="today-weighted" data-tip="${t("Each task counts by its importance: an importance-9 task moves the bar three times as much as an importance-3 one. Change it in Settings.")}">${icons.scale}<span>${t("By importance")}</span></span>` : "";
   return `<div class="today-progress ${total ? "" : "is-idle"} ${percent === 100 ? "is-complete" : ""}">
-      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : icons.target}<span>Today’s timed work</span></span><span class="today-meta">${meta}</span>${weighting}<strong class="today-value">${percent}<small>%</small></strong></div>
-      <div class="today-bar" role="progressbar" aria-label="Today’s timed work" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${e(total ? `${percent}% · ${today.done} of ${total} timed tasks done${today.weighted ? " · weighted by importance" : ""}` : "No timed tasks due today")}">${segments}</div>
+      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : icons.target}<span>${t("Today’s timed work")}</span></span><span class="today-meta">${meta}</span>${weighting}<strong class="today-value">${percent}<small>%</small></strong></div>
+      <div class="today-bar" role="progressbar" aria-label="${t("Today’s timed work")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${e(total ? `${t("{percent}% · {done} of {total} timed tasks done", {percent, done: today.done, total})}${today.weighted ? ` · ${t("weighted by importance")}` : ""}` : t("No timed tasks due today"))}">${segments}</div>
     </div>`;
 }
 
 const DIAL_ICONS: Record<Urgency, string> = {calm: liveClock, soon: icons.hourglass, close: icons.alarm, overdue: icons.ringing, ready: icons.party};
-const FLAGS: Partial<Record<Urgency, string>> = {close: `${icons.alarm}<span>Last hour</span>`, overdue: `${icons.ringing}<span>Overdue</span>`, ready: `${icons.party}<span>All done</span>`};
+const FLAGS: Partial<Record<Urgency, {icon: string; label: string}>> = {close: {icon: icons.alarm, label: msg("Last hour")}, overdue: {icon: icons.ringing, label: msg("Overdue")}, ready: {icon: icons.party, label: msg("All done")}};
 
 /** The ring that drains as time runs out, around an icon for how close the timer is. */
 function dial(kind: Timer["kind"], at: number, now: number, level: Urgency): string {
   const image = kind === "deadline" && level !== "close" ? icons.flag : DIAL_ICONS[level];
   return `<span class="timer-dial" aria-hidden="true"><svg viewBox="0 0 48 48"><circle class="dial-track" cx="24" cy="24" r="20.5"/><circle class="dial-time" cx="24" cy="24" r="20.5" pathLength="100" stroke-dasharray="${dialDash(runway(kind, at, now))}" data-dial/></svg><span class="dial-icon">${image}</span></span>`;
 }
-const flag = (level: Urgency) => FLAGS[level] ? `<span class="timer-flag">${FLAGS[level]}</span>` : "";
+const flag = (level: Urgency) => { const shown = FLAGS[level]; return shown ? `<span class="timer-flag">${shown.icon}<span>${t(shown.label)}</span></span>` : ""; };
 
 function taskTimer(timer: TaskTimer, s: Snapshot, now: number, order: number): string {
   const {task, index, at} = timer;
@@ -193,9 +194,9 @@ function taskTimer(timer: TaskTimer, s: Snapshot, now: number, order: number): s
   const level = urgency("task", at, now, progress === 100);
   const name = e(task.description);
   const type = s.taskTypes[task.type] ?? task.typeName;
-  const complete = level === "ready" ? `<button type="button" class="timer-complete" data-task="${index}" data-operation="deleted" aria-label="Complete ${name}">${icons.check}<span>Complete</span></button>` : "";
+  const complete = level === "ready" ? `<button type="button" class="timer-complete" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {name}", {name})}">${icons.check}<span>${t("Complete")}</span></button>` : "";
   return `<article class="timer timer-task ${sw(typeSwatch(s.taskTypes, task.type))} urgency-${level} ${level === "overdue" ? "is-overdue" : ""}" role="listitem" data-at="${at}" data-kind="task" data-urgency="${level}" ${progress === 100 ? "data-ready" : ""} style="--i:${order}">
-      <div class="timer-top">${dial("task", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.tasks}<span>Task</span></span>${flag(level)}<span class="timer-type" title="${e(type || "")}">${e(type || "")}</span></div><h4 title="${name}">${name}</h4></div></div>
+      <div class="timer-top">${dial("task", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.tasks}<span>${t("Task")}</span></span>${flag(level)}<span class="timer-type" title="${e(type || "")}">${e(type || "")}</span></div><h4 title="${name}">${name}</h4></div></div>
       <p class="timer-clock"><time datetime="${e(task.due ?? "")}" data-clock="clock">${clock(at - now)}</time><span class="timer-sub">${icons.due}<span data-clock="word">${clockText("word", at, now)}</span> · <span data-clock="by">${clockText("by", at, now)}</span> ${e(dueLabel(task.due!, now))}</span></p>
       ${timerSteps(task, index)}
       <div class="timer-foot">${progressControl(index, task, "timer-progress")}${complete}</div>
@@ -208,9 +209,9 @@ function timerSteps(task: TaskItem, index: number): string {
   if (!steps.length) return "";
   const done = steps.filter(step => step.done).length;
   const next = steps.findIndex(step => !step.done);
-  const count = `<span class="timer-steps-count" title="${done} of ${steps.length} subtasks done">${icons.subtasks}<b>${done}/${steps.length}</b></span>`;
-  if (next < 0) return `<div class="timer-steps is-done">${count}<span class="timer-next-done">Every subtask is done</span></div>`;
-  return `<div class="timer-steps">${count}<label class="timer-next" title="Check off the next subtask"><input type="checkbox" data-subtask="${index}" data-step="${next}" aria-label="${e(`Done: ${steps[next].text}`)}"><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="timer-next-text"><small>Next</small>${e(steps[next].text)}</span></label></div>`;
+  const count = `<span class="timer-steps-count" title="${t("{done} of {total} subtasks done", {done, total: steps.length})}">${icons.subtasks}<b>${done}/${steps.length}</b></span>`;
+  if (next < 0) return `<div class="timer-steps is-done">${count}<span class="timer-next-done">${t("Every subtask is done")}</span></div>`;
+  return `<div class="timer-steps">${count}<label class="timer-next" title="${t("Check off the next subtask")}"><input type="checkbox" data-subtask="${index}" data-step="${next}" aria-label="${e(t("Done: {text}", {text: steps[next].text}))}"><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="timer-next-text"><small>${t("Next")}</small>${e(steps[next].text)}</span></label></div>`;
 }
 
 function deadlineTimer(timer: DeadlineTimer, s: Snapshot, now: number, order: number): string {
@@ -218,8 +219,8 @@ function deadlineTimer(timer: DeadlineTimer, s: Snapshot, now: number, order: nu
   const level = urgency("deadline", at, now);
   const name = e(deadline.event);
   return `<article class="timer timer-deadline ${sw(deadlineSwatch(deadline, s.taskTypes))} urgency-${level}" role="listitem" data-at="${at}" data-kind="deadline" data-urgency="${level}" style="--i:${order}">
-      <div class="timer-top">${dial("deadline", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.flag}<span>Deadline</span></span>${flag(level)}<button type="button" class="timer-close" data-timer-close="${e(key)}" aria-label="Close the timer for ${name}" title="Close this timer. The deadline stays as it is.">${icons.close}</button></div><h4 title="${name}">${name}</h4></div></div>
-      <p class="timer-clock"><time datetime="${e(deadline.deadline)}" data-clock="clock">${clock(at - now)}</time><span class="timer-sub">${icons.due}<span data-clock="word">left</span> · due ${deadline.daysLeft === 0 ? "today" : e(formatDate(deadline.deadline, {weekday: "short", month: "short", day: "numeric"}))}</span></p>
+      <div class="timer-top">${dial("deadline", at, now, level)}<div class="timer-heading"><div class="timer-head"><span class="timer-kind">${icons.flag}<span>${t("Deadline")}</span></span>${flag(level)}<button type="button" class="timer-close" data-timer-close="${e(key)}" aria-label="${t("Close the timer for {name}", {name})}" title="${t("Close this timer. The deadline stays as it is.")}">${icons.close}</button></div><h4 title="${name}">${name}</h4></div></div>
+      <p class="timer-clock"><time datetime="${e(deadline.deadline)}" data-clock="clock">${clock(at - now)}</time><span class="timer-sub">${icons.due}<span data-clock="word">${t("left")}</span> · ${deadline.daysLeft === 0 ? t("due today") : t("due {date}", {date: e(formatDate(deadline.deadline, {weekday: "short", month: "short", day: "numeric"}))})}</span></p>
       ${deadline.typeName ? `<span class="timer-type" title="${e(deadline.typeName)}">${e(deadline.typeName)}</span>` : ""}
     </article>`;
 }
@@ -232,8 +233,8 @@ export function progressControl(index: number, task: Pick<TaskItem, "description
   const full = progress === 100 ? "is-full" : "";
   if (steps.length) {
     const done = steps.filter(step => step.done).length;
-    const summary = `${done} of ${steps.length} ${steps.length === 1 ? "subtask" : "subtasks"} done`;
-    return `<div class="progress-control is-auto ${className} ${full}"><span class="progress-label">Progress</span><span class="progress-meter" role="progressbar" aria-label="${e(`Progress of ${task.description}`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}" aria-valuetext="${e(`${progress}%, ${summary}`)}" style="--p:${(progress / 100).toFixed(2)}"></span><b>${progress}%</b><span class="progress-auto" data-tip="${e(`Follows its subtasks: ${summary}`)}">${icons.subtasks}</span></div>`;
+    const summary = tn("{done} of {count} subtask done", "{done} of {count} subtasks done", steps.length, {done});
+    return `<div class="progress-control is-auto ${className} ${full}"><span class="progress-label">${t("Progress")}</span><span class="progress-meter" role="progressbar" aria-label="${e(t("Progress of {name}", {name: task.description}))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}" aria-valuetext="${e(t("{percent}%, {summary}", {percent: progress, summary}))}" style="--p:${(progress / 100).toFixed(2)}"></span><b>${progress}%</b><span class="progress-auto" data-tip="${e(t("Follows its subtasks: {summary}", {summary}))}">${icons.subtasks}</span></div>`;
   }
-  return `<label class="progress-control ${className} ${full}"><span class="progress-label">Progress</span><input type="range" class="progress-range" name="progress" data-progress="${index}" min="0" max="100" step="5" value="${progress}" style="--p:${(progress / 100).toFixed(2)}" aria-label="${e(`Progress of ${task.description}`)}" aria-valuetext="${progress}%"><b>${progress}%</b></label>`;
+  return `<label class="progress-control ${className} ${full}"><span class="progress-label">${t("Progress")}</span><input type="range" class="progress-range" name="progress" data-progress="${index}" min="0" max="100" step="5" value="${progress}" style="--p:${(progress / 100).toFixed(2)}" aria-label="${e(t("Progress of {name}", {name: task.description}))}" aria-valuetext="${progress}%"><b>${progress}%</b></label>`;
 }

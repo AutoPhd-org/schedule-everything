@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::data::{load_habit_records, load_habits, save_habit_records};
-use crate::i18n::{get_language, t, tf};
+use crate::i18n::{t, tf};
 use crate::py::{self, Dict};
 use crate::ui::{Console, PromptError};
 
@@ -21,28 +21,7 @@ pub fn habit_sort_key(habit_id: &str) -> (u8, String) {
     }
 }
 
-/// Turn a habit description into a yes/no question.
-pub fn habit_question(description: &str) -> String {
-    let text = description.trim();
-    if text.is_empty() {
-        return t("Did you complete this habit today?");
-    }
-    if text.ends_with('?') {
-        return text.to_string();
-    }
-    if text.to_lowercase().starts_with("did you ") {
-        return format!("{text}?");
-    }
-    if get_language() == "zh" {
-        return format!("今天你 {text} 了吗？");
-    }
-    let mut chars = text.chars();
-    let text = match chars.next() {
-        Some(first) if first.is_alphabetic() => first.to_lowercase().collect::<String>() + chars.as_str(),
-        _ => text.to_string(),
-    };
-    format!("Did you {text} today?")
-}
+pub use crate::popups::habit_question;
 
 fn sorted_habits(habits: &IndexMap<String, String>) -> Vec<(&String, &String)> {
     let mut sorted: Vec<(&String, &String)> = habits.iter().collect();

@@ -16,6 +16,7 @@ import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
+import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
 import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
 
 export { escapeHtml, groupTasks };
@@ -83,16 +84,18 @@ function saveClosedTimers(closed: Set<string>, today: string): void {
   try { window.localStorage.setItem(CLOSED_TIMERS, JSON.stringify(pruneClosed(closed, today))); } catch { /* Keep working without storage. */ }
 }
 
-const PAGES: [Page, string][] = [["today", "Overview"], ["schedule", "Schedule"], ["routines", "Routines & deadlines"], ["activity", "Activity"], ["settings", "Settings"]];
+/** Each page with its name, marked for translation and translated where it is drawn. */
+const PAGES: [Page, string][] = [["today", msg("Overview")], ["schedule", msg("Schedule")], ["routines", msg("Routines & deadlines")], ["activity", msg("Activity")], ["settings", msg("Settings")]];
 const GALLERY_PAGE = 60;
 const TREE_PAGE = 300;
 const REPOSITORY = "AutoPhd-org/schedule-everything";
 const AGENT_SETUP: Record<AgentTab, {name: string; steps: string[]; note: string}> = {
-  claude: {name: "Claude Code", steps: [`claude plugin marketplace add ${REPOSITORY}`, "claude plugin install schedule-everything@schedule-everything"], note: "Inside a Claude Code session you can run the same steps as /plugin marketplace add and /plugin install."},
-  codex: {name: "Codex", steps: [`codex plugin marketplace add ${REPOSITORY}`, "codex plugin add schedule-everything@schedule-everything"], note: "The plugin also appears in the ChatGPT desktop app once the marketplace is added."},
-  antigravity: {name: "Antigravity", steps: [`git clone https://github.com/${REPOSITORY}.git`, "agy plugin install ./schedule-everything/plugins/schedule-everything"], note: "Antigravity installs the plugin from the cloned folder."}
+  claude: {name: "Claude Code", steps: [`claude plugin marketplace add ${REPOSITORY}`, "claude plugin install schedule-everything@schedule-everything"], note: msg("Inside a Claude Code session you can run the same steps as /plugin marketplace add and /plugin install.")},
+  codex: {name: "Codex", steps: [`codex plugin marketplace add ${REPOSITORY}`, "codex plugin add schedule-everything@schedule-everything"], note: msg("The plugin also appears in the ChatGPT desktop app once the marketplace is added.")},
+  antigravity: {name: "Antigravity", steps: [`git clone https://github.com/${REPOSITORY}.git`, "agy plugin install ./schedule-everything/plugins/schedule-everything"], note: msg("Antigravity installs the plugin from the cloned folder.")}
 };
-const AGENT_PROMPTS = ["Build my weekly schedule", "Plan my focus blocks for today", "Move my workouts to the evenings", "Suggest tasks from my email and calendar"];
+/** Example requests to copy into an AI agent, in the interface language (translated where they are drawn). */
+const AGENT_PROMPTS = [msg("Build my weekly schedule"), msg("Plan my focus blocks for today"), msg("Move my workouts to the evenings"), msg("Suggest tasks from my email and calendar")];
 const typeOptions = (snapshot: Snapshot, selected = "") => Object.entries(snapshot.taskTypes).map(([id, name]) => `<option value="${e(id)}" ${id === selected ? "selected" : ""}>${e(name)}</option>`).join("");
 const isOverview = (value: unknown): value is WeeklyOverview => !!value && Array.isArray((value as WeeklyOverview).days) && Array.isArray((value as WeeklyOverview).trend);
 const isDaily = (value: unknown): value is DailyOverview => !!value && Array.isArray((value as DailyOverview).hours) && typeof (value as DailyOverview).date === "string";
@@ -144,7 +147,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   /** Progress and subtasks set on this page that the server has not confirmed yet, by task. */
   const progressPending = new Map<string, number>();
   const subtasksPending = new Map<string, Subtask[]>();
-  root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>Opening your workspace…</p></div>`;
+  root.innerHTML = `<div class="loading"><span class="loading-blob">${icons.sprout}</span><p>${t("Opening your workspace…")}</p></div>`;
   const request = async <T>(command: string, payload: Record<string, unknown> = {}): Promise<T> => client.send<T>(command, payload);
   const modeOf = (): Mode => state.workspace?.mode === "p" ? "p" : "j";
 
@@ -162,6 +165,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (task) { task.subtasks = steps.map(step => ({...step})); task.progress = progressOf(task); }
     }
     [state.workspace] = await Promise.all([request<Workspace>("workspace_info"), state.page === "today" ? loadDaily() : null]);
+    // The language is a setting the CLI can change too, so every reload picks it up.
+    if (state.workspace?.language) setLanguage(state.workspace.language);
     setTypeColors(state.snapshot.taskTypeColors);
     if (!drawn) state.calendar.year = Number(state.snapshot.today.date.slice(0, 4)) || state.calendar.year;
     if (state.page === "activity") await loadActivity();
@@ -214,7 +219,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function status() {
     const region = root.querySelector<HTMLElement>("#notice");
     if (!region) return;
-    const text = state.busy ? "Working on it…" : state.notice;
+    const text = state.busy ? t("Working on it…") : state.notice;
     region.querySelector(".notice-text")!.textContent = text;
     region.querySelector<HTMLButtonElement>("[data-notice-undo]")!.hidden = !undoable();
     region.classList.remove("leaving");
@@ -284,13 +289,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     // Redrawing the same page keeps it where it was scrolled, even if the board is briefly shorter meanwhile.
     const scroller = document.scrollingElement;
     const scrolled = samePage && scroller ? scroller.scrollTop : null;
-    const title = PAGES.find(([id]) => id === state.page)![1];
+    const title = t(PAGES.find(([id]) => id === state.page)![1]);
     const page = state.page === "today" ? (mode === "p" ? overviewP(s) : overviewJ(s)) : state.page === "schedule" ? schedulePage(s) : state.page === "routines" ? routines(s) : state.page === "activity" ? activity(s) : settings(s);
-    root.innerHTML = `<div class="workspace mode-${mode}"><aside class="sidebar"><a class="brand" href="#" aria-label="Schedule Everything overview"><span class="brand-mark">${icons.sprout}</span><span>schedule<span class="brand-sub">everything</span></span></a><div class="workspace-label">YOUR WORKSPACE</div>
-      <nav aria-label="Main navigation">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(label)}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${label}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
-      <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? "P mode" : "J mode"}</strong><span>${mode === "p" ? "Flexible, task-first" : "Structured day"}</span></div></div><span class="local-dot"></span> Saved on your computer<p>One day, one thing at a time.</p></div></aside>
-      <main class="main"><header class="topbar"><span class="breadcrumb">Workspace ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}${loadChip(s)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", "Refresh", icons.refresh, "button small ghost")}</header>
-      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="Undo (${undoKey()})">${icons.undo}<span>Undo</span></button><button type="button" class="notice-close" data-notice-close aria-label="Dismiss notification" title="Dismiss (Esc)">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>Let’s get your schedule ready.</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">Build a schedule with your AI agent</button><button class="button ghost" type="button" data-page="settings">Edit configuration</button></div>` : ""}${page}</div></main></div>`;
+    root.innerHTML = `<div class="workspace mode-${mode}"><aside class="sidebar"><a class="brand" href="#" aria-label="${t("Schedule Everything overview")}"><span class="brand-mark">${icons.sprout}</span><span>schedule<span class="brand-sub">everything</span></span></a><div class="workspace-label">${t("YOUR WORKSPACE")}</div>
+      <nav aria-label="${t("Main navigation")}">${PAGES.map(([id, label]) => `<button type="button" data-page="${id}" title="${e(t(label))}" aria-current="${state.page === id ? "page" : "false"}" class="nav-item ${state.page === id ? "active" : ""}"><span class="nav-icon">${icons[id]}</span><span class="nav-label">${t(label)}</span>${id === "today" ? `<span class="nav-count">${s.tasks.length}</span>` : ""}</button>`).join("")}</nav>
+      <div class="sidebar-bottom"><div class="mode-note mode-${mode}">${mode === "p" ? icons.feather : icons.target}<div><strong>${mode === "p" ? t("P mode") : t("J mode")}</strong><span>${mode === "p" ? t("Flexible, task-first") : t("Structured day")}</span></div></div><span class="local-dot"></span> ${t("Saved on your computer")}<p>${t("One day, one thing at a time.")}</p></div></aside>
+      <main class="main"><header class="topbar"><span class="breadcrumb">${t("Workspace")} ${icons.arrow} <strong>${title}</strong></span>${modeSwitch(mode)}${loadChip(s)}<span class="date">${icons.today}${e(formatDate(s.today.date, {weekday: "short", month: "short", day: "numeric"}))}</span>${themeControls()}${button("refresh", t("Refresh"), icons.refresh, "button small ghost")}</header>
+      <div class="content page-${state.page} ${animate ? "enter" : ""}"><div id="notice" class="notice"><span class="notice-text" role="status" aria-live="polite"></span><button type="button" class="notice-undo" data-notice-undo hidden title="${t("Undo ({key})", {key: undoKey()})}">${icons.undo}<span>${t("Undo")}</span></button><button type="button" class="notice-close" data-notice-close aria-label="${t("Dismiss notification")}" title="${t("Dismiss (Esc)")}">${icons.close}</button></div>${s.config.error ?`<div class="config-banner"><h3>${t("Let’s get your schedule ready.")}</h3><p>${e(s.config.error)}</p><button class="button primary" type="button" data-page="schedule">${t("Build a schedule with your AI agent")}</button><button class="button ghost" type="button" data-page="settings">${t("Edit configuration")}</button></div>` : ""}${page}</div></main></div>`;
     bindShell(s);
     state.board.fresh = false;
     if (scrolled !== null && scroller && Math.abs(scroller.scrollTop - scrolled) > 1) scroller.scrollTop = scrolled;
@@ -323,7 +328,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function loadChip(s: Snapshot) {
     const load = workload(s.tasks, s.today.date);
     const info = levelInfo(load.level);
-    return `<button type="button" class="load-chip load-${load.level}" data-load-chip data-tip="${e(`${describeLoad(load)} ${WORKLOAD_DEFINITION}`)}" aria-label="${e(`${describeLoad(load)} Open the daily overview.`)}">${info.icon}<span class="load-name">${e(info.label)}</span><b>${load.points.toFixed(1)}</b></button>`;
+    return `<button type="button" class="load-chip load-${load.level}" data-load-chip data-tip="${e(`${describeLoad(load)} ${t(WORKLOAD_DEFINITION)}`)}" aria-label="${e(`${describeLoad(load)} ${t("Open the daily overview.")}`)}">${info.icon}<span class="load-name">${e(info.label)}</span><b>${load.points.toFixed(1)}</b></button>`;
   }
   function bindLoadChip() {
     const chip = root.querySelector<HTMLButtonElement>("[data-load-chip]");
@@ -376,7 +381,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         try { await request("service_action", {action: "mode", mode}); }
         catch (error) { toggle?.classList.toggle("is-p", mode !== "p"); throw error; }
         await reload();
-        state.notice = mode === "p" ? "P mode: a flexible, task-first workspace." : "J mode: your structured day is back.";
+        state.notice = mode === "p" ? t("P mode: a flexible, task-first workspace.") : t("J mode: your structured day is back.");
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>("[data-language]").forEach(btn => btn.onclick = () => {
+      const choice = btn.dataset.language!;
+      if (choice === language()) return;
+      void action(async () => {
+        await request("language_set", {language: choice});
+        await reload();
+        state.notice = t("The workspace, the rmd command line, and reminder popups now use {name}.", {name: LANGUAGES.find(entry => entry.id === language())!.name});
       });
     });
     root.querySelectorAll<HTMLButtonElement>("[data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
@@ -406,7 +420,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       redrawBoard(s);
     });
     root.querySelector<HTMLSelectElement>('[name="configFile"]')?.addEventListener("change", event => void action(async () => {
-      if (state.config && root.querySelector<HTMLTextAreaElement>('[name="configContent"]')?.value !== state.config.content && !window.confirm("Discard unsaved edits?")) { (event.target as HTMLSelectElement).value = state.config.file; return; }
+      if (state.config && root.querySelector<HTMLTextAreaElement>('[name="configContent"]')?.value !== state.config.content && !window.confirm(t("Discard unsaved edits?"))) { (event.target as HTMLSelectElement).value = state.config.file; return; }
       state.config = await request<ConfigFile>("config_read", {file: (event.target as HTMLSelectElement).value});
       draw();
     }));
@@ -420,29 +434,29 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (id === "refresh") { freshBoard(); await reload(); }
     if (id === "add-task") taskDialog();
     if (id === "add-deadline") deadlineDialog();
-    if (id === "sync-clear") { if (!window.confirm("Clear today’s plan? Your weekly routine stays the same.")) return; await request("sync_clear"); await reload(); state.notice = "Today’s plan was cleared."; }
+    if (id === "sync-clear") { if (!window.confirm(t("Clear today’s plan? Your weekly routine stays the same."))) return; await request("sync_clear"); await reload(); state.notice = t("Today’s plan was cleared."); }
     if (id === "open-config") { state.config = await request<ConfigFile>("config_read", {file: "settings"}); draw(); }
     if (id === "config-save") {
       const content = root.querySelector<HTMLTextAreaElement>('[name="configContent"]')!.value;
       const result = await request<ConfigFile & {message: string}>("config_save", {...state.config, content}); state.config = result; await reload(); state.notice = result.message;
     }
-    if (id === "shutdown") { if (!window.confirm("Stop the local browser service? You can relaunch it whenever you need.")) return; await request("server_shutdown"); root.dispatchEvent(new Event("workspace-closed")); root.innerHTML = '<div class="loading"><h1>See you next time.</h1><p>Your local data is saved. Relaunch the browser workspace to return.</p></div>'; }
+    if (id === "shutdown") { if (!window.confirm(t("Stop the local browser service? You can relaunch it whenever you need."))) return; await request("server_shutdown"); root.dispatchEvent(new Event("workspace-closed")); root.innerHTML = `<div class="loading"><h1>${t("See you next time.")}</h1><p>${t("Your local data is saved. Relaunch the browser workspace to return.")}</p></div>`; }
     if (id === "mode") { await request("service_action", {action: "mode", mode: modeOf() === "p" ? "j" : "p"}); await reload(); }
     if (["update", "stop", "switch"].includes(id)) {
-      if (id === "stop" && !window.confirm("Stop reminder notifications?")) return;
+      if (id === "stop" && !window.confirm(t("Stop reminder notifications?"))) return;
       const result = await request<{message: string}>("service_action", {action: id, configId: Number(root.querySelector<HTMLSelectElement>('[name="configId"]')?.value)}); state.config = null; await reload(); state.notice = result.message;
     }
     if (id === "schedule-pdf") {
       const result = await request<{url: string; filename: string}>("export_pdf", {kind: "schedule"});
-      const blob = await (await fetch(result.url)).blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = result.filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000); state.notice = "PDF downloaded.";
+      const blob = await (await fetch(result.url)).blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = result.filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000); state.notice = t("PDF downloaded.");
     }
     if (id === "open-week" && state.activity.summary) { state.activity.view = "week"; state.activity.week = state.activity.summary; draw(true); scrollTop(); }
     if (id === "close-week") { state.activity.view = "gallery"; draw(true); }
     if (id === "clear-day") { state.activity.filter.day = null; redrawGallery(); }
   }
   async function copyText(text: string) {
-    try { await navigator.clipboard.writeText(text); state.notice = `Copied: ${text}`; }
-    catch { state.notice = "Could not copy. Select the text and copy it instead."; }
+    try { await navigator.clipboard.writeText(text); state.notice = t("Copied: {text}", {text}); }
+    catch { state.notice = t("Could not copy. Select the text and copy it instead."); }
     status();
   }
   const scrollTop = () => { if (document.scrollingElement) document.scrollingElement.scrollTop = 0; };
@@ -457,13 +471,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
           await flushTask(task.description);
           await request("task_update", {originalDescription: task.description, description: task.description, priority: task.priority, type: task.type, due: ""});
           await reload();
-          state.notice = `“${task.description}” is a normal task again.`;
+          state.notice = t("“{task}” is a normal task again.", {task: task.description});
         });
         return;
       }
       void action(async () => {
         const kind = btn.dataset.operation as Farewell;
-        if (kind !== "deleted" && !window.confirm(`${kind === "cancelled" ? "Cancel" : "Drop"} “${task.description}”?`)) return;
+        if (kind !== "deleted" && !window.confirm(kind === "cancelled" ? t("Cancel “{task}”?", {task: task.description}) : t("Drop “{task}”?", {task: task.description}))) return;
         // The task leaves the page while the server is told, its card and its timer together, and the board
         // is redrawn once the space they took has closed.
         const exit = farewell(copiesOf(btn.dataset.task!, btn), kind, btn);
@@ -477,7 +491,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         // The last task of a type leaves its group cleared, so the group glides to its new size.
         const emptied = !s.tasks.some(other => other !== task && other.type === task.type);
         await reload({morph: emptied, then: () => tickCounts(task.type)});
-        const notice = kind === "deleted" ? `Completed “${task.description}”. Nice work.` : `Removed “${task.description}”.`;
+        const notice = kind === "deleted" ? t("Completed “{task}”. Nice work.", {task: task.description}) : t("Removed “{task}”.", {task: task.description});
         const token = result?.undo;
         if (token) offerUndo(notice, () => restoreTask(task.description, token));
         else state.notice = notice;
@@ -504,7 +518,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     await request("task_restore", token);
     state.board.added = description;
     await reload();
-    state.notice = `“${description}” is back on your list.`;
+    state.notice = t("“{task}” is back on your list.", {task: description});
   }
   // ----- Progress, subtasks, and timers ---------------------------------------
 
@@ -622,12 +636,12 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       const left = task.subtasks!.length - 1;
       changeSubtasks(s, index, steps => steps.filter((_, i) => i !== step),
         left ? `#board-area [data-subtask-remove="${index}"][data-step="${Math.min(step, left - 1)}"]` : `#board-area [data-subtask-open="${index}"]`);
-      offerUndo(`Removed the subtask “${removed.text}”.`, async () => {
+      offerUndo(t("Removed the subtask “{subtask}”.", {subtask: removed.text}), async () => {
         const current = state.snapshot!;
         const at = current.tasks.findIndex(item => item.description === task.description);
-        if (at < 0) throw new Error(`“${task.description}” is no longer on your list.`);
+        if (at < 0) throw new Error(t("“{task}” is no longer on your list.", {task: task.description}));
         changeSubtasks(current, at, steps => [...steps.slice(0, step), removed, ...steps.slice(step)]);
-        state.notice = `“${removed.text}” is back.`;
+        state.notice = t("“{subtask}” is back.", {subtask: removed.text});
       });
       status();
     });
@@ -659,7 +673,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       event.preventDefault();
       const text = input.value.trim();
       if (!text || (task.subtasks?.length ?? 0) >= 50) {
-        if (text) { state.notice = "A task can have at most 50 subtasks."; status(); }
+        if (text) { state.notice = t("A task can have at most {max} subtasks.", {max: 50}); status(); }
         form.classList.remove("shake");
         void form.offsetWidth;
         form.classList.add("shake");
@@ -690,17 +704,17 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindTasks(scope, s);
     scope.querySelectorAll<HTMLButtonElement>("[data-timer-close]").forEach(btn => btn.onclick = () => {
       const key = btn.dataset.timerClose!;
-      const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? "this deadline";
+      const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? t("this deadline");
       const today = s.today.date;
       const close = () => {
         state.closedTimers.add(key);
         saveClosedTimers(state.closedTimers, today);
         redrawTimers(s);
-        offerUndo(`Closed the timer for “${name}”. The deadline itself is unchanged.`, async () => {
+        offerUndo(t("Closed the timer for “{deadline}”. The deadline itself is unchanged.", {deadline: name}), async () => {
           state.closedTimers.delete(key);
           saveClosedTimers(state.closedTimers, today);
           redrawTimers(state.snapshot ?? s);
-          state.notice = `The timer for “${name}” is back.`;
+          state.notice = t("The timer for “{deadline}” is back.", {deadline: name});
         });
         status();
       };
@@ -751,7 +765,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   };
   const spread = () => state.prefs.layout === "spread";
   /** The board, and below it the shelf of types without tasks, in one area that redraws and binds together. */
-  const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area">${spread() ? `<p class="spread-legend">${icons.orbit}<span>Spread by workload: the heaviest group sits in the middle, and the lighter a group, the farther out it sits.</span></p>` : ""}<section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${spread() ? "spread-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
+  const boardArea = (s: Snapshot, flow: boolean) => `<div id="board-area" class="board-area">${spread() ? `<p class="spread-legend">${icons.orbit}<span>${t("Spread by workload: the heaviest group sits in the middle, and the lighter a group, the farther out it sits.")}</span></p>` : ""}<section id="task-board" class="task-board ${flow ? "flow-board" : ""} ${spread() ? "spread-board" : ""} ${uniformBoard() ? "is-uniform" : ""}">${taskBoard(boardOptions(s))}</section><div id="task-shelf">${typeShelf(boardOptions(s))}</div></div>`;
   /** Every group folded: the summaries line up in plain rows instead of the masonry (compact layout only). */
   const uniformBoard = () => !spread() && state.board.view === "folded" && !state.board.flipped.size && !state.search;
   /** Redraw only the board, leaving the page around it as it is. `reveal` animates the contents of every
@@ -823,7 +837,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const {description, type} = result.task;
     state.board.added = description;
     await reload({morph: true});
-    offerUndo(`Added “${description}” to ${typeName(state.snapshot!, type)}. It’s one of your tasks now.`, () => takeBack(item, result.undo));
+    offerUndo(t("Added “{task}” to {type}. It’s one of your tasks now.", {task: description, type: typeName(state.snapshot!, type)}), () => takeBack(item, result.undo));
     status();
   }
   function rejectSuggestion(item: SuggestionItem, pressed: HTMLElement) {
@@ -834,14 +848,14 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       catch (error) { exit.revert(); throw error; }
       await exit.done;
       await reload({morph: true});
-      offerUndo(`Rejected “${item.description}”. It stays off your list.`, () => takeBack(item, result.undo));
+      offerUndo(t("Rejected “{task}”. It stays off your list.", {task: item.description}), () => takeBack(item, result.undo));
     });
   }
   /** Undo an accept or a reject: the suggestion waits for review again. */
   async function takeBack(item: SuggestionItem, token: Record<string, unknown>) {
     await request("suggestion_undo", token);
     await reload({morph: true});
-    state.notice = `“${item.description}” is waiting for your review again.`;
+    state.notice = t("“{task}” is waiting for your review again.", {task: item.description});
   }
   /** A rejected suggestion folds away while the server is told; `revert` brings it back if that fails. */
   function leave(card: HTMLElement | null): {done: Promise<void>; revert: () => void} {
@@ -858,7 +872,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const count = suggestionsOf(s).length;
     if (!count) return "";
     const agents = [...new Set(suggestionsOf(s).map(item => item.agent))].join(", ");
-    return `<span class="suggestion-pill" data-tip="${e(`Suggested by ${agents}. They sit in their type’s group, dashed, and join your list only when you add them.`)}">${icons.spark}${count} suggested</span>`;
+    return `<span class="suggestion-pill" data-tip="${e(t("Suggested by {agents}. They sit in their type’s group, dashed, and join your list only when you add them.", {agents}))}">${icons.spark}${t("{count} suggested", {count})}</span>`;
   }
 
   // ----- Task board: managing types ------------------------------------------
@@ -926,8 +940,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         state.board.deleting = null;
         state.board.flipped.delete(id);
         await reload({morph: true, then: () => root.querySelector<HTMLElement>("[data-type-new]")?.focus({preventScroll: true})});
-        const moved = [result.movedTasks ? `${result.movedTasks} ${result.movedTasks === 1 ? "task" : "tasks"}` : "", result.movedDeadlines ? `${result.movedDeadlines} ${result.movedDeadlines === 1 ? "deadline" : "deadlines"}` : ""].filter(Boolean).join(" and ");
-        state.notice = `Deleted the type “${name}”.${moved ? ` ${moved} moved to “${moveTo ? typeName(s, moveTo) : "no type"}”.` : ""}`;
+        const tasks = result.movedTasks ? tn("{count} task", "{count} tasks", result.movedTasks) : "";
+        const deadlines = result.movedDeadlines ? tn("{count} deadline", "{count} deadlines", result.movedDeadlines) : "";
+        const moved = tasks && deadlines ? t("{tasks} and {deadlines}", {tasks, deadlines}) : tasks || deadlines;
+        const deleted = t("Deleted the type “{type}”.", {type: name});
+        state.notice = moved ? `${deleted} ${t("{moved} moved to “{type}”.", {moved, type: moveTo ? typeName(s, moveTo) : t("no type")})}` : deleted;
       });
     }
 
@@ -962,7 +979,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
           state.board.greet = created.id;
           // The new group is ready for its first task.
           await reload({morph: true, then: () => findIn(root, "[data-compose]", "data-compose", created.id)?.focus()});
-          state.notice = `Added the type “${created.name}”.`;
+          state.notice = t("Added the type “{type}”.", {type: created.name});
         });
       });
     }
@@ -983,7 +1000,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         state.board.renaming = null;
         state.board.greet = id;
         await reload({then: back});
-        state.notice = `Renamed “${original}” to “${name}”.`;
+        state.notice = t("Renamed “{old}” to “{new}”.", {old: original, new: name});
       });
     };
     input.addEventListener("keydown", event => {
@@ -1034,8 +1051,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     // Weighing tasks by importance changes today's progress, which the theme follows too.
     applyLoad(s);
     state.notice = key === "workloadTheme"
-      ? (on ? "The theme follows your workload again." : "The theme stays the same whatever your workload.")
-      : (on ? "Today’s progress now weighs each task by its importance." : "Today’s progress now counts every task the same.");
+      ? (on ? t("The theme follows your workload again.") : t("The theme stays the same whatever your workload."))
+      : (on ? t("Today’s progress now weighs each task by its importance.") : t("Today’s progress now counts every task the same."));
     status();
   }
   /** The display settings' controls: the layout switches (on the board too), the toggles, and the numbers where
@@ -1083,7 +1100,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     refreshDisplayCard(s);
     if (!changed) return;
     const [steady, busy, heavy] = loadThresholds().map(loadNumber);
-    state.notice = `${atDefaults() ? "Workload levels are back to the defaults" : "Workload levels updated"}: Steady from ${steady}, Busy from ${busy}, Heavy from ${heavy}.`;
+    const levels = {steady, busy, heavy};
+    state.notice = atDefaults()
+      ? t("Workload levels are back to the defaults: Steady from {steady}, Busy from {busy}, Heavy from {heavy}.", levels)
+      : t("Workload levels updated: Steady from {steady}, Busy from {busy}, Heavy from {heavy}.", levels);
     status();
   }
   /** Bring the Settings card up to date in place, leaving its fields (and focus, and the rest of the page, such as
@@ -1150,10 +1170,12 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         return;
       }
       const priority = Number(range.value) || 5;
-      const name = s.taskTypes[type] ?? groupTasks(s).find(group => group.id === type)?.name ?? "this group";
+      const name = s.taskTypes[type] ?? groupTasks(s).find(group => group.id === type)?.name ?? t("this group");
       const existing = s.tasks.find(task => task.description === description);
-      const where = existing && existing.type !== type ? ` under ${s.taskTypes[existing.type] ?? existing.typeName}` : "";
-      if (existing && !window.confirm(`“${description}” is already on your list${where}. Replace it with this one?`)) { input.focus(); return; }
+      const question = !existing ? "" : existing.type !== type
+        ? t("“{task}” is already on your list under {type}. Replace it with this one?", {task: description, type: s.taskTypes[existing.type] ?? existing.typeName})
+        : t("“{task}” is already on your list. Replace it with this one?", {task: description});
+      if (existing && !window.confirm(question)) { input.focus(); return; }
       // Clear the field right away so the next task can be typed while this one saves.
       input.value = "";
       state.board.composer = {type, priority, draft: ""};
@@ -1167,19 +1189,24 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         state.board.added = description;
         state.board.focus = true;
         await reload({morph: !s.tasks.some(task => task.type === type)});
-        state.notice = `Added “${description}” to ${name}.`;
+        state.notice = t("Added “{task}” to {type}.", {task: description, type: name});
       });
     });
   }
 
   async function removeDeadline(deadline: DeadlineItem) {
-    await action(async () => { if (!window.confirm(`Remove “${deadline.event}”?`)) return; await request("deadline_delete", {event: deadline.event}); await reload(); });
+    await action(async () => { if (!window.confirm(t("Remove “{deadline}”?", {deadline: deadline.event}))) return; await request("deadline_delete", {event: deadline.event}); await reload(); });
   }
   function themeControls() {
-    return `<div class="theme-controls" role="group" aria-label="Color theme">${(["light", "dark", "system"] as ThemePreference[]).map(mode => `<button type="button" data-theme-choice="${mode}" aria-label="${mode === "system" ? "Use system theme" : `Use ${mode} theme`}" aria-pressed="${appearance === mode}" title="${mode === "system" ? "Follow system" : `${mode === "light" ? "Light" : "Dark"} theme`}">${icons[mode]}</button>`).join("")}</div>`;
+    const labels: Record<ThemePreference, {action: string; name: string}> = {
+      light: {action: t("Use light theme"), name: t("Light theme")},
+      dark: {action: t("Use dark theme"), name: t("Dark theme")},
+      system: {action: t("Use system theme"), name: t("Follow system")}
+    };
+    return `<div class="theme-controls" role="group" aria-label="${t("Color theme")}">${(["light", "dark", "system"] as ThemePreference[]).map(mode => `<button type="button" data-theme-choice="${mode}" aria-label="${labels[mode].action}" aria-pressed="${appearance === mode}" title="${labels[mode].name}">${icons[mode]}</button>`).join("")}</div>`;
   }
   function modeSwitch(mode: Mode) {
-    return `<div class="mode-switch ${mode === "p" ? "is-p" : ""}" role="group" aria-label="Planning mode"><span class="mode-thumb" aria-hidden="true"></span><button type="button" data-mode-choice="j" aria-pressed="${mode === "j"}" title="J mode · structured day with schedule, deadlines, and timeline">${icons.target}<span>J</span></button><button type="button" data-mode-choice="p" aria-pressed="${mode === "p"}" title="P mode · flexible and task-first">${icons.feather}<span>P</span></button></div>`;
+    return `<div class="mode-switch ${mode === "p" ? "is-p" : ""}" role="group" aria-label="${t("Planning mode")}"><span class="mode-thumb" aria-hidden="true"></span><button type="button" data-mode-choice="j" aria-pressed="${mode === "j"}" title="${t("J mode · structured day with schedule, deadlines, and timeline")}">${icons.target}<span>J</span></button><button type="button" data-mode-choice="p" aria-pressed="${mode === "p"}" title="${t("P mode · flexible and task-first")}">${icons.feather}<span>P</span></button></div>`;
   }
 
   // ----- Overview ------------------------------------------------------------
@@ -1190,67 +1217,70 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const dueToday = s.deadlines.filter(d => d.daysLeft === 0).length;
     const highImportance = s.tasks.filter(t => t.priority >= 8 && (!t.alarmFrom || t.alarmFrom <= s.today.date)).length;
     const metrics = [
-      {id: "overdue", label: "Overdue", value: overdue, detail: "Past the due date", tone: overdue ? "danger" : "neutral", image: icons.flag},
-      {id: "today", label: "Due today", value: dueToday, detail: "Due by end of day", tone: dueToday ? "warning" : "neutral", image: icons.schedule},
-      {id: "priority", label: "High importance", value: highImportance, detail: "Ready now", tone: highImportance ? "priority" : "neutral", image: icons.zap},
-      {id: "habits", label: "Habits complete", value: `${complete}/${s.habits.length}`, detail: s.habits.length ? "Your daily routine" : "No habits configured", tone: complete ? "success" : "neutral", image: icons.activity}
+      {id: "overdue", label: t("Overdue"), value: overdue, detail: t("Past the due date"), tone: overdue ? "danger" : "neutral", image: icons.flag},
+      {id: "today", label: t("Due today"), value: dueToday, detail: t("Due by end of day"), tone: dueToday ? "warning" : "neutral", image: icons.schedule},
+      {id: "priority", label: t("High importance"), value: highImportance, detail: t("Ready now"), tone: highImportance ? "priority" : "neutral", image: icons.zap},
+      {id: "habits", label: t("Habits complete"), value: `${complete}/${s.habits.length}`, detail: s.habits.length ? t("Your daily routine") : t("No habits configured"), tone: complete ? "success" : "neutral", image: icons.activity}
     ];
-    return `<div class="page-heading"><div><p class="eyebrow">${icons.target} TODAY’S OVERVIEW · J MODE</p><h1>Your day at a glance<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks · ${s.deadlines.length} deadlines · ${complete}/${s.habits.length} habits complete</p></div>${button("add-task", "New task", icons.plus, "button primary")}</div>
-      <section class="status-grid" aria-label="Today at a glance">${metrics.map((m, i) => `<article class="status-card status-${m.tone}" data-metric="${m.id}" style="--i:${i}${m.id === "habits" ? `; --p:${s.habits.length ? complete / s.habits.length : 0}` : ""}"><span class="orb" aria-hidden="true"></span><div class="status-label">${m.image}<span>${m.label}</span></div><strong class="status-value">${m.value}</strong><p>${m.detail}</p></article>`).join("")}</section>
-      <section class="overview-grid"><article class="focus-card"><div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div><div class="focus-top"><span class="focus-label"><span class="live-dot"></span> RIGHT NOW</span><span class="pill">${s.schedule.hasSyncedOverlay ? "Your plan" : "Weekly routine"}</span></div><h2>${e(s.schedule.current ?? (s.schedule.isSkipped ? "Schedule paused today" : "No active block"))}</h2><div class="next-block"><span>${icons.clock} UP NEXT</span><strong>${e(s.schedule.next ?? "No upcoming blocks")}</strong>${s.schedule.timeToNext ? `<span class="next-time">In ${e(s.schedule.timeToNext)}</span>` : ""}</div><button class="focus-link" type="button" data-page="schedule">View today’s schedule ${icons.arrow}</button><svg class="focus-wave" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 34 C 70 4, 130 60, 210 30 S 340 6, 400 28 L400 60 L0 60Z"/></svg></article>
-      <article class="card deadline-radar"><div class="section-heading compact"><h2>Next deadlines <span class="count">${s.deadlines.length}</span></h2>${button("add-deadline", "Add", icons.plus, "text-button")}</div>${deadlineList(s, 3)}<button class="text-button view-all" type="button" data-page="routines">Open the year calendar ${icons.arrow}</button></article></section>
+    return `<div class="page-heading"><div><p class="eyebrow">${icons.target} ${t("TODAY’S OVERVIEW · J MODE")}</p><h1>${t("Your day at a glance")}<span class="accent-dot">.</span></h1><p class="muted">${t("{tasks} open tasks · {deadlines} deadlines · {done}/{habits} habits complete", {tasks: s.tasks.length, deadlines: s.deadlines.length, done: complete, habits: s.habits.length})}</p></div>${button("add-task", t("New task"), icons.plus, "button primary")}</div>
+      <section class="status-grid" aria-label="${t("Today at a glance")}">${metrics.map((m, i) => `<article class="status-card status-${m.tone}" data-metric="${m.id}" style="--i:${i}${m.id === "habits" ? `; --p:${s.habits.length ? complete / s.habits.length : 0}` : ""}"><span class="orb" aria-hidden="true"></span><div class="status-label">${m.image}<span>${m.label}</span></div><strong class="status-value">${m.value}</strong><p>${m.detail}</p></article>`).join("")}</section>
+      <section class="overview-grid"><article class="focus-card"><div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div><div class="focus-top"><span class="focus-label"><span class="live-dot"></span> ${t("RIGHT NOW")}</span><span class="pill">${s.schedule.hasSyncedOverlay ? t("Your plan") : t("Weekly routine")}</span></div><h2>${e(s.schedule.current ?? (s.schedule.isSkipped ? t("Schedule paused today") : t("No active block")))}</h2><div class="next-block"><span>${icons.clock} ${t("UP NEXT")}</span><strong>${e(s.schedule.next ?? t("No upcoming blocks"))}</strong>${s.schedule.timeToNext ? `<span class="next-time">${t("In {time}", {time: e(s.schedule.timeToNext)})}</span>` : ""}</div><button class="focus-link" type="button" data-page="schedule">${t("View today’s schedule")} ${icons.arrow}</button><svg class="focus-wave" viewBox="0 0 400 60" preserveAspectRatio="none" aria-hidden="true"><path d="M0 34 C 70 4, 130 60, 210 30 S 340 6, 400 28 L400 60 L0 60Z"/></svg></article>
+      <article class="card deadline-radar"><div class="section-heading compact"><h2>${t("Next deadlines")} <span class="count">${s.deadlines.length}</span></h2>${button("add-deadline", t("Add"), icons.plus, "text-button")}</div>${deadlineList(s, 3)}<button class="text-button view-all" type="button" data-page="routines">${t("Open the year calendar")} ${icons.arrow}</button></article></section>
       ${dayPanel(dayOptions(s))}
       ${taskSection(s)}
-      <article class="card timeline-card"><div class="section-heading compact"><h3>${icons.schedule} Today’s timeline</h3><button class="text-button" type="button" data-page="schedule">Full schedule ${icons.arrow}</button></div>${timeline(s)}</article>`;
+      <article class="card timeline-card"><div class="section-heading compact"><h3>${icons.schedule} ${t("Today’s timeline")}</h3><button class="text-button" type="button" data-page="schedule">${t("Full schedule")} ${icons.arrow}</button></div>${timeline(s)}</article>`;
   }
-  const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="Search tasks" placeholder="Find a task…" value="${e(state.search)}"></label>`;
+  const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="${t("Search tasks")}" placeholder="${t("Find a task…")}" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
-    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} P MODE · GO WITH THE FLOW</p><h1>Tasks by type<span class="accent-dot">.</span></h1><p class="muted">${s.tasks.length} open tasks. No clock to chase. Pick whatever pulls you in.${suggestionPill(s)}</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", "New task", icons.plus, "button primary")}</div></div>
+    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} ${t("P MODE · GO WITH THE FLOW")}</p><h1>${t("Tasks by type")}<span class="accent-dot">.</span></h1><p class="muted">${t("{tasks} open tasks. No clock to chase. Pick whatever pulls you in.", {tasks: s.tasks.length})}${suggestionPill(s)}</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", t("New task"), icons.plus, "button primary")}</div></div>
       ${timerArea(s)}${boardArea(s, true)}${dayPanel(dayOptions(s))}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>Tasks by type <span class="count">${s.tasks.length}</span>${suggestionPill(s)}</h2><p class="muted">${spread() ? "Groups sit by workload: the heaviest in the middle, lighter ones farther out." : "Groups with more important work come first."} They keep their places while you work here, and are arranged anew when you come back.</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
+    return `<div class="section-heading board-heading"><div><h2>${t("Tasks by type")} <span class="count">${s.tasks.length}</span>${suggestionPill(s)}</h2><p class="muted">${spread() ? t("Groups sit by workload: the heaviest in the middle, lighter ones farther out.") : t("Groups with more important work come first.")} ${t("They keep their places while you work here, and are arranged anew when you come back.")}</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
-    if (!events.length) return empty("No blocks scheduled for today. Build your routine in Schedule.");
+    if (!events.length) return empty(t("No blocks scheduled for today. Build your routine in Schedule."));
     const now = new Date();
     const minutes = now.getHours() * 60 + now.getMinutes();
     let current = -1;
     if (s.today.date === isoDay(now)) events.forEach((event, i) => { const [hour, minute] = event.time.split(":").map(Number); if (hour * 60 + minute <= minutes) current = i; });
-    return `<ol class="timeline">${events.map((event, i) => `<li class="${i < current ? "is-past" : ""} ${i === current ? "is-now" : ""}" style="--i:${i}"><time>${e(event.time)}</time><span class="timeline-dot ${event.syncable ? "work" : ""}"></span><span>${e(event.label)}</span>${i === current ? '<span class="pill now-pill">Now</span>' : event.syncable ? '<span class="pill light">Focus</span>' : ""}</li>`).join("")}</ol>`;
+    return `<ol class="timeline">${events.map((event, i) => `<li class="${i < current ? "is-past" : ""} ${i === current ? "is-now" : ""}" style="--i:${i}"><time>${e(event.time)}</time><span class="timeline-dot ${event.syncable ? "work" : ""}"></span><span>${e(event.label)}</span>${i === current ? `<span class="pill now-pill">${t("Now")}</span>` : event.syncable ? `<span class="pill light">${t("Focus")}</span>` : ""}</li>`).join("")}</ol>`;
   }
   function deadlineList(s: Snapshot, limit?: number) {
     const deadlines = [...s.deadlines].sort((a, b) => (a.daysLeft ?? Infinity) - (b.daysLeft ?? Infinity));
     return deadlines.length ? `<ul class="deadline-list">${(limit ? deadlines.slice(0, limit) : deadlines).map(d => {
       const index = s.deadlines.indexOf(d);
-      const label = d.daysLeft === null ? "Check date" : d.daysLeft === 0 ? "Due today" : d.daysLeft < 0 ? `${-d.daysLeft}d overdue` : d.daysLeft === 1 ? "Tomorrow" : `${d.daysLeft}d left`;
-      return `<li class="deadline-${e(d.status)} ${sw(deadlineSwatch(d, s.taskTypes))}"><span class="ddl-dot" aria-hidden="true"></span><div class="deadline-copy"><strong>${e(d.event)}</strong><div class="deadline-meta"><time>${e(d.deadline)}</time>${repeatBadge(d.repeat)}<span class="type-badge ${d.type ? sw(typeSwatch(s.taskTypes, d.type)) : "untyped"}">${e(d.typeName ?? d.type ?? "Uncategorized")}</span></div></div><span class="deadline-status ${e(d.status)}">${label}</span><button class="text-button" data-deadline="${index}" data-operation="edit" aria-label="Edit ${e(d.event)}" type="button">Edit</button><button class="icon-button danger" data-deadline="${index}" data-operation="remove" aria-label="Remove ${e(d.event)}" type="button">${icons.close}</button></li>`;
-    }).join("")}</ul>` : empty("No deadlines to track.");
+      const label = d.daysLeft === null ? t("Check date") : d.daysLeft === 0 ? t("Due today") : d.daysLeft < 0 ? t("{days}d overdue", {days: -d.daysLeft}) : d.daysLeft === 1 ? t("Tomorrow") : t("{days}d left", {days: d.daysLeft});
+      return `<li class="deadline-${e(d.status)} ${sw(deadlineSwatch(d, s.taskTypes))}"><span class="ddl-dot" aria-hidden="true"></span><div class="deadline-copy"><strong>${e(d.event)}</strong><div class="deadline-meta"><time>${e(d.deadline)}</time>${repeatBadge(d.repeat)}<span class="type-badge ${d.type ? sw(typeSwatch(s.taskTypes, d.type)) : "untyped"}">${e(d.typeName ?? d.type ?? t("Uncategorized"))}</span></div></div><span class="deadline-status ${e(d.status)}">${label}</span><button class="text-button" data-deadline="${index}" data-operation="edit" aria-label="${t("Edit {deadline}", {deadline: e(d.event)})}" type="button">${t("Edit")}</button><button class="icon-button danger" data-deadline="${index}" data-operation="remove" aria-label="${t("Remove {deadline}", {deadline: e(d.event)})}" type="button">${icons.close}</button></li>`;
+    }).join("")}</ul>` : empty(t("No deadlines to track."));
   }
 
   // ----- Schedule, routines, settings -------------------------------------------
 
   function schedulePage(s: Snapshot) {
     const agent = AGENT_SETUP[state.agentTab];
-    const planCard = s.schedule.hasSyncedOverlay ? `<article class="card plan-card"><p class="eyebrow">${icons.spark} TODAY’S PLAN</p><h2>Your focus blocks have a purpose.</h2><p class="muted">Your AI agent planned today. Each focus block in the timeline shows its task, and reminders announce it. Your weekly routine is unchanged.</p><div class="button-row">${button("sync-clear", "Clear today’s plan", icons.close, "button ghost danger")}</div></article>` : "";
-    return `<div class="page-heading"><div><p class="eyebrow">A RHYTHM THAT WORKS FOR YOU</p><h1>Make a little space<span class="accent-dot">.</span></h1><p class="muted">${e(s.today.parity)} week · ${e(s.today.weekday)} · schedule ${s.config.activeId}</p></div>${button("schedule-pdf", "Download schedule", icons.schedule)}</div><section class="split-grid"><article class="card timeline-card"><div class="section-heading compact"><h2>Today’s timeline</h2><span class="pill light">${s.schedule.events.length} blocks</span></div>${timeline(s)}</article><div>${planCard}
-      <article class="card agent-card"><p class="eyebrow">${icons.spark} PLAN WITH YOUR AI AGENT</p><h2>Let your coding agent build and plan your schedule.</h2><p class="muted">Install the Schedule Everything plugin in Claude Code, Codex, or Antigravity. It interviews you, writes your weekly routine, fills today’s focus blocks, and suggests tasks from your email and calendar for you to review on the board, through the local <code>rmd</code> CLI. Your agent sends what it reads to its own model provider.</p>
-        <div class="agent-tabs" role="tablist" aria-label="Choose your agent">${(Object.keys(AGENT_SETUP) as AgentTab[]).map(id => `<button type="button" role="tab" id="agent-tab-${id}" class="agent-tab" data-agent-tab="${id}" aria-selected="${state.agentTab === id}" aria-controls="agent-panel">${e(AGENT_SETUP[id].name)}</button>`).join("")}</div>
-        <div class="agent-panel" role="tabpanel" id="agent-panel" aria-labelledby="agent-tab-${state.agentTab}"><ol class="agent-steps">${agent.steps.map((command, i) => `<li><span class="step-num" aria-hidden="true">${i + 1}</span><code>${e(command)}</code><button type="button" class="icon-button" data-copy="${e(command)}" aria-label="Copy command ${i + 1}">${icons.copy}</button></li>`).join("")}</ol><p class="muted">${e(agent.note)}</p></div>
-        <p class="eyebrow try-label">THEN ASK YOUR AGENT</p><div class="prompt-chips">${AGENT_PROMPTS.map(prompt => `<button type="button" class="chip prompt-chip" data-copy="${e(prompt)}" title="Copy prompt">${icons.spark}${e(prompt)}</button>`).join("")}</div></article></div></section>`;
+    const planCard = s.schedule.hasSyncedOverlay ? `<article class="card plan-card"><p class="eyebrow">${icons.spark} ${t("TODAY’S PLAN")}</p><h2>${t("Your focus blocks have a purpose.")}</h2><p class="muted">${t("Your AI agent planned today. Each focus block in the timeline shows its task, and reminders announce it. Your weekly routine is unchanged.")}</p><div class="button-row">${button("sync-clear", t("Clear today’s plan"), icons.close, "button ghost danger")}</div></article>` : "";
+    // The server names the week and the day in English (odd/even, monday); show them in the interface language.
+    const parity = s.today.parity === "odd" ? t("odd week") : s.today.parity === "even" ? t("even week") : `${e(s.today.parity)} week`;
+    const weekday = formatDate(s.today.date, {weekday: "long"}).toLowerCase();
+    return `<div class="page-heading"><div><p class="eyebrow">${t("A RHYTHM THAT WORKS FOR YOU")}</p><h1>${t("Make a little space")}<span class="accent-dot">.</span></h1><p class="muted">${parity} · ${e(weekday)} · ${t("schedule {id}", {id: s.config.activeId})}</p></div>${button("schedule-pdf", t("Download schedule"), icons.schedule)}</div><section class="split-grid"><article class="card timeline-card"><div class="section-heading compact"><h2>${t("Today’s timeline")}</h2><span class="pill light">${t("{count} blocks", {count: s.schedule.events.length})}</span></div>${timeline(s)}</article><div>${planCard}
+      <article class="card agent-card"><p class="eyebrow">${icons.spark} ${t("PLAN WITH YOUR AI AGENT")}</p><h2>${t("Let your coding agent build and plan your schedule.")}</h2><p class="muted">${t("Install the Schedule Everything plugin in Claude Code, Codex, or Antigravity. It interviews you, writes your weekly routine, fills today’s focus blocks, and suggests tasks from your email and calendar for you to review on the board, through the local <code>rmd</code> CLI. Your agent sends what it reads to its own model provider.")}</p>
+        <div class="agent-tabs" role="tablist" aria-label="${t("Choose your agent")}">${(Object.keys(AGENT_SETUP) as AgentTab[]).map(id => `<button type="button" role="tab" id="agent-tab-${id}" class="agent-tab" data-agent-tab="${id}" aria-selected="${state.agentTab === id}" aria-controls="agent-panel">${e(AGENT_SETUP[id].name)}</button>`).join("")}</div>
+        <div class="agent-panel" role="tabpanel" id="agent-panel" aria-labelledby="agent-tab-${state.agentTab}"><ol class="agent-steps">${agent.steps.map((command, i) => `<li><span class="step-num" aria-hidden="true">${i + 1}</span><code>${e(command)}</code><button type="button" class="icon-button" data-copy="${e(command)}" aria-label="${t("Copy command {n}", {n: i + 1})}">${icons.copy}</button></li>`).join("")}</ol><p class="muted">${e(t(agent.note))}</p></div>
+        <p class="eyebrow try-label">${t("THEN ASK YOUR AGENT")}</p><div class="prompt-chips">${AGENT_PROMPTS.map(key => t(key)).map(prompt => `<button type="button" class="chip prompt-chip" data-copy="${e(prompt)}" title="${t("Copy prompt")}">${icons.spark}${e(prompt)}</button>`).join("")}</div></article></div></section>`;
   }
   function routines(s: Snapshot) {
     const done = s.habits.filter(h => h.completed).length;
-    return `<div class="page-heading"><div><p class="eyebrow">SMALL THINGS, STEADY PROGRESS</p><h1>Routines & deadlines<span class="accent-dot">.</span></h1><p class="muted">Plant deadlines on your year, color them, and keep your daily habits close.</p></div>${button("add-deadline", "New deadline", icons.plus, "button primary")}</div>
+    return `<div class="page-heading"><div><p class="eyebrow">${t("SMALL THINGS, STEADY PROGRESS")}</p><h1>${t("Routines & deadlines")}<span class="accent-dot">.</span></h1><p class="muted">${t("Plant deadlines on your year, color them, and keep your daily habits close.")}</p></div>${button("add-deadline", t("New deadline"), icons.plus, "button primary")}</div>
       ${yearCalendar({deadlines: s.deadlines, taskTypes: s.taskTypes, today: s.today.date, state: state.calendar, conferences: state.conferences})}
-      <section class="split-grid"><article class="card habits-card"><div class="section-heading"><h2>Today’s habits</h2><span class="pill light">${done}/${s.habits.length} complete</span></div>${s.habits.length ? `<div class="habit-hero">${ring({value: done / s.habits.length, size: 96, label: `${done} of ${s.habits.length} habits complete`, center: `${done}/${s.habits.length}`})}<p class="muted">${done === s.habits.length ? "Every habit done today. Lovely." : `${s.habits.length - done} to go. Small and steady.`}</p></div>${s.habits.map((h, i) => `<label class="habit-row ${h.completed ? "done" : ""}" style="--i:${i}"><input type="checkbox" data-habit="${e(h.id)}" ${h.completed ? "checked" : ""}><span class="habit-check" aria-hidden="true">${icons.check}</span><span class="habit-text">${e(h.description)}</span></label>`).join("")}` : empty("Add habits in Settings to build your daily rhythm.")}<p class="muted">Edit your habit definitions in Settings → Habits.</p></article><article class="card"><h2>All deadlines</h2>${deadlineList(s)}</article></section>`;
+      <section class="split-grid"><article class="card habits-card"><div class="section-heading"><h2>${t("Today’s habits")}</h2><span class="pill light">${t("{done}/{total} complete", {done, total: s.habits.length})}</span></div>${s.habits.length ? `<div class="habit-hero">${ring({value: done / s.habits.length, size: 96, label: t("{done} of {total} habits complete", {done, total: s.habits.length}), center: `${done}/${s.habits.length}`})}<p class="muted">${done === s.habits.length ? t("Every habit done today. Lovely.") : t("{count} to go. Small and steady.", {count: s.habits.length - done})}</p></div>${s.habits.map((h, i) => `<label class="habit-row ${h.completed ? "done" : ""}" style="--i:${i}"><input type="checkbox" data-habit="${e(h.id)}" ${h.completed ? "checked" : ""}><span class="habit-check" aria-hidden="true">${icons.check}</span><span class="habit-text">${e(h.description)}</span></label>`).join("")}` : empty(t("Add habits in Settings to build your daily rhythm."))}<p class="muted">${t("Edit your habit definitions in Settings → Habits.")}</p></article><article class="card"><h2>${t("All deadlines")}</h2>${deadlineList(s)}</article></section>`;
   }
   function activity(s: Snapshot) {
     const a = state.activity;
-    if (a.view === "week" && a.week) return `<div class="page-heading"><div><p class="eyebrow">${icons.spark} WEEKLY OVERVIEW</p><h1>Your week in color<span class="accent-dot">.</span></h1><p class="muted">Compared with last week and the weeks before it.</p></div></div>${weeklyView(a.week)}`;
-    const intro = a.layout === "tree" ? "Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story." : "A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.";
-    return `<div class="page-heading"><div><p class="eyebrow">LOOK HOW FAR YOU’VE COME</p><h1>Little wins add up<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
+    if (a.view === "week" && a.week) return `<div class="page-heading"><div><p class="eyebrow">${icons.spark} ${t("WEEKLY OVERVIEW")}</p><h1>${t("Your week in color")}<span class="accent-dot">.</span></h1><p class="muted">${t("Compared with last week and the weeks before it.")}</p></div></div>${weeklyView(a.week)}`;
+    const intro = a.layout === "tree" ? t("Everything you finished, cancelled, or let go, growing along one branch of time. Hover over any event to see its story.") : t("A gallery of everything you finished, cancelled, or let go. Hover over any piece to see its story.");
+    return `<div class="page-heading"><div><p class="eyebrow">${t("LOOK HOW FAR YOU’VE COME")}</p><h1>${t("Little wins add up")}<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes})}`;
   }
   /** Display choices for this browser: the board's layout, the workload theme (with what workload means, its
    *  levels, and where each level starts), and how today's progress counts tasks. */
@@ -1258,37 +1288,43 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const load = workload(s.tasks, s.today.date);
     const {prefs} = state;
     const toggle = (key: "workloadTheme" | "weighted", title: string, detail: string) => `<label class="setting-toggle"><input type="checkbox" data-pref="${key}" ${prefs[key] ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="setting-copy"><strong>${title}</strong><small>${detail}</small></span></label>`;
-    return `<article class="card display-card"><h2>${icons.palette} Board, workload & progress</h2><p class="muted">Saved in this browser.</p>
-      <div class="setting-block"><div class="setting-copy"><strong>Task board layout</strong><small>Compact packs the groups in rows, those with more important work first. Spread places them by workload: the heaviest in the middle, lighter ones farther out.</small></div>${layoutSwitch(prefs.layout)}</div>
-      ${toggle("workloadTheme", "Theme follows your workload", "Colors and the background shift from cool and calm to warm as open work piles up, and ease partway back toward calm as today’s progress bar fills.")}
+    return `<article class="card display-card"><h2>${icons.palette} ${t("Board, workload & progress")}</h2><p class="muted">${t("Saved in this browser.")}</p>
+      <div class="setting-block"><div class="setting-copy"><strong>${t("Task board layout")}</strong><small>${t("Compact packs the groups in rows, those with more important work first. Spread places them by workload: the heaviest in the middle, lighter ones farther out.")}</small></div>${layoutSwitch(prefs.layout)}</div>
+      ${toggle("workloadTheme", t("Theme follows your workload"), t("Colors and the background shift from cool and calm to warm as open work piles up, and ease partway back toward calm as today’s progress bar fills."))}
       ${levelScale(load)}
       ${thresholdFields()}
       <p class="muted load-now">${loadNow(load)}</p>
-      ${toggle("weighted", "Weigh today’s progress by importance", "An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same.")}
+      ${toggle("weighted", t("Weigh today’s progress by importance"), t("An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same."))}
     </article>`;
   }
   /** The five levels with their ranges, the current one marked. */
   function levelScale(load: Workload) {
     const ranges = levelRanges();
-    return `<div class="load-scale" role="list" aria-label="Workload levels">${loadLevels().map((level, i) => `<span role="listitem" class="load-step load-${level.id} ${level.id === load.level ? "is-now" : ""}">${level.icon}<b>${e(level.label)}</b><small>${ranges[i]}</small></span>`).join("")}</div>`;
+    return `<div class="load-scale" role="list" aria-label="${t("Workload levels")}">${loadLevels().map((level, i) => `<span role="listitem" class="load-step load-${level.id} ${level.id === load.level ? "is-now" : ""}">${level.icon}<b>${e(level.label)}</b><small>${ranges[i]}</small></span>`).join("")}</div>`;
   }
-  const loadNow = (load: Workload) => `${e(WORKLOAD_DEFINITION)} Right now it is <b>${load.points.toFixed(1)}</b>: ${e(levelInfo(load.level).label.toLowerCase())}.`;
+  const loadNow = (load: Workload) => `${e(t(WORKLOAD_DEFINITION))} ${t("Right now it is <b>{points}</b>: {level}.", {points: load.points.toFixed(1), level: e(levelInfo(load.level).label.toLowerCase())})}`;
   const atDefaults = () => loadThresholds().every((value, i) => value === DEFAULT_THRESHOLDS[i]);
   /** Where Steady, Busy, and Heavy start, one number each, and a way back to the defaults. */
   function thresholdFields() {
     const field = (i: number, id: "steady" | "busy" | "heavy") => {
       const info = levelInfo(id);
-      return `<label class="threshold load-${id}"><span class="threshold-name">${info.icon}${e(info.label)} from</span><input type="number" inputmode="decimal" min="0" max="${MAX_THRESHOLD}" step="0.5" value="${loadNumber(loadThresholds()[i])}" data-threshold="${i}" aria-describedby="threshold-help" aria-invalid="false"></label>`;
+      return `<label class="threshold load-${id}"><span class="threshold-name">${info.icon}${t("{level} from", {level: e(info.label)})}</span><input type="number" inputmode="decimal" min="0" max="${MAX_THRESHOLD}" step="0.5" value="${loadNumber(loadThresholds()[i])}" data-threshold="${i}" aria-describedby="threshold-help" aria-invalid="false"></label>`;
     };
     return `<div class="load-thresholds" role="group" aria-labelledby="threshold-title">
-        <div class="setting-copy"><strong id="threshold-title">Where each level starts</strong><small id="threshold-help">A workload at or above a number is in that level. Light is anything above 0 and below Steady.</small></div>
+        <div class="setting-copy"><strong id="threshold-title">${t("Where each level starts")}</strong><small id="threshold-help">${t("A workload at or above a number is in that level. Light is anything above 0 and below Steady.")}</small></div>
         <div class="threshold-fields">${field(0, "steady")}${field(1, "busy")}${field(2, "heavy")}</div>
-        <div class="threshold-foot"><p class="threshold-problem" role="alert" hidden></p><button type="button" class="text-button" data-thresholds-reset ${atDefaults() ? "disabled" : ""}>${icons.undo}<span>Reset to ${DEFAULT_THRESHOLDS.map(loadNumber).join(" · ")}</span></button></div>
+        <div class="threshold-foot"><p class="threshold-problem" role="alert" hidden></p><button type="button" class="text-button" data-thresholds-reset ${atDefaults() ? "disabled" : ""}>${icons.undo}<span>${t("Reset to {values}", {values: DEFAULT_THRESHOLDS.map(loadNumber).join(" · ")})}</span></button></div>
       </div>`;
   }
+  /** The interface language: one setting (`[settings] language`) for this workspace, the CLI, and reminder popups.
+   *  Each name is written in its own language, so anyone can find theirs. */
+  function languageCard() {
+    return `<article class="card language-card"><h2>${icons.language} ${t("Interface language")}</h2><p class="muted">${t("Used by this workspace, the rmd command line, and reminder popups. Saved in settings.toml.")}</p>
+      <div class="layout-switch language-switch" role="group" aria-label="${t("Interface language")}">${LANGUAGES.map(entry => `<button type="button" data-language="${entry.id}" lang="${entry.locale}" aria-pressed="${entry.id === language()}">${entry.name}</button>`).join("")}</div></article>`;
+  }
   function settings(s: Snapshot) {
-    const files = {settings: "General settings", odd: "Odd week schedule", even: "Even week schedule", habits: "Habits", deadlines: "Deadlines", profile: "Profile"};
-    return `<div class="page-heading"><div><p class="eyebrow">MAKE IT YOURS</p><h1>Your workspace, your rules<span class="accent-dot">.</span></h1><p class="muted">All changes are saved to your computer.</p></div></div><section class="split-grid"><div><article class="card"><h2>Reminder preferences</h2><p class="muted">${modeOf() === "p" ? "P mode · selected event alarms paused · overview shows tasks only" : "J mode · all reminders allowed · full structured overview"}</p>${button("mode", modeOf() === "p" ? "Switch to J mode" : "Switch to P mode", icons.settings)}<hr><label>Active schedule<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>Schedule ${id}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", "Activate")}${button("update", "Reload reminders", icons.refresh)}${button("stop", "Stop reminders", "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>Task & deadline types</h3><p class="muted">Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>Open the task board</span></button></div><hr>${button("shutdown", "Close browser service", "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>Configuration editor</h2><p class="muted">Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.</p>${state.config ? `<label>File<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>Contents<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", "Save changes", icons.check, "button primary")}` : button("open-config", "Open editor", icons.settings)}<p class="muted">Saved edits reload the installed reminder service when available.</p></article></section>`;
+    const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -1303,7 +1339,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const items = a.items ?? [];
     if (a.layout === "gallery") return galleryGroups(items, a.filter, a.limit, s.today.date, s.taskTypes);
     const visible = visibleHistory();
-    if (!visible.length) return empty(items.length ? "Nothing matches these filters. Try another outcome or type." : "Your first small win will appear here.");
+    if (!visible.length) return empty(items.length ? t("Nothing matches these filters. Try another outcome or type.") : t("Your first small win will appear here."));
     const position = new Map(items.map((item, i) => [item, i]));
     return treeView({items: visible.slice(0, a.treeLimit), total: visible.length, indexOf: item => position.get(item) ?? -1, taskTypes: s.taskTypes, today: s.today.date, step: TREE_PAGE});
   }
@@ -1388,10 +1424,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     root.querySelector("dialog.lightbox")?.remove();
     const el = document.createElement("dialog");
     el.className = "lightbox";
-    el.setAttribute("aria-label", "Task details");
+    el.setAttribute("aria-label", t("Task details"));
     const close = () => { el.close(); el.remove(); root.querySelector<HTMLElement>(`[data-history="${items.indexOf(visible[position])}"]`)?.focus(); };
     const render = (direction = "") => {
-      el.innerHTML = `<button type="button" class="icon-button lb-close" aria-label="Close">${icons.close}</button><div class="lb-inner ${direction}">${lightbox(visible[position], items, {index: position, total: visible.length}, s.taskTypes)}</div>`;
+      el.innerHTML = `<button type="button" class="icon-button lb-close" aria-label="${t("Close")}">${icons.close}</button><div class="lb-inner ${direction}">${lightbox(visible[position], items, {index: position, total: visible.length}, s.taskTypes)}</div>`;
       el.querySelector<HTMLButtonElement>(".lb-close")!.onclick = close;
       el.querySelectorAll<HTMLButtonElement>("[data-lightbox]").forEach(btn => btn.onclick = () => step(btn.dataset.lightbox === "next" ? 1 : -1));
     };
@@ -1455,7 +1491,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       state.calendar.day = null;
       state.calendar.flash = day;
       await reload();
-      state.notice = `Moved “${deadline.event}” to ${formatDate(day, {weekday: "short", month: "short", day: "numeric"})}.`;
+      state.notice = t("Moved “{deadline}” to {date}.", {deadline: deadline.event, date: formatDate(day, {weekday: "short", month: "short", day: "numeric"})});
     });
   }
   /** Fetch conference dates for the viewed year; the server serves them from a weekly cache. */
@@ -1503,7 +1539,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         await request("deadline_add", {event: name, date: event.date, type: "", color: conferenceSwatch(event), repeat: ""});
         state.calendar.flash = event.date;
         await reload();
-        state.notice = `Added “${name}” to your deadlines.`;
+        state.notice = t("Added “{deadline}” to your deadlines.", {deadline: name});
       });
     });
     if (view.enabled && !view.loading && view.data?.year !== state.calendar.year) void loadConferences();
@@ -1569,22 +1605,22 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       const name = String(data.get("popEvent") ?? "").trim();
       if (!name) return;
       const existing = s.deadlines.find(d => d.event === name);
-      if (existing && existing.deadline !== day && !window.confirm(`“${name}” is already due ${existing.deadline}. Move it to this day?`)) return;
+      if (existing && existing.deadline !== day && !window.confirm(t("“{deadline}” is already due {date}. Move it to this day?", {deadline: name, date: existing.deadline}))) return;
       void action(async () => {
         await request("deadline_add", {event: name, date: day, type: data.get("popType") ?? "", color: data.get("popColor") ?? "", repeat: data.get("popRepeat") ?? ""});
         state.calendar.day = null;
         state.calendar.flash = day;
         await reload();
-        state.notice = `Added “${name}” on ${formatDate(day, {weekday: "short", month: "short", day: "numeric"})}.`;
+        state.notice = t("Added “{deadline}” on {date}.", {deadline: name, date: formatDate(day, {weekday: "short", month: "short", day: "numeric"})});
       });
     });
   }
 
   // ----- Dialogs ---------------------------------------------------------------
 
-  function dialog(title: string, body: string, submit: (data: FormData) => Promise<void>, submitLabel = "Save") {
+  function dialog(title: string, body: string, submit: (data: FormData) => Promise<void>, submitLabel = t("Save")) {
     root.querySelector("dialog.editor-dialog")?.remove();
-    const el = document.createElement("dialog"); el.className = "editor-dialog"; el.innerHTML = `<form><div class="section-heading"><h2>${title}</h2><button class="icon-button" type="button" aria-label="Close">${icons.close}</button></div>${body}<div class="button-row"><button class="button primary" type="submit">${e(submitLabel)}</button><button class="button ghost" type="button" data-close>Cancel</button></div><p class="dialog-error" role="alert"></p></form>`;
+    const el = document.createElement("dialog"); el.className = "editor-dialog"; el.innerHTML = `<form><div class="section-heading"><h2>${title}</h2><button class="icon-button" type="button" aria-label="${t("Close")}">${icons.close}</button></div>${body}<div class="button-row"><button class="button primary" type="submit">${e(submitLabel)}</button><button class="button ghost" type="button" data-close>${t("Cancel")}</button></div><p class="dialog-error" role="alert"></p></form>`;
     root.append(el); el.showModal();
     el.querySelectorAll<HTMLButtonElement>('button[type="button"]').forEach(btn => btn.onclick = () => { el.close(); el.remove(); });
     el.querySelector("form")!.onsubmit = event => { event.preventDefault(); const btn = el.querySelector<HTMLButtonElement>('[type="submit"]')!; btn.disabled = true; void submit(new FormData(event.target as HTMLFormElement)).then(() => { el.close(); el.remove(); }).catch(error => { el.querySelector(".dialog-error")!.textContent = error instanceof Error ? error.message : String(error); btn.disabled = false; }); };
@@ -1596,16 +1632,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const offer = task ? undefined : options.suggestion;
     const draft = task ?? offer;
     const timed = options.timed ?? !!draft?.due;
-    const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">Timer</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}Timed task</strong><small>Set when it should be finished. Due by tonight, it gets a timer above the board.</small></span></label><label class="timed-due">Finish by<input type="datetime-local" name="due" value="${e(draft?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
-    const why = offer ? `<p class="dialog-suggestion">${icons.spark}<span>Suggested by <b>${e(offer.agent)}</b>${offer.source ? ` from ${e(offer.source)}` : ""}${offer.reason ? `: ${e(offer.reason)}` : "."}</span></p>` : "";
-    dialog(task ? "Edit task" : offer ? "Adjust, then add it" : "A new thing to work on", `${why}${field("description", "Task", "text", draft?.description ?? "", 'required maxlength="500"')}${field("priority", "Importance · 1 to 10", "number", String(draft?.priority ?? 5), 'required min="1" max="10"')}<label>Task type<select name="type">${typeOptions(state.snapshot!, draft?.type)}</select></label>${timer}`, async data => {
+    const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">${t("Timer")}</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}${t("Timed task")}</strong><small>${t("Set when it should be finished. Due by tonight, it gets a timer above the board.")}</small></span></label><label class="timed-due">${t("Finish by")}<input type="datetime-local" name="due" value="${e(draft?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
+    const why = offer ? `<p class="dialog-suggestion">${icons.spark}<span>${suggestedBy(offer)}</span></p>` : "";
+    dialog(task ? t("Edit task") : offer ? t("Adjust, then add it") : t("A new thing to work on"), `${why}${field("description", t("Task"), "text", draft?.description ?? "", 'required maxlength="500"')}${field("priority", t("Importance · 1 to 10"), "number", String(draft?.priority ?? 5), 'required min="1" max="10"')}<label>${t("Task type")}<select name="type">${typeOptions(state.snapshot!, draft?.type)}</select></label>${timer}`, async data => {
       const due = data.get("timed") ? String(data.get("due") ?? "") : "";
       if (offer) { await acceptSuggestion(offer, {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due}); return; }
       if (task) await flushTask(task.description);
       await request(task ? "task_update" : "task_add", {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due, originalDescription: task?.description});
       await reload();
-      if (due && due !== task?.due) { state.notice = `“${data.get("description")}” is timed: finish by ${formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}.`; status(); }
-    }, offer ? "Add to my tasks" : "Save");
+      if (due && due !== task?.due) { state.notice = t("“{task}” is timed: finish by {time}.", {task: String(data.get("description")), time: formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}); status(); }
+    }, offer ? t("Add to my tasks") : t("Save"));
     const form = root.querySelector<HTMLElement>("dialog.editor-dialog .timed-field");
     const toggle = form?.querySelector<HTMLInputElement>('[name="timed"]');
     const input = form?.querySelector<HTMLInputElement>('[name="due"]');
@@ -1618,6 +1654,12 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     };
     if (options.timed) input.focus();
   }
+  /** Who suggested a task, from where, and why, as one sentence in the interface language. */
+  function suggestedBy(offer: SuggestionItem): string {
+    const vars = {agent: e(offer.agent), source: e(offer.source ?? ""), reason: e(offer.reason ?? "")};
+    if (offer.source) return offer.reason ? t("Suggested by <b>{agent}</b> from {source}: {reason}", vars) : t("Suggested by <b>{agent}</b> from {source}.", vars);
+    return offer.reason ? t("Suggested by <b>{agent}</b>: {reason}", vars) : t("Suggested by <b>{agent}</b>.", vars);
+  }
   /** A finish time to start from: two hours ahead, on the hour, and no later than the end of today. */
   function defaultDue(): string {
     const now = new Date();
@@ -1629,16 +1671,16 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   function deadlineDialog(deadline?: DeadlineItem) {
     const selected = deadline?.type ?? "";
     const color = deadline?.color;
-    const unknown = selected && !(selected in state.snapshot!.taskTypes) ? `<option value="${e(selected)}" selected>${e(deadline?.typeName ?? selected)} (unavailable)</option>` : "";
-    dialog(deadline ? "Edit deadline" : "New deadline", `${field("event", "Event", "text", deadline?.event ?? "", "required")}${field("date", "Due date", "date", deadline?.deadline ?? state.snapshot!.today.date, "required")}<label>Deadline type<select name="type"><option value="">Uncategorized</option>${typeOptions(state.snapshot!, selected)}${unknown}</select></label><label>Repeat<select name="repeat">${repeatOptions(deadline?.repeat)}</select></label>${swatchPicker("color", isSwatch(color) ? color : "", "Match type color")}`, async data => {
+    const unknown = selected && !(selected in state.snapshot!.taskTypes) ? `<option value="${e(selected)}" selected>${t("{type} (unavailable)", {type: e(deadline?.typeName ?? selected)})}</option>` : "";
+    dialog(deadline ? t("Edit deadline") : t("New deadline"), `${field("event", t("Event"), "text", deadline?.event ?? "", "required")}${field("date", t("Due date"), "date", deadline?.deadline ?? state.snapshot!.today.date, "required")}<label>${t("Deadline type")}<select name="type"><option value="">${t("Uncategorized")}</option>${typeOptions(state.snapshot!, selected)}${unknown}</select></label><label>${t("Repeat")}<select name="repeat">${repeatOptions(deadline?.repeat)}</select></label>${swatchPicker("color", isSwatch(color) ? color : "", t("Match type color"))}`, async data => {
       await request(deadline ? "deadline_update" : "deadline_add", {event: data.get("event"), date: data.get("date"), type: data.get("type"), color: data.get("color") ?? "", repeat: data.get("repeat") ?? "", originalEvent: deadline?.event});
       state.calendar.day = null;
       await reload();
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = "Could not refresh. Check the local server connection."; status(); }); }, {signal});
-  root.addEventListener("workspace-activate", () => { state.notice = "Your existing workspace is ready."; status(); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity"].includes(state.page) || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
+  root.addEventListener("workspace-activate", () => { state.notice = t("Your existing workspace is ready."); status(); }, {signal});
   root.addEventListener("pointerdown", event => {
     if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();
   }, {signal, capture: true});
@@ -1685,5 +1727,5 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     dismissNotice();
   }, {signal});
   window.addEventListener("resize", () => positionPopover(), {signal});
-  try { await reload(); } catch (error) { root.innerHTML = `<div class="loading"><h1>Could not open your workspace</h1><p>${e(error instanceof Error ? error.message : String(error))}</p><button class="button" id="retry">Try again</button></div>`; root.querySelector("#retry")?.addEventListener("click", () => void renderApp(root, client)); }
+  try { await reload(); } catch (error) { root.innerHTML = `<div class="loading"><h1>${t("Could not open your workspace")}</h1><p>${e(error instanceof Error ? error.message : String(error))}</p><button class="button" id="retry">${t("Try again")}</button></div>`; root.querySelector("#retry")?.addEventListener("click", () => void renderApp(root, client)); }
 }

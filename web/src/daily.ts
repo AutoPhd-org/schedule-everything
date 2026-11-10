@@ -5,6 +5,7 @@
 // change at once. Folded, the panel keeps to one line. Rendering is pure; render.ts loads the numbers and binds
 // the fold button.
 import { artwork, delta, ring } from "./charts";
+import { t, tn } from "./i18n";
 import { progressOf, todayProgress } from "./timers";
 import type { DailyOverview, Snapshot, TaskItem } from "./types";
 import { e, formatDate, formatHours, icons, sw, typeSwatch } from "./ui";
@@ -12,7 +13,6 @@ import { describeLoad, isPostponed, levelInfo, loadLevels, loadScale, taskLoad, 
 
 export type DayPanelOptions = {overview: DailyOverview | null; snapshot: Snapshot; now: number; weighted: boolean; folded: boolean};
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const sum = (counts: Record<string, number>) => Object.values(counts).reduce((total, count) => total + count, 0);
 
 /** The average progress of the open tasks that count today, each weighted by its importance when `weighted`. */
@@ -31,38 +31,38 @@ export function dayPanel({overview, snapshot: s, now, weighted, folded}: DayPane
   const timed = todayProgress(s, now, weighted);
   const percent = (value: number) => `${Math.round(value * 100)}%`;
   const head = `<header class="day-head">
-      <div class="day-title"><p class="eyebrow">${icons.spark} DAILY OVERVIEW</p><h2>Your day so far<span class="accent-dot">.</span></h2></div>
+      <div class="day-title"><p class="eyebrow">${icons.spark} ${t("DAILY OVERVIEW")}</p><h2>${t("Your day so far")}<span class="accent-dot">.</span></h2></div>
       <span class="pill">${e(formatDate(s.today.date, {weekday: "long", month: "long", day: "numeric"}))}</span>
-      <button type="button" class="day-fold icon-button" data-day-fold aria-expanded="${!folded}" aria-controls="day-body" title="${folded ? "Show the daily overview" : "Fold into one line"}">${icons.chevron}<span class="sr-only">${folded ? "Show the daily overview" : "Fold the daily overview"}</span></button>
+      <button type="button" class="day-fold icon-button" data-day-fold aria-expanded="${!folded}" aria-controls="day-body" title="${folded ? t("Show the daily overview") : t("Fold into one line")}">${icons.chevron}<span class="sr-only">${folded ? t("Show the daily overview") : t("Fold the daily overview")}</span></button>
     </header>`;
   if (folded) {
     const chips = [
-      `<span class="day-chip">${icons.check}<b>${day ? day.completed : "–"}</b> finished</span>`,
-      `<span class="day-chip load-${load.level}">${info.icon}<b>${load.points.toFixed(1)}</b> ${e(info.label.toLowerCase())} load</span>`,
-      timed.parts.length ? `<span class="day-chip">${icons.target}<b>${percent(timed.value)}</b> of timed work</span>` : "",
-      day?.streak ? `<span class="day-chip">${icons.flame}<b>${day.streak}</b>-day streak</span>` : ""
+      `<span class="day-chip">${icons.check}${t("<b>{count}</b> finished", {count: day ? day.completed : "–"})}</span>`,
+      `<span class="day-chip load-${load.level}">${info.icon}${t("<b>{points}</b> {level} load", {points: load.points.toFixed(1), level: e(info.label.toLowerCase())})}</span>`,
+      timed.parts.length ? `<span class="day-chip">${icons.target}${t("<b>{percent}</b> of timed work", {percent: percent(timed.value)})}</span>` : "",
+      day?.streak ? `<span class="day-chip">${icons.flame}${t("<b>{days}</b>-day streak", {days: day.streak})}</span>` : ""
     ].join("");
-    return `<section id="day-panel" class="day-panel is-folded" aria-label="Daily overview">${head}<p class="day-strip">${chips}</p></section>`;
+    return `<section id="day-panel" class="day-panel is-folded" aria-label="${t("Daily overview")}">${head}<p class="day-strip">${chips}</p></section>`;
   }
-  return `<section id="day-panel" class="day-panel" aria-label="Daily overview">${head}
+  return `<section id="day-panel" class="day-panel" aria-label="${t("Daily overview")}">${head}
       <div class="day-grid" id="day-body">${finishedTile(day, s, now)}${loadTile(s)}${progressTile(s, now, weighted)}${highlightsTile(day, s)}${streakTile(day, s)}</div>
     </section>`;
 }
 
 function finishedTile(day: DailyOverview | null, s: Snapshot, now: number): string {
-  if (!day) return `<article class="dp-tile dp-hero loading-shimmer" aria-busy="true"><p class="dp-label">${icons.check}Finished today</p><p class="muted">Gathering your day…</p></article>`;
+  if (!day) return `<article class="dp-tile dp-hero loading-shimmer" aria-busy="true"><p class="dp-label">${icons.check}${t("Finished today")}</p><p class="muted">${t("Gathering your day…")}</p></article>`;
   const comparisons = [
-    day.yesterday === null ? "" : delta(day.completed, day.yesterday, {label: "yesterday"}),
-    day.usual === null ? "" : delta(day.completed, day.usual, {label: "your usual day", digits: 1})
+    day.yesterday === null ? "" : delta(day.completed, day.yesterday, {label: t("yesterday")}),
+    day.usual === null ? "" : delta(day.completed, day.usual, {label: t("your usual day"), digits: 1})
   ].join("");
   const outcomes = [
-    `<span class="dp-chip">${icons.plus}${day.added} added</span>`,
-    day.cancelled ? `<span class="dp-chip sw-yellow">${icons.ban}${day.cancelled} cancelled</span>` : "",
-    day.dropped ? `<span class="dp-chip sw-magenta">${icons.dropped}${day.dropped} dropped</span>` : "",
-    day.medianLeadHours === null ? "" : `<span class="dp-chip" title="From adding a task to finishing it, the middle value today">${icons.hourglass}${formatHours(day.medianLeadHours)} to finish</span>`
+    `<span class="dp-chip">${icons.plus}${t("{count} added", {count: day.added})}</span>`,
+    day.cancelled ? `<span class="dp-chip sw-yellow">${icons.ban}${t("{count} cancelled", {count: day.cancelled})}</span>` : "",
+    day.dropped ? `<span class="dp-chip sw-magenta">${icons.dropped}${t("{count} dropped", {count: day.dropped})}</span>` : "",
+    day.medianLeadHours === null ? "" : `<span class="dp-chip" title="${t("From adding a task to finishing it, the middle value today")}">${icons.hourglass}${t("{time} to finish", {time: formatHours(day.medianLeadHours)})}</span>`
   ].join("");
-  return `<article class="dp-tile dp-hero"><p class="dp-label">${icons.check}Finished today</p>
-      <div class="dp-number"><strong>${day.completed}</strong>${comparisons ? `<div class="dp-deltas">${comparisons}</div>` : `<p class="muted">Your first day here. Tomorrow you can compare.</p>`}</div>
+  return `<article class="dp-tile dp-hero"><p class="dp-label">${icons.check}${t("Finished today")}</p>
+      <div class="dp-number"><strong>${day.completed}</strong>${comparisons ? `<div class="dp-deltas">${comparisons}</div>` : `<p class="muted">${t("Your first day here. Tomorrow you can compare.")}</p>`}</div>
       ${hourChart(day, s, now)}
       <div class="dp-outcomes">${outcomes}</div>
     </article>`;
@@ -78,11 +78,13 @@ function hourChart(day: DailyOverview, s: Snapshot, now: number): string {
   const bars = day.hours.map((counts, hour) => {
     const total = sum(counts);
     const segments = types.filter(id => counts[id]).map(id => `<i class="${sw(typeSwatch(s.taskTypes, id))}" style="--h:${(counts[id] / max).toFixed(3)}"></i>`).join("");
-    const tip = `${hourName(hour)}: ${total ? `${plural(total, "task")} finished${types.length > 1 ? ` (${types.filter(id => counts[id]).map(id => `${name(id)} ${counts[id]}`).join(", ")})` : ""}` : hour > current ? "still to come" : "nothing finished"}`;
+    const tip = total
+      ? `${tn("{hour}: {count} task finished", "{hour}: {count} tasks finished", total, {hour: hourName(hour)})}${types.length > 1 ? ` (${types.filter(id => counts[id]).map(id => `${name(id)} ${counts[id]}`).join(", ")})` : ""}`
+      : hour > current ? t("{hour}: still to come", {hour: hourName(hour)}) : t("{hour}: nothing finished", {hour: hourName(hour)});
     return `<span class="hr ${hour > current ? "future" : ""} ${hour === current ? "is-now" : ""}" style="--i:${hour}" data-tip="${e(tip)}">${segments}</span>`;
   }).join("");
   const legend = types.length ? `<div class="legend">${types.map(id => `<span class="${sw(typeSwatch(s.taskTypes, id))}"><i></i>${e(name(id))}</span>`).join("")}</div>` : "";
-  return `<div class="hours" role="img" aria-label="${e(`Tasks finished per hour: ${day.hours.map((counts, hour) => sum(counts) ? `${hourName(hour)} ${sum(counts)}` : "").filter(Boolean).join(", ") || "none yet"}`)}">${bars}</div>
+  return `<div class="hours" role="img" aria-label="${e(t("Tasks finished per hour: {hours}", {hours: day.hours.map((counts, hour) => sum(counts) ? `${hourName(hour)} ${sum(counts)}` : "").filter(Boolean).join(", ") || t("none yet")}))}">${bars}</div>
     <div class="hours-axis" aria-hidden="true">${[0, 6, 12, 18].map(hour => `<span>${e(hourName(hour))}</span>`).join("")}</div>${legend}`;
 }
 
@@ -106,12 +108,12 @@ function loadTile(s: Snapshot): string {
   for (const task of s.tasks) byType.set(task.type, (byType.get(task.type) ?? 0) + taskLoad(task, s.today.date));
   const types = [...byType].filter(([, points]) => points > 0).sort((a, b) => b[1] - a[1]);
   const typeName = (id: string) => s.taskTypes[id] ?? s.tasks.find(task => task.type === id)?.typeName ?? id;
-  const split = types.length ? `<div class="load-split" role="img" aria-label="${e(`Workload by type: ${types.map(([id, points]) => `${typeName(id)} ${points.toFixed(1)}`).join(", ")}`)}">${types.map(([id, points]) => `<i class="${sw(typeSwatch(s.taskTypes, id))}" style="flex-grow:${points.toFixed(2)}" data-tip="${e(`${typeName(id)}: ${points.toFixed(1)}`)}"></i>`).join("")}</div>
+  const split = types.length ? `<div class="load-split" role="img" aria-label="${e(t("Workload by type: {types}", {types: types.map(([id, points]) => `${typeName(id)} ${points.toFixed(1)}`).join(", ")}))}">${types.map(([id, points]) => `<i class="${sw(typeSwatch(s.taskTypes, id))}" style="flex-grow:${points.toFixed(2)}" data-tip="${e(`${typeName(id)}: ${points.toFixed(1)}`)}"></i>`).join("")}</div>
       <div class="legend">${types.slice(0, 4).map(([id, points]) => `<span class="${sw(typeSwatch(s.taskTypes, id))}"><i></i>${e(typeName(id))} <b>${points.toFixed(1)}</b></span>`).join("")}</div>` : "";
-  return `<article class="dp-tile dp-load load-${load.level}"><p class="dp-label">${icons.gauge}Workload <span class="dp-help" data-tip="${e(WORKLOAD_DEFINITION)}" tabindex="0" aria-label="${e(WORKLOAD_DEFINITION)}">?</span></p>
+  return `<article class="dp-tile dp-load load-${load.level}"><p class="dp-label">${icons.gauge}${t("Workload")} <span class="dp-help" data-tip="${e(t(WORKLOAD_DEFINITION))}" tabindex="0" aria-label="${e(t(WORKLOAD_DEFINITION))}">?</span></p>
       <div class="gauge" role="img" aria-label="${e(describeLoad(load))}"><svg viewBox="0 0 120 70" aria-hidden="true"><path class="gauge-track" d="M10 62 A50 50 0 0 1 110 62"/><path class="gauge-fill" d="M10 62 A50 50 0 0 1 110 62" pathLength="100" stroke-dasharray="${(Math.min(load.points, scale) / scale * 100).toFixed(2)} 100"/>${ticks}</svg>
         <div class="gauge-read"><span class="gauge-icon">${info.icon}</span><strong>${load.points.toFixed(1)}</strong><span>${e(info.label)}</span></div></div>
-      <p class="dp-note">${load.counted ? `${plural(load.counted, "open task")} · importance ${load.importance} on average · ${load.done}% done` : "No open tasks."}</p>
+      <p class="dp-note">${load.counted ? tn("{count} open task · importance {importance} on average · {done}% done", "{count} open tasks · importance {importance} on average · {done}% done", load.counted, {importance: load.importance ?? "", done: load.done}) : t("No open tasks.")}</p>
       ${split}<p class="dp-fine">${e(info.note)}</p>
     </article>`;
 }
@@ -122,30 +124,30 @@ function progressTile(s: Snapshot, now: number, weighted: boolean): string {
   const steps = s.tasks.flatMap(task => task.subtasks ?? []);
   const checked = steps.filter(step => step.done).length;
   const percent = (value: number | null) => value === null ? "–" : `${Math.round(value * 100)}%`;
-  return `<article class="dp-tile dp-progress"><p class="dp-label">${icons.target}Progress</p>
+  return `<article class="dp-tile dp-progress"><p class="dp-label">${icons.target}${t("Progress")}</p>
       <div class="dp-rings">
-        <div class="dp-ring">${ring({value: timed.parts.length ? timed.value : null, size: 86, label: `Timed work due today: ${timed.parts.length ? percent(timed.value) : "none"}`, tone: "sw-violet"})}<span>Timed work due today</span></div>
-        <div class="dp-ring">${ring({value: open, size: 86, label: `All open tasks: ${percent(open)} done on average`, tone: "sw-aqua"})}<span>All open tasks</span></div>
+        <div class="dp-ring">${ring({value: timed.parts.length ? timed.value : null, size: 86, label: t("Timed work due today: {value}", {value: timed.parts.length ? percent(timed.value) : t("none")}), tone: "sw-violet"})}<span>${t("Timed work due today")}</span></div>
+        <div class="dp-ring">${ring({value: open, size: 86, label: t("All open tasks: {percent} done on average", {percent: percent(open)}), tone: "sw-aqua"})}<span>${t("All open tasks")}</span></div>
       </div>
-      ${steps.length ? `<p class="dp-note">${icons.subtasks}${checked} of ${plural(steps.length, "subtask")} checked off</p>` : ""}
-      <p class="dp-fine">${weighted ? `${icons.scale}Weighted by importance` : "Every task counts the same"} · <button type="button" class="text-button" data-page="settings">Change</button></p>
+      ${steps.length ? `<p class="dp-note">${icons.subtasks}${tn("{checked} of {count} subtask checked off", "{checked} of {count} subtasks checked off", steps.length, {checked})}</p>` : ""}
+      <p class="dp-fine">${weighted ? `${icons.scale}${t("Weighted by importance")}` : t("Every task counts the same")} · <button type="button" class="text-button" data-page="settings">${t("Change")}</button></p>
     </article>`;
 }
 
 function highlightsTile(day: DailyOverview | null, s: Snapshot): string {
   const items = day?.highlights ?? [];
   const list = items.length
-    ? `<div class="highlights">${items.map((item, i) => `<div class="highlight ${sw(typeSwatch(s.taskTypes, item.type))}" style="--i:${i}"><div class="hl-art">${artwork(item.description, typeSwatch(s.taskTypes, item.type))}<span class="hl-rank">${i + 1}</span></div><div><strong>${e(item.description)}</strong><small>${e(formatDate(item.endedAt, {hour: "numeric", minute: "2-digit"}))} · importance ${item.priority}</small></div></div>`).join("")}</div>`
-    : `<p class="dp-empty">${day ? "Finish a task and it shows up here, the most important first." : "Loading…"}</p>`;
-  return `<article class="dp-tile dp-highlights"><p class="dp-label">${icons.trophy}Today’s highlights</p>${list}</article>`;
+    ? `<div class="highlights">${items.map((item, i) => `<div class="highlight ${sw(typeSwatch(s.taskTypes, item.type))}" style="--i:${i}"><div class="hl-art">${artwork(item.description, typeSwatch(s.taskTypes, item.type))}<span class="hl-rank">${i + 1}</span></div><div><strong>${e(item.description)}</strong><small>${e(formatDate(item.endedAt, {hour: "numeric", minute: "2-digit"}))} · ${t("importance {n}", {n: item.priority})}</small></div></div>`).join("")}</div>`
+    : `<p class="dp-empty">${day ? t("Finish a task and it shows up here, the most important first.") : t("Loading…")}</p>`;
+  return `<article class="dp-tile dp-highlights"><p class="dp-label">${icons.trophy}${t("Today’s highlights")}</p>${list}</article>`;
 }
 
 function streakTile(day: DailyOverview | null, s: Snapshot): string {
   const streak = day?.streak ?? 0;
   const done = s.habits.filter(habit => habit.completed).length;
   const habits = s.habits.length
-    ? `<div class="dp-habits">${ring({value: done / s.habits.length, size: 54, label: `${done} of ${s.habits.length} habits done today`, center: `${done}/${s.habits.length}`, tone: "sw-green"})}<span>${done === s.habits.length ? "Every habit done today." : `${s.habits.length - done} ${s.habits.length - done === 1 ? "habit" : "habits"} to go.`}</span></div>`
-    : `<p class="dp-fine">Add habits in Settings to track them here.</p>`;
-  return `<article class="dp-tile dp-streak ${streak ? "lit" : ""}"><p class="dp-label">${icons.flame}Streak</p>
-      <div class="streak-flame">${icons.flame}<strong>${day ? streak : "–"}</strong></div><p class="dp-fine">${streak === 1 ? "day" : "days"} in a row with a finished task</p>${habits}</article>`;
+    ? `<div class="dp-habits">${ring({value: done / s.habits.length, size: 54, label: t("{done} of {total} habits done today", {done, total: s.habits.length}), center: `${done}/${s.habits.length}`, tone: "sw-green"})}<span>${done === s.habits.length ? t("Every habit done today.") : tn("{count} habit to go.", "{count} habits to go.", s.habits.length - done)}</span></div>`
+    : `<p class="dp-fine">${t("Add habits in Settings to track them here.")}</p>`;
+  return `<article class="dp-tile dp-streak ${streak ? "lit" : ""}"><p class="dp-label">${icons.flame}${t("Streak")}</p>
+      <div class="streak-flame">${icons.flame}<strong>${day ? streak : "–"}</strong></div><p class="dp-fine">${tn("day in a row with a finished task", "days in a row with a finished task", streak)}</p>${habits}</article>`;
 }

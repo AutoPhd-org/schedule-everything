@@ -34,7 +34,7 @@ files can be repaired in the browser.
 | Schedule | View today's timeline; see and clear today's plan; get the agent plugin install commands and example prompts; download the schedule PDF |
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
-| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
+| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; pick the interface language (English, 中文, Español, 한국어); choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
 
 ## J mode and P mode
 

@@ -37,7 +37,7 @@ pub fn alarm(_title: &str, message: &str, sound_file: &str, alarm_interval: f64,
     loop {
         crate::platform::play_sound(sound_file);
         let button = crate::platform::show_dialog(message);
-        if button.contains("停止闘铃") || button.contains("停止闹铃") {
+        if button.contains(crate::platform::stop_alarm_label().as_str()) || button.contains("停止闹铃") {
             break;
         }
         if start.elapsed().as_secs_f64() > max_alarm_duration {

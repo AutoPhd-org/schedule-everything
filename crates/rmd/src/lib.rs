@@ -13,6 +13,8 @@ pub mod config_check;
 pub mod data;
 pub mod i18n;
 mod i18n_table;
+mod i18n_table_es;
+mod i18n_table_ko;
 pub mod paths;
 pub mod recurrence;
 pub mod synced_schedule;
