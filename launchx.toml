@@ -1,0 +1,28 @@
+# LaunchX manifest: lets LaunchX start, stop and open the Schedule Everything
+# browser workspace with your other local services
+# (https://github.com/AutoPhd-org/launchx). Register it with:
+#   lx add <this directory>
+# then open the workspace with `lx open rmd` (or `rmd web`, which hands over
+# to LaunchX while it runs). See documentation/docs/advanced/launchx.md.
+#
+# This manifest runs the development build of this checkout
+# (`cargo build -p rmd`). An installed copy runs `rmd` from PATH instead:
+# run = ["rmd", "serve"] and cli = "rmd".
+#
+# The reminder service (`rmd daemon`) is not listed: it still runs under its
+# own launchd agent or systemd unit.
+launchx = "0.1"
+
+[service.rmd]
+name          = "Schedule Everything"
+description   = "Weekly routine, tasks, deadlines and habits in the browser workspace"
+level         = 2
+run           = ["target/debug/rmd", "serve"]
+cli           = "target/debug/rmd"
+homepage      = "https://autophd-org.github.io/schedule-everything/"
+stop_timeout  = 10
+
+[service.rmd.http]
+health = "/api/health"
+ui     = "/"
+state  = "/api/state"

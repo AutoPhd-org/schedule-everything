@@ -106,7 +106,7 @@ mod tests {
         let _env = TestEnv::new();
         let script = completion_script("tcsh").unwrap();
         assert!(script.starts_with(
-            "# tcsh completion for rmd\ncomplete rmd \\\n    'p/1/(web add rm cancel drop ls history ddl track status"
+            "# tcsh completion for rmd\ncomplete rmd \\\n    'p/1/(web serve add rm cancel drop ls history ddl track status state"
         ));
         assert!(script.contains("'n/ddl/(add rm)/'"));
         assert!(script.contains("'n/completion/(bash zsh tcsh fish)/'"));

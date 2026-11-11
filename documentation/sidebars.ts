@@ -37,7 +37,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Advanced Features',
-      items: ['advanced/weekly-rotation'],
+      items: ['advanced/weekly-rotation', 'advanced/launchx'],
     },
   ],
 };

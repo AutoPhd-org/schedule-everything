@@ -8,6 +8,7 @@ pub mod plugins;
 pub mod pyjson;
 pub mod server;
 pub mod services;
+pub mod state;
 pub mod suggestions;
 pub mod workspace;
 

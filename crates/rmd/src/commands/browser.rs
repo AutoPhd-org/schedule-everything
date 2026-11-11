@@ -9,6 +9,9 @@
 //! A server is replaced the same way when phone access is turned on or off,
 //! since that changes where it listens.
 //!
+//! While a LaunchX launcher runs, a plain `rmd web` lets it open the
+//! workspace instead (`lx open rmd`, see [`crate::launchx`]).
+//!
 //! [`code_fingerprint`]: crate::web::fingerprint::code_fingerprint
 
 use std::fs::{self, File, OpenOptions};
@@ -532,7 +535,15 @@ fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, color: bool,
 }
 
 /// `rmd web [--no-open] [--port N] [--if-running] [--phone | --no-phone]`.
+///
+/// A plain `rmd web` hands over to `lx open rmd` while a LaunchX launcher
+/// runs; the options are about the workspace's own server, so they keep it.
 pub fn browser_command(request: WebRequest) -> i32 {
+    if request == WebRequest::default()
+        && let Some(code) = crate::launchx::hand_over(crate::launchx::SERVICE_ID)
+    {
+        return code;
+    }
     let color = crate::ui::detect_color_system().is_some();
     browser_command_with(&Desktop, &mut io::stdout(), color, request)
 }
