@@ -16,15 +16,22 @@ import { ring } from "./charts";
 import { language, locale, t, tn } from "./i18n";
 import type { BoardLayout } from "./prefs";
 import { dueAt, dueLabel, clockText, isOverdue, progressControl, progressOf } from "./timers";
-import type { Snapshot, SuggestionItem, TaskItem } from "./types";
+import type { Snapshot, Subtask, SuggestionItem, TaskItem } from "./types";
 import { e, empty, formatDate, hash, icons, isoDay, sw, typeSwatch } from "./ui";
 import { describeLoad, workload } from "./workload";
 
 export type BoardView = "expanded" | "folded";
 /** The inline form for a new task: which group it is open in, the chosen importance, and any unsent text. */
 export type Composer = {type: string; priority: number; draft: string};
-/** The field for a new subtask: which task (by description) it is open on, and any unsent text. */
-export type SubtaskComposer = {task: string; draft: string};
+/** The subtask field open on a task (by description), with any unsent text: a new subtask, or with `edit`, new
+ *  wording for the subtask at `edit.step`, whose text was `edit.text` when the field opened. */
+export type SubtaskComposer = {task: string; draft: string; edit?: {step: number; text: string}};
+
+/** Where the subtask being reworded is now: at its place if it is still there, else wherever its text moved;
+ *  -1 once it is gone. */
+export function editedStep(steps: readonly Subtask[], edit: {step: number; text: string}): number {
+  return steps[edit.step]?.text === edit.text ? edit.step : steps.findIndex(step => step.text === edit.text);
+}
 /** A type's tasks and the metrics its folded summary shows: average importance, average progress (0–100),
  *  how many tasks are important, timed, overdue, or deferred, and how many subtasks there are and are done.
  *  `suggestions` are the tasks agents suggested for this type; no metric counts them. */
@@ -266,15 +273,19 @@ function taskCard(task: TaskItem, index: number, position: number, now: number, 
     ? `<button type="button" class="neutral" data-task="${index}" data-operation="timer">${t("Change the finish time…")}</button><button type="button" class="neutral" data-task="${index}" data-operation="untime">${t("Stop timing · make it a normal task")}</button>`
     : `<button type="button" class="neutral" data-task="${index}" data-operation="timer">${t("Make it a timed task…")}</button>`;
   // Without subtasks, a button beside the slider breaks the task down; from then on the subtasks set its progress.
-  const breakDown = steps.length || writing ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(t("Add subtasks to {task}", {task: task.description}))}" title="${t("Break it into subtasks. Progress then follows them.")}">${icons.subtaskAdd}</button>`;
-  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {task}", {task: name})}" title="${t("Complete task")}">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: task.priority})}</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="${t("Edit {task}", {task: name})}">${t("Edit")}</button></div>${timer}${deferred}${hooks.taskExtra?.(task, index) ?? ""}${steps.length || writing ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>${t("More options")}</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">${t("Cancel · added by mistake")}</button><button type="button" data-task="${index}" data-operation="dropped">${t("Drop · no longer pursuing")}</button></details></div>`;
+  const adding = writing && !writing.edit;
+  const breakDown = steps.length || adding ? "" : `<button type="button" class="subtask-start" data-subtask-open="${index}" aria-label="${e(t("Add subtasks to {task}", {task: task.description}))}" title="${t("Break it into subtasks. Progress then follows them.")}">${icons.subtaskAdd}</button>`;
+  return `<div class="${classes}" style="--i:${position}" ${at !== null ? `data-at="${at}" data-kind="task"` : ""}><div class="task-main"><button type="button" class="complete-button" data-task="${index}" data-operation="deleted" aria-label="${t("Complete {task}", {task: name})}" title="${t("Complete task")}">${icons.check}</button><h4><span class="task-title">${name}</span></h4></div><div class="task-meta"><span class="priority p-${level}">${icons.flag} ${t("Importance {n}/10", {n: task.priority})}</span><span class="energy" style="--p:${task.priority / 10}" aria-hidden="true"></span><button class="text-button edit" type="button" data-task="${index}" data-operation="edit" aria-label="${t("Edit {task}", {task: name})}">${t("Edit")}</button></div>${timer}${deferred}${hooks.taskExtra?.(task, index) ?? ""}${steps.length || adding ? subtaskList(task, index, writing) : ""}<div class="task-progress-row">${progressControl(index, task, "task-progress")}${breakDown}</div><details class="task-more"><summary>${t("More options")}</summary>${timing}<button type="button" data-task="${index}" data-operation="cancelled">${t("Cancel · added by mistake")}</button><button type="button" data-task="${index}" data-operation="dropped">${t("Drop · no longer pursuing")}</button></details></div>`;
 }
 
-/** A task's checklist: check a subtask off, remove it, or add another; the task's progress follows. */
+/** A task's checklist: check a subtask off, reword it, remove it, or add another; the task's progress follows. */
 function subtaskList(task: TaskItem, index: number, writing: SubtaskComposer | null): string {
   const steps = task.subtasks ?? [];
-  const items = steps.map((step, i) => `<li class="subtask ${step.done ? "is-done" : ""}" style="--s:${i}"><label class="subtask-label"><input type="checkbox" data-subtask="${index}" data-step="${i}" ${step.done ? "checked" : ""}><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="subtask-text">${e(step.text)}</span></label><button type="button" class="subtask-remove" data-subtask-remove="${index}" data-step="${i}" aria-label="${e(t("Remove the subtask {subtask}", {subtask: step.text}))}" title="${t("Remove")}">${icons.close}</button></li>`).join("");
-  const field = writing
+  const editing = writing?.edit ? editedStep(steps, writing.edit) : -1;
+  const items = steps.map((step, i) => i === editing
+    ? `<li class="subtask is-editing ${step.done ? "is-done" : ""}" style="--s:${i}"><form class="subtask-form subtask-edit" data-subtask-edit="${index}" data-step="${i}" autocomplete="off"><span class="subtask-form-icon" aria-hidden="true">${icons.edit}</span><input name="subtaskEdit" maxlength="200" value="${e(writing!.draft)}" aria-label="${e(t("New wording for the subtask {subtask}", {subtask: step.text}))}" enterkeyhint="done"><button type="submit" class="subtask-submit" aria-label="${t("Save the subtask")}" title="${t("Save (Enter)")}">${icons.check}</button><button type="button" class="subtask-close" data-subtask-close aria-label="${t("Keep the subtask as it was")}" title="${t("Cancel (Esc)")}">${icons.close}</button></form></li>`
+    : `<li class="subtask ${step.done ? "is-done" : ""}" style="--s:${i}"><label class="subtask-label"><input type="checkbox" data-subtask="${index}" data-step="${i}" ${step.done ? "checked" : ""}><span class="subtask-box" aria-hidden="true">${icons.check}</span><span class="subtask-text">${e(step.text)}</span></label><span class="subtask-actions"><button type="button" class="subtask-edit-button" data-subtask-edit-open="${index}" data-step="${i}" aria-label="${e(t("Edit the subtask {subtask}", {subtask: step.text}))}" title="${t("Edit")}">${icons.edit}</button><button type="button" class="subtask-remove" data-subtask-remove="${index}" data-step="${i}" aria-label="${e(t("Remove the subtask {subtask}", {subtask: step.text}))}" title="${t("Remove")}">${icons.close}</button></span></li>`).join("");
+  const field = writing && !writing.edit
     ? `<form class="subtask-form" data-subtask-form="${index}" autocomplete="off"><span class="subtask-form-icon" aria-hidden="true">${icons.next}</span><input name="subtaskText" maxlength="200" placeholder="${steps.length ? t("Another subtask…") : t("First subtask…")}" value="${e(writing.draft)}" aria-label="${e(t("New subtask for {task}", {task: task.description}))}" enterkeyhint="done"><button type="submit" class="subtask-submit" aria-label="${t("Add the subtask")}" title="${t("Add (Enter)")}">${icons.enter}</button><button type="button" class="subtask-close" data-subtask-close aria-label="${t("Close the new subtask field")}" title="${t("Close (Esc)")}">${icons.close}</button></form>`
     : `<button type="button" class="subtask-add" data-subtask-open="${index}">${icons.plus}<span>${t("Add a subtask")}</span></button>`;
   const allDone = steps.length > 0 && steps.every(step => step.done);
