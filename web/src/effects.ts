@@ -9,8 +9,8 @@ export function reducedMotion(): boolean {
 
 const BURST_COLORS = ["blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red"];
 
-type Point = {x: number; y: number};
-const centerOf = (element: Element): Point => {
+export type Point = {x: number; y: number};
+export const centerOf = (element: Element): Point => {
   const rect = element.getBoundingClientRect();
   return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
 };
@@ -40,6 +40,28 @@ export function burst(origin: Element, count = 22): void {
     piece.style.setProperty("--rot", `${Math.round(Math.random() * 720 - 360)}deg`);
     confetti.append(piece);
   }
+}
+
+/** The workload theme taking on a change of progress: a wash of the workload level's color spreads over the
+ *  whole page from `at` and fades as the page settles into its new colors. `shifted` when the workload moved to
+ *  another level: the wash is fuller and slower, so the new palette is seen arriving. A newer wave replaces one
+ *  still spreading, so a slider moved by key presses does not stack them. */
+export function themeWave(at: Point, level: string, shifted: boolean): void {
+  if (reducedMotion()) return;
+  document.querySelectorAll(".theme-wave").forEach(wave => wave.remove());
+  const reach = Math.hypot(Math.max(at.x, window.innerWidth - at.x), Math.max(at.y, window.innerHeight - at.y));
+  const wave = layer(`theme-wave load-${level} ${shifted ? "is-shift" : ""}`, at, shifted ? 1700 : 1200);
+  wave.style.setProperty("--reach", `${Math.ceil(reach) + 40}px`);
+  wave.innerHTML = "<i></i><i></i>";
+}
+
+/** A label that floats up from `at`, saying how a change of progress moved the workload (`html`, already
+ *  escaped), in the color of the level it is at now. One at a time: a newer label replaces the last. */
+export function loadTag(at: Point, html: string, level: string): void {
+  if (reducedMotion()) return;
+  document.querySelectorAll(".float-tag.tone-load").forEach(old => old.remove());
+  const label = layer(`float-tag tone-load load-${level}`, at, 1600);
+  label.innerHTML = html;
 }
 
 /** Two rings that spread out from a point, like a ripple. */

@@ -293,8 +293,10 @@ To break a task down, click the checklist button beside its slider, type a
 subtask, and press **Enter**; the field stays open for the next one, and **Esc**
 closes it. From then on the task's progress follows its subtasks (two of four
 checked is 50%), and the slider gives way to a meter. Check subtasks off on the
-card, or remove one with its **×** (**Undo** in the notice brings it back).
-Removing every subtask keeps the last progress as the task's own.
+card. To fix one added by mistake, use the buttons at the end of its row: the
+pencil turns it into a field where **Enter** saves the new wording and **Esc**
+keeps the old one, and **×** removes it (either way, **Undo** in the notice puts
+it back). Removing every subtask keeps the last progress as the task's own.
 
 A **timed task** has a time it should be finished by. Turn on **Timed task** in
 the task form (**New task** or **Edit**), or choose **Make it a timed task…**
@@ -382,11 +384,20 @@ The level shows in the header on every page (select it to open the daily
 overview), and the workspace's theme follows it: the background, its color
 blobs, and the glass surfaces shift from cool greens and blues when your plate
 is clear to warm oranges and reds when it is heavy. Your progress tempers it:
-as today's timed work bar fills, the colors ease part of the way back toward
-the calm of All clear (up to 40% of the way once the bar is full), and the warm
-glow of a busy or heavy day fades. The workload still sets the tone; with no
-timed work due today, only the workload counts. Turn this off with **Theme
-follows your workload** in Settings.
+as the day's progress fills, the colors ease back toward the calm of All clear
+(up to 65% of the way once it is full), and the warm glow of a busy or heavy day
+fades. The day's progress is today's timed work bar when any timed work is due
+today, and otherwise the average progress of all your open tasks. The workload
+still sets the tone.
+
+Every change of progress shows at once. While you drag a slider, the theme and
+the workload in the header follow it before you let go. When a change lands
+(a slider let go, a subtask checked, added, or removed), a wash of the workload
+level's color spreads over the page from where you made it, a label floats up
+with how much the workload moved (and the level it reached, if it changed), and
+the header's workload jumps. With reduced motion requested, the colors change
+without the wave or the label. Turn the theme off with **Theme follows your
+workload** in Settings; the label and the header still answer.
 
 The board has two layouts; switch with **Compact** / **Spread** beside **Fold**,
 or in Settings. **Compact** packs the groups in rows, those with more important

@@ -85,7 +85,7 @@ beforeEach(() => {
   });
   client = {send};
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); delete document.documentElement.dataset.load; document.documentElement.style.removeProperty("--day-progress"); setLoadThresholds(DEFAULT_THRESHOLDS); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); delete document.documentElement.dataset.load; document.documentElement.style.removeProperty("--day-progress"); setLoadThresholds(DEFAULT_THRESHOLDS); document.querySelectorAll(".theme-wave, .float-tag").forEach(el => el.remove()); });
 
 describe("the workload theme", () => {
   it("tints the workspace by workload, shows it in the header, and can be turned off", async () => {
@@ -109,14 +109,19 @@ describe("the workload theme", () => {
     expect(root.querySelector(".load-chip")?.textContent).toBe("Heavy10.8");
   });
 
-  it("eases toward calm as today's progress bar fills, while the workload keeps the level", async () => {
+  it("eases toward calm as the day's progress fills, while the workload keeps the level", async () => {
     vi.useFakeTimers({toFake: ["Date"]});
     vi.setSystemTime(new Date(2026, 10, 7, 12, 0));
     const pull = () => document.documentElement.style.getPropertyValue("--day-progress");
-    // Without timed work due today there is no bar, so only the workload counts.
+    // Without timed work due today, all open tasks count: nothing done yet, then three of twelve half done.
     await renderApp(root, client);
     expect(document.documentElement.dataset.load).toBe("heavy");
     expect(pull()).toBe("0.000");
+    data.tasks.slice(0, 3).forEach(item => { item.progress = 50; });
+    await renderApp(root, client);
+    expect(document.documentElement.dataset.load).toBe("heavy");
+    expect(pull()).toBe("0.125");
+    data.tasks.slice(0, 3).forEach(item => { item.progress = 0; });
     // Two timed tasks due tonight, one finished today and one half done: the bar is at 75%.
     data.timedDone = [{description: "Morning review", type: "1", due: "2026-11-07T10:00", endedAt: "2026-11-07T09:50:00", priority: 9}];
     data.tasks = [...data.tasks, task("Ship slides", 3, {due: "2026-11-07T18:00", progress: 50})];
@@ -153,6 +158,54 @@ describe("the workload theme", () => {
     await flush();
     expect(document.documentElement.dataset.load).toBe("light");
     expect(root.querySelector(".load-chip")?.textContent).toBe("Light2.0");
+  });
+
+  it("follows a slider while it moves, and goes back if it is let go where it started", async () => {
+    data.tasks = [task("Ship it", 10), task("Review", 10), task("Write it up", 6)];
+    await renderApp(root, client);
+    const slider = root.querySelector<HTMLInputElement>('#board-area input[data-progress="2"]')!;
+    slider.value = "100"; slider.dispatchEvent(new Event("input"));
+    // Not saved yet, but the theme and the header already show the lighter day.
+    expect(document.documentElement.dataset.load).toBe("light");
+    expect(root.querySelector(".load-chip")?.textContent).toBe("Light2.0");
+    slider.value = "0"; slider.dispatchEvent(new Event("input")); slider.dispatchEvent(new Event("change"));
+    expect(document.documentElement.dataset.load).toBe("steady");
+    expect(root.querySelector(".load-chip")?.textContent).toBe("Steady2.6");
+    expect(send).not.toHaveBeenCalledWith("task_progress", expect.anything());
+  });
+
+  it("shows at once what a change of progress did to the workload", async () => {
+    // Motion allowed, so the wave and the label are drawn.
+    vi.stubGlobal("matchMedia", vi.fn(() => ({matches: false, addEventListener: vi.fn()})));
+    data.tasks = [task("Ship it", 10), task("Review", 10), task("Write it up", 10, {subtasks: [{text: "Draft", done: false}, {text: "Edit", done: false}]})];
+    await renderApp(root, client);
+    const check = (step: number) => {
+      const box = root.querySelector<HTMLInputElement>(`#board-area input[data-subtask][data-step="${step}"]`)!;
+      box.checked = true; box.dispatchEvent(new Event("change"));
+    };
+    // Half the subtasks: 3.0 to 2.5, still Steady.
+    check(0);
+    expect(document.querySelector(".float-tag.tone-load")?.textContent).toBe("Workload −0.5");
+    expect(document.querySelector(".theme-wave")?.className).toBe("theme-wave load-steady ");
+    expect(root.querySelector(".load-chip")?.classList.contains("bump")).toBe(true);
+    // All of them: 2.0, which is Light. The wave and the label say so, and replace the last ones.
+    check(1);
+    expect(document.querySelectorAll(".float-tag.tone-load")).toHaveLength(1);
+    expect(document.querySelector(".float-tag.tone-load")?.textContent).toBe("Workload −0.5 · now Light");
+    expect(document.querySelectorAll(".theme-wave")).toHaveLength(1);
+    expect(document.querySelector(".theme-wave")?.className).toBe("theme-wave load-light is-shift");
+    expect(root.querySelector(".load-chip")?.classList.contains("shift")).toBe(true);
+    // With the theme turned off, the label and the chip still answer, but no color washes over the page.
+    click('[data-page="settings"]');
+    const toggle = root.querySelector<HTMLInputElement>('[data-pref="workloadTheme"]')!;
+    toggle.checked = false; toggle.dispatchEvent(new Event("change"));
+    click('[data-page="today"]');
+    await flush();
+    document.querySelectorAll(".theme-wave, .float-tag").forEach(el => el.remove());
+    const slider = root.querySelector<HTMLInputElement>('#board-area input[data-progress="0"]')!;
+    slider.value = "50"; slider.dispatchEvent(new Event("change"));
+    expect(document.querySelector(".float-tag.tone-load")?.textContent).toBe("Workload −0.5");
+    expect(document.querySelector(".theme-wave")).toBeNull();
   });
 });
 

@@ -8,7 +8,7 @@
 @property --blob-4 { syntax: "<color>"; inherits: true; initial-value: #ffd166; }
 @property --bg { syntax: "<color>"; inherits: true; initial-value: #f6f3ff; }
 @property --blob-opacity { syntax: "<number>"; inherits: true; initial-value: .55; }
-/* Today's progress bar, 0 to 1, set by render.ts (applyLoad) while the theme follows the workload. */
+/* The day's progress, 0 to 1, set by render.ts (applyLoad) while the theme follows the workload. */
 @property --day-progress { syntax: "<number>"; inherits: true; initial-value: 0; }
 
 :root {
@@ -45,11 +45,12 @@
   --c: var(--accent);
   --blob-1: #8f7bff; --blob-2: #ff8fb1; --blob-3: #5fd4b0; --blob-4: #ffd166;
   --blob-opacity: .55;
-  /* All clear's palette, which today's progress pulls the workload theme toward: up to 40% of the way once
-     today's timed work is all done, so the workload still sets the tone. */
+  /* All clear's palette, which the day's progress pulls the workload theme toward: up to 65% of the way once
+     it is all done, so the workload still sets the tone. The pull follows progress quickly, so a slider being
+     moved visibly moves the page with it. */
   --done-bg: #effaf5; --done-1: #7fe3c4; --done-2: #9fd3ff; --done-3: #c6f09b; --done-4: #ffe08f;
-  --pull: calc(var(--day-progress) * 40%);
-  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease), --day-progress 1.2s var(--ease);
+  --pull: calc(var(--day-progress) * 65%);
+  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease), --day-progress .5s var(--ease);
   color: var(--text);
   background: color-mix(in oklab, var(--bg), var(--done-bg) var(--pull));
 }
@@ -97,7 +98,7 @@
 /* Workload themes (workload.ts): the page tint, the backdrop, glass surfaces, and the dot grid follow how much
    open work there is, from cool and airy when the plate is clear to warm and dense when it is heavy. Steady keeps
    each mode's own backdrop. Accents stay with the planning mode. --load-c is the level's color for highlights.
-   Today's progress bar then eases the page and the backdrop part of the way toward All clear (--pull, on :root). */
+   The day's progress then eases the page and the backdrop part of the way toward All clear (--pull, on :root). */
 :root[data-load] { --glass: color-mix(in oklab, var(--load-c) 5%, rgba(255, 255, 255, .72)); }
 :root[data-load][data-theme="dark"] { --glass: color-mix(in oklab, var(--load-c) 9%, rgba(26, 21, 46, .74)); }
 :root[data-load="clear"] { --load-c: #16a374; --bg: #effaf5; --blob-1: #7fe3c4; --blob-2: #9fd3ff; --blob-3: #c6f09b; --blob-4: #ffe08f; --blob-opacity: .5; --dots: 34px; }
@@ -142,10 +143,10 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .backdrop i:nth-child(4) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-4), var(--done-4) var(--pull)) 0%, transparent 64%); bottom: -18vmax; right: -8vmax; width: 40vmax; height: 40vmax; animation-duration: 25s; animation-delay: -4s; }
 .backdrop::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1px, transparent 1.2px); background-size: var(--dots, 26px) var(--dots, 26px); mask-image: linear-gradient(to bottom, #000, transparent 70%); opacity: .7; }
 .backdrop::before { content: ""; position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 90% 60% at 50% 115%, color-mix(in oklab, var(--load-c, transparent) 32%, transparent), transparent 70%); transition: opacity 1.2s var(--ease); }
-/* The warm glow of a busy or heavy day fades as today's progress bar fills: by up to 60% once it is full. */
-:root[data-load="busy"] .backdrop::before { opacity: calc(.55 * (1 - var(--day-progress) * .6)); }
-:root[data-load="heavy"] .backdrop::before { opacity: calc(.85 * (1 - var(--day-progress) * .6)); animation: breathe 7s ease-in-out infinite; }
-@keyframes breathe { 50% { opacity: calc(.45 * (1 - var(--day-progress) * .6)); } }
+/* The warm glow of a busy or heavy day fades as the day's progress fills: by up to 85% once it is full. */
+:root[data-load="busy"] .backdrop::before { opacity: calc(.55 * (1 - var(--day-progress) * .85)); }
+:root[data-load="heavy"] .backdrop::before { opacity: calc(.85 * (1 - var(--day-progress) * .85)); animation: breathe 7s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: calc(.45 * (1 - var(--day-progress) * .85)); } }
 
 /* ----- Shell -------------------------------------------------------------- */
 .workspace { display: flex; min-height: 100vh; }
@@ -189,6 +190,12 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .load-chip b { padding: 5px 8px; border-radius: 999px; background: var(--surface-solid); color: color-mix(in oklab, var(--lc) 70%, var(--text)); font-variant-numeric: tabular-nums; }
 .load-chip:hover { transform: translateY(-1px); box-shadow: 0 10px 20px -12px var(--lc); }
 .load-chip.load-heavy svg, .load-chip.load-busy svg { animation: flicker 1.8s ease-in-out infinite; transform-origin: bottom; }
+/* Right after progress changes, the chip jumps, and more so when the workload reached another level. */
+.load-chip.bump { animation: chip-bump .7s var(--spring); }
+.load-chip.shift { animation: chip-shift 1.1s var(--spring); }
+.load-chip.bump b, .load-chip.shift b { animation: tick .6s var(--spring); }
+@keyframes chip-bump { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--lc) 60%, transparent); } 30% { transform: scale(1.12); } 100% { transform: none; box-shadow: 0 0 0 12px transparent; } }
+@keyframes chip-shift { 0% { transform: scale(.82) rotate(-5deg); box-shadow: 0 0 0 0 color-mix(in oklab, var(--lc) 75%, transparent); } 35% { transform: scale(1.22) rotate(2deg); } 100% { transform: none; box-shadow: 0 0 0 24px transparent; } }
 .theme-controls { display: flex; gap: 2px; background: var(--surface-sunk); padding: 3px; border: 1px solid var(--line); border-radius: 999px; flex-shrink: 0; }
 .theme-controls button { display: grid; place-items: center; width: 30px; height: 30px; padding: 5px; color: var(--muted); background: transparent; border: 0; border-radius: 50%; transition: color .2s, background .2s, transform .3s var(--spring); }
 .theme-controls button[aria-pressed="true"] { color: var(--accent-ink); background: var(--surface-solid); box-shadow: var(--shadow); }
@@ -554,11 +561,18 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .subtask-label:hover .subtask-box { border-color: var(--c); }
 .subtask-text { line-height: 1.45; overflow-wrap: anywhere; transition: color .25s; }
 .subtask.is-done .subtask-text { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 1.5px; text-decoration-color: color-mix(in oklab, var(--c) 60%, var(--muted)); }
-.subtask-remove { display: grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; margin-right: 3px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); opacity: 0; transition: opacity .2s, background .2s, color .2s; }
-.subtask-remove svg { width: 13px; height: 13px; }
-.subtask:hover .subtask-remove, .subtask-remove:focus-visible { opacity: 1; }
+/* Each subtask can be reworded or removed. The buttons stay faintly in view, so they can be found without
+   hovering, and come forward on the row under the pointer or with keyboard focus. */
+.subtask-actions { display: flex; align-items: center; flex-shrink: 0; margin-right: 3px; opacity: .5; transition: opacity .2s; }
+.subtask:hover .subtask-actions, .subtask-actions:focus-within { opacity: 1; }
+@media (hover: none) { .subtask-actions { opacity: .8; } }
+.subtask-edit-button, .subtask-remove { display: grid; place-items: center; flex-shrink: 0; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); transition: background .2s, color .2s, transform .35s var(--spring); }
+.subtask-edit-button svg, .subtask-remove svg { width: 13px; height: 13px; }
+.subtask-edit-button:hover { background: color-mix(in oklab, var(--c) 14%, var(--surface-solid)); color: var(--text); transform: rotate(-10deg); }
 .subtask-remove:hover { background: color-mix(in oklab, var(--critical) 12%, var(--surface-solid)); color: var(--critical-ink); }
-@media (hover: none) { .subtask-remove { opacity: .65; } }
+/* Rewording a subtask: its row becomes a field in place. */
+.subtask.is-editing { display: block; padding: 2px 0; }
+.subtask.is-editing:hover { background: none; }
 .subtasks.is-done .subtask-list { background: color-mix(in oklab, var(--good-strong) 9%, var(--surface-alt)); }
 .subtask-add { display: inline-flex; align-items: center; gap: 6px; width: fit-content; padding: 5px 10px 5px 8px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 650; transition: background .2s, color .2s; }
 .subtask-add svg { width: 14px; height: 14px; color: var(--c); transition: transform .45s var(--spring); }
@@ -1702,6 +1716,19 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .float-tag { position: fixed; z-index: 1001; pointer-events: none; display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px 6px 8px; border-radius: 999px; font: 750 12px/1 var(--display); color: #fff; background: var(--good-strong); box-shadow: 0 10px 22px -10px var(--good-strong); white-space: nowrap; animation: tag-rise 1.1s cubic-bezier(.2, .8, .3, 1) forwards; }
 .float-tag svg { width: 13px; height: 13px; stroke-width: 3; }
 .float-tag.tone-cancelled, .float-tag.tone-dropped { color: var(--surface-solid); background: var(--text); box-shadow: 0 10px 22px -12px var(--text); }
+/* How a change of progress moved the workload, in the color of the level it is at now; it stays a little longer. */
+.float-tag.tone-load { color: #fff; background: var(--lc); box-shadow: 0 10px 22px -10px var(--lc); animation-duration: 1.55s; }
+:root[data-theme="dark"] .float-tag.tone-load { color: #14102a; }
+/* The workload theme taking on a change of progress (effects.ts, themeWave): a ring of the workload level's color
+   spreads over the page from where the change was made, with a soft wash of it behind. It tints what it passes
+   over (multiplied in light mode, a glow in dark mode) and is gone in about a second. */
+.theme-wave { position: fixed; z-index: 999; width: 0; height: 0; pointer-events: none; }
+.theme-wave i { position: absolute; left: calc(-1 * var(--reach)); top: calc(-1 * var(--reach)); width: calc(2 * var(--reach)); height: calc(2 * var(--reach)); border-radius: 50%; transform: scale(0); mix-blend-mode: multiply; will-change: transform, opacity; }
+:root[data-theme="dark"] .theme-wave i { mix-blend-mode: screen; }
+.theme-wave i:first-child { background: radial-gradient(closest-side, transparent 78%, color-mix(in oklab, var(--lc) 55%, transparent) 93%, transparent); animation: wave-out 1.1s cubic-bezier(.2, .7, .3, 1) forwards; }
+.theme-wave i:last-child { background: radial-gradient(closest-side, color-mix(in oklab, var(--lc) 30%, transparent), color-mix(in oklab, var(--lc) 16%, transparent) 72%, transparent); animation: wave-wash 1.1s cubic-bezier(.25, .7, .3, 1) forwards; }
+.theme-wave.is-shift i:first-child { animation-duration: 1.5s; }
+.theme-wave.is-shift i:last-child { background: radial-gradient(closest-side, color-mix(in oklab, var(--lc) 50%, transparent), color-mix(in oklab, var(--lc) 30%, transparent) 72%, transparent); animation-duration: 1.6s; }
 
 /* ----- Motion ------------------------------------------------------------------ */
 @keyframes drift { 0% { transform: translate(0, 0) scale(1); } 50% { transform: translate(6vw, 4vh) scale(1.08); } 100% { transform: translate(-4vw, 8vh) scale(.95); } }
@@ -1729,6 +1756,8 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @keyframes dust { 0% { transform: translate(-50%, -50%) scale(.4); opacity: .9; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1.6); opacity: 0; } }
 @keyframes shockwave { 0% { transform: scale(.35); opacity: .9; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes wave-out { 0% { transform: scale(0); opacity: 1; } 70% { opacity: .85; } 100% { transform: scale(1); opacity: 0; } }
+@keyframes wave-wash { 0% { transform: scale(0); opacity: 1; } 40% { opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes tag-rise { 0% { opacity: 0; transform: translate(-50%, -30%) scale(.6); } 18% { opacity: 1; transform: translate(-50%, -85%) scale(1.06); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -260%) scale(.96); } }
 @keyframes burst { 0% { transform: translate(-50%, -50%) scale(.3) rotate(0); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 46px)) scale(1) rotate(var(--rot)); opacity: 0; } }
 

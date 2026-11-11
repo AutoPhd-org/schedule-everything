@@ -544,6 +544,55 @@ describe("subtasks", () => {
     expect(send).toHaveBeenLastCalledWith("task_subtasks", {description: "Read paper", subtasks: [{text: "Find the PDF", done: true}, {text: "Read it", done: false}]});
   });
 
+  it("rewords a subtask in place, and Undo puts the old wording back", async () => {
+    data.tasks[3].subtasks = [{text: "Find the PDF", done: true}, {text: "Raed it", done: false}];
+    await renderApp(root, client);
+    const editor = () => card("Read paper").querySelector<HTMLInputElement>('form[data-subtask-edit] [name="subtaskEdit"]');
+    card("Read paper").querySelector<HTMLButtonElement>('[data-subtask-edit-open][data-step="1"]')!.click();
+    // The row becomes a field holding the subtask's wording, ready to type over.
+    expect(document.activeElement).toBe(editor());
+    expect(editor()!.value).toBe("Raed it");
+    expect(card("Read paper").querySelector(".subtask.is-editing [data-subtask]")).toBeNull();
+    // A redraw while it is open keeps what was typed.
+    editor()!.value = "Read it"; editor()!.dispatchEvent(new Event("input", {bubbles: true}));
+    const first = card("Read paper").querySelector<HTMLInputElement>('input[data-subtask][data-step="0"]')!;
+    first.checked = false; first.dispatchEvent(new Event("change"));
+    expect(editor()!.value).toBe("Read it");
+    editor()!.form!.dispatchEvent(new Event("submit", {cancelable: true}));
+    expect(editor()).toBeNull();
+    expect(steps("Read paper")).toEqual(["Find the PDF", "Read it"]);
+    // Rewording does not change how far along the task is.
+    expect(shown("Read paper")).toBe("0%");
+    expect(document.activeElement?.getAttribute("data-subtask-edit-open")).toBe("3");
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("Renamed the subtask “Raed it” to “Read it”.");
+    await settle();
+    expect(send).toHaveBeenLastCalledWith("task_subtasks", {description: "Read paper", subtasks: [{text: "Find the PDF", done: false}, {text: "Read it", done: false}]});
+    root.querySelector<HTMLButtonElement>("[data-notice-undo]")!.click();
+    await flush();
+    expect(steps("Read paper")).toEqual(["Find the PDF", "Raed it"]);
+    await settle();
+    expect(send).toHaveBeenLastCalledWith("task_subtasks", {description: "Read paper", subtasks: [{text: "Find the PDF", done: false}, {text: "Raed it", done: false}]});
+  });
+
+  it("keeps a subtask as it was on Escape, and will not empty it", async () => {
+    data.tasks[3].subtasks = [{text: "Read it", done: false}];
+    await renderApp(root, client);
+    const editor = () => card("Read paper").querySelector<HTMLInputElement>('form[data-subtask-edit] [name="subtaskEdit"]');
+    card("Read paper").querySelector<HTMLButtonElement>("[data-subtask-edit-open]")!.click();
+    editor()!.value = "   ";
+    editor()!.form!.dispatchEvent(new Event("submit", {cancelable: true}));
+    expect(editor()!.form!.classList.contains("shake")).toBe(true);
+    editor()!.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(editor()).toBeNull();
+    expect(steps("Read paper")).toEqual(["Read it"]);
+    expect(document.activeElement?.getAttribute("data-subtask-edit-open")).toBe("3");
+    // Opening the field for a new subtask afterwards starts it empty.
+    card("Read paper").querySelector<HTMLButtonElement>("[data-subtask-open]")!.click();
+    expect(field().value).toBe("");
+    await settle();
+    expect(send).not.toHaveBeenCalledWith("task_subtasks", expect.anything());
+  });
+
   it("sums subtasks up in folded groups and offers the next one on the timer", async () => {
     data.tasks[1].subtasks = [{text: "Write tests", done: true}, {text: "Fix the edge case", done: false}];
     await renderApp(root, client);

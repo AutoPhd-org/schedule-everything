@@ -23,6 +23,13 @@ export function openProgress(tasks: readonly TaskItem[], today: string, weighted
   return total ? counted.reduce((sum, task) => sum + weight(task) * progressOf(task), 0) / (total * 100) : null;
 }
 
+/** How far along the day is, 0 to 1, which eases the workload theme back toward calm: today's timed work when
+ *  any is due today, otherwise all the open tasks that count today. */
+export function dayProgress(s: Snapshot, now: number, weighted: boolean): number {
+  const timed = todayProgress(s, now, weighted);
+  return timed.parts.length ? timed.value : openProgress(s.tasks, s.today.date, weighted) ?? 0;
+}
+
 export function dayPanel({overview, snapshot: s, now, weighted, folded}: DayPanelOptions): string {
   // Numbers for another day (the page stayed open past midnight) wait for the next load.
   const day = overview && overview.date === s.today.date ? overview : null;
