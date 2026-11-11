@@ -26,3 +26,8 @@ stop_timeout  = 10
 health = "/api/health"
 ui     = "/"
 state  = "/api/state"
+
+# Skills LaunchX links into your agents' skill folders while Schedule
+# Everything is switched on for agents (lx agents on rmd).
+[service.rmd.agents]
+skills = "plugins/schedule-everything/skills"
