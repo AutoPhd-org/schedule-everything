@@ -7,7 +7,7 @@
 //!
 //! Hidden subcommands used internally (not shown in help):
 //! - `rmd __api [JSON]`            -> `web::api::cli_main` (JSON request from argv or stdin)
-//! - `rmd __web-server --root R --port P` -> `web::server::run`
+//! - `rmd __web-server --root R --port P` -> `web::server::run` (`rmd web`'s detached server)
 //! - `rmd daemon [ARGS..]`         -> `reminder::run_service` (the background reminder service)
 //! - `rmd __setup-config [ARGS..]` -> `install_config_wizard::run`
 
@@ -30,6 +30,9 @@ use crate::i18n::{t, tf};
 #[derive(Parser, Debug)]
 #[command(name = "rmd", bin_name = "rmd", disable_help_subcommand = true, disable_version_flag = true)]
 pub struct Cli {
+    /// show program's version number and exit
+    #[arg(long)]
+    pub version: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -38,7 +41,16 @@ pub struct Cli {
 #[derive(Subcommand, Debug, PartialEq, Eq)]
 pub enum Command {
     /// Open the local browser workspace (reuses an existing tab)
+    #[command(
+        long_about = "Open the local browser workspace, reusing a running server and its tab. While LaunchX runs, this hands over to `lx open rmd`."
+    )]
     Web(WebArgs),
+
+    /// Run the browser workspace server in the foreground (LaunchX runs this)
+    #[command(
+        long_about = "Run the browser workspace server in the foreground. Under LaunchX it listens on LAUNCHX_HOST:LAUNCHX_PORT and requires the bearer token LAUNCHX_TOKEN on every request; otherwise it listens on 127.0.0.1 and prints a private link."
+    )]
+    Serve(ServeArgs),
 
     /// Add a new task with description and priority level (1-10)
     #[command(long_about = "Add a task to your task list with a priority level.", allow_negative_numbers = true)]
@@ -93,6 +105,12 @@ pub enum Command {
     /// Show current status and next events
     #[command(long_about = "Display current event, next scheduled event, and optionally full schedule.")]
     Status(StatusArgs),
+
+    /// Print everything the browser workspace shows, as JSON
+    #[command(
+        long_about = "Print the workspace's state document as JSON: the same document as GET /api/state of the browser workspace, read from your files (today's schedule, tasks, deadlines, habits, suggestions, plugins)."
+    )]
+    State,
 
     /// Generate schedule visualizations
     #[command(long_about = "Create a multi-page PDF visualization of your schedules.")]
@@ -223,6 +241,13 @@ pub struct WebArgs {
     /// Turn phone access off and sign every phone out
     #[arg(long)]
     pub no_phone: bool,
+}
+
+#[derive(Args, Debug, PartialEq, Eq)]
+pub struct ServeArgs {
+    /// Port when not run by LaunchX (default: automatically chosen)
+    #[arg(long, value_name = "PORT", default_value_t = 0, value_parser = parse_port)]
+    pub port: u16,
 }
 
 #[derive(Args, Debug, PartialEq, Eq)]
@@ -949,6 +974,10 @@ pub fn run(argv: Vec<OsString>) -> i32 {
         Ok(cli) => cli,
         Err(error) => return report_parse_error(error, &cmd, &argv),
     };
+    if cli.version {
+        println!("rmd {}", crate::launchx::VERSION);
+        return 0;
+    }
     let Some(command) = cli.command else {
         let help = cmd.get_before_help().map(|h| h.to_string()).unwrap_or_default();
         let text = if crate::ui::detect_color_system().is_some() { help } else { strip_ansi(&help) };
@@ -963,8 +992,42 @@ pub fn run(argv: Vec<OsString>) -> i32 {
     run_user_command(command)
 }
 
+/// Commands that run without the interactive Ctrl+C and panic handling
+/// (servers handle their own signals).
 fn is_internal(command: &Command) -> bool {
-    matches!(command, Command::Api(_) | Command::WebServer(_) | Command::Daemon(_) | Command::SetupConfig(_))
+    matches!(
+        command,
+        Command::Api(_) | Command::WebServer(_) | Command::Serve(_) | Command::Daemon(_) | Command::SetupConfig(_)
+    )
+}
+
+/// `rmd serve`: the workspace server in the foreground, under LaunchX when
+/// `LAUNCHX` is set.
+fn serve_command(args: &ServeArgs) -> i32 {
+    use crate::web::server::{self, Launch};
+    let launch = match crate::launchx::Managed::from_env() {
+        Ok(Some(managed)) => Launch::Managed(managed),
+        Ok(None) => Launch::Foreground { port: args.port },
+        Err(message) => {
+            eprintln!("rmd serve: {message}");
+            return 1;
+        }
+    };
+    server::run(&crate::paths::resolve_config_root_dir(), launch)
+}
+
+/// `rmd state`: the state document on stdout.
+fn state_command() -> i32 {
+    match crate::web::state::document() {
+        Ok(document) => {
+            println!("{}", crate::py::dumps_pretty(&document));
+            0
+        }
+        Err(error) => {
+            eprintln!("rmd state: {}", error.message);
+            1
+        }
+    }
 }
 
 /// Run a user-facing command with the Python CLI's error handling: Ctrl+C
@@ -1022,7 +1085,9 @@ fn dispatch(command: Command) -> i32 {
             Some(DdlCommand::Rm(a)) => deadlines::delete_deadline(&a.events),
         },
         Command::Track(a) => habits::track_habits(&a.habit_ids),
+        Command::Serve(a) => serve_command(&a),
         Command::Status(a) => status::status_command(a.verbose),
+        Command::State => state_command(),
         Command::View => status::view_command(),
         Command::Sync(a) => sync::sync_command(a.json, a.apply.as_deref(), a.clear),
         Command::Suggest { command } => match command {
@@ -1054,7 +1119,7 @@ fn dispatch(command: Command) -> i32 {
         Command::Api(a) => crate::web::api::cli_main(a.args),
         Command::WebServer(a) => {
             let root = crate::paths::resolve(&crate::paths::expand_user(&a.root));
-            crate::web::server::run(&root, a.port)
+            crate::web::server::run(&root, crate::web::server::Launch::Detached { port: a.port })
         }
         Command::Daemon(a) => crate::reminder::run_service(a.args),
         Command::SetupConfig(a) => crate::install_config_wizard::run(a.args),
@@ -1258,6 +1323,21 @@ mod tests {
     }
 
     #[test]
+    fn parses_launchx_commands() {
+        let _env = TestEnv::new();
+        assert_eq!(parse_ok(&["serve"]), Command::Serve(ServeArgs { port: 0 }));
+        assert_eq!(parse_ok(&["serve", "--port", "8766"]), Command::Serve(ServeArgs { port: 8766 }));
+        assert_eq!(parse_ok(&["state"]), Command::State);
+        assert_eq!(
+            error_message(&["state", "--json"]),
+            "usage: rmd [-h] [--version] <command> ...\nrmd: error: unrecognized arguments: --json"
+        );
+        let matches = build_command().try_get_matches_from(["rmd", "--version"]).unwrap();
+        assert!(Cli::from_arg_matches(&matches).unwrap().version);
+        assert_eq!(run(vec!["rmd".into(), "--version".into()]), 0);
+    }
+
+    #[test]
     fn usage_errors_read_like_argparse() {
         let _env = TestEnv::new();
         assert_eq!(
@@ -1278,7 +1358,7 @@ mod tests {
         );
         assert_eq!(
             error_message(&["frobnicate"]),
-            "usage: rmd [-h] <command> ...\nrmd: error: argument <command>: invalid choice: 'frobnicate' (choose from web, add, rm, cancel, drop, ls, history, ddl, track, status, view, sync, suggest, check, update, stop, switch, report, edit, completion, settings, mode)"
+            "usage: rmd [-h] [--version] <command> ...\nrmd: error: argument <command>: invalid choice: 'frobnicate' (choose from web, serve, add, rm, cancel, drop, ls, history, ddl, track, status, state, view, sync, suggest, check, update, stop, switch, report, edit, completion, settings, mode)"
         );
         assert_eq!(
             error_message(&["ddl", "add", "x"]),
@@ -1314,7 +1394,7 @@ mod tests {
         );
         assert_eq!(
             error_message(&["switch", "1", "2"]),
-            "usage: rmd [-h] <command> ...\nrmd: error: unrecognized arguments: 2"
+            "usage: rmd [-h] [--version] <command> ...\nrmd: error: unrecognized arguments: 2"
         );
     }
 
@@ -1345,10 +1425,11 @@ mod tests {
         );
         assert_eq!(
             help_text(&["web"]),
-            "usage: rmd web [-h] [--no-open] [--port PORT] [--if-running] [--phone] [--no-phone]\n\noptions:\n  -h, --help    show this help message and exit\n  --no-open     Start the local server without opening a browser\n  --port PORT   Local port for a new server (default: automatically chosen)\n  --if-running  Only restart a running server that is on outdated code; never\n                start one or open a tab\n  --phone       Let your phone use the workspace over Wi-Fi or Tailscale, and\n                show its pairing code\n  --no-phone    Turn phone access off and sign every phone out\n"
+            "usage: rmd web [-h] [--no-open] [--port PORT] [--if-running] [--phone] [--no-phone]\n\nOpen the local browser workspace, reusing a running server and its tab. While\nLaunchX runs, this hands over to `lx open rmd`.\n\noptions:\n  -h, --help    show this help message and exit\n  --no-open     Start the local server without opening a browser\n  --port PORT   Local port for a new server (default: automatically chosen)\n  --if-running  Only restart a running server that is on outdated code; never\n                start one or open a tab\n  --phone       Let your phone use the workspace over Wi-Fi or Tailscale, and\n                show its pairing code\n  --no-phone    Turn phone access off and sign every phone out\n"
         );
         let root = strip_ansi(&help_text(&[]));
-        assert!(root.starts_with("usage: rmd [-h] <command> ...\n\nrmd CLI - Manage your schedule management system\n\noptions:\n  -h, --help    show this help message and exit\n\nAvailable commands:\n  <command>\n    web         Open the local browser workspace (reuses an existing tab)\n"));
+        assert!(root.starts_with("usage: rmd [-h] [--version] <command> ...\n\nrmd CLI - Manage your schedule management system\n\noptions:\n  -h, --help    show this help message and exit\n  --version     show program's version number and exit\n\nAvailable commands:\n  <command>\n    web         Open the local browser workspace (reuses an existing tab)\n    serve       Run the browser workspace server in the foreground (LaunchX\n                runs this)\n"));
+        assert!(root.contains("    state       Print everything the browser workspace shows, as JSON\n"));
         assert!(root.contains(
             "    switch      Switch to a different versioned config set and reload the\n                service\n"
         ));

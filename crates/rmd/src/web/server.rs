@@ -10,6 +10,13 @@
 //! The server listens on `127.0.0.1` only, unless phone access is on (see
 //! [`phone`]): then it listens on every interface and also accepts requests
 //! addressed to this computer's IPv4 address with the paired phones' token.
+//!
+//! Under LaunchX (`rmd serve` with `LAUNCHX` set, see [`crate::launchx`]) the
+//! server is in managed mode: it listens where the launcher says, and every
+//! request, to every path, must carry `Authorization: Bearer <token>`; anything
+//! else gets `401`. The launcher's gateway signs the browser in and adds the
+//! token, so there is no Host or Origin check, cookie session, phone access or
+//! `.browser.json` in that mode.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -31,10 +38,11 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, watch};
 
+use crate::launchx::{self, Managed};
 use crate::paths;
 use crate::py;
 use crate::web::fingerprint::code_fingerprint;
-use crate::web::{TOKEN_ENV, api, phone, pyjson, workspace};
+use crate::web::{TOKEN_ENV, api, phone, pyjson, state, workspace};
 
 /// The built browser app (`web/src`, bundled by Vite).
 #[derive(RustEmbed)]
@@ -71,6 +79,9 @@ pub struct BrowserServer {
     pub build: String,
     /// The paired phones' token, while phone access is on.
     phone_token: Option<String>,
+    /// The LaunchX service id in managed mode, where [`handle`] admits only
+    /// requests with the bearer token.
+    service: Option<String>,
     cookie_name: String,
     tabs: Mutex<HashMap<u64, Tab>>,
     next_tab: AtomicU64,
@@ -86,6 +97,7 @@ impl BrowserServer {
             token,
             build,
             phone_token: None,
+            service: None,
             cookie_name: format!("rmd_{port}"),
             tabs: Mutex::new(HashMap::new()),
             next_tab: AtomicU64::new(0),
@@ -99,6 +111,27 @@ impl BrowserServer {
     pub fn with_phone_access(mut self, token: String) -> Self {
         self.phone_token = Some(token);
         self
+    }
+
+    /// Serve as LaunchX service `id` (managed mode): only the bearer token
+    /// counts, on every path.
+    pub fn managed(mut self, id: String) -> Self {
+        self.service = Some(id);
+        self
+    }
+
+    /// The id the health report gives.
+    fn service_id(&self) -> &str {
+        self.service.as_deref().unwrap_or(launchx::SERVICE_ID)
+    }
+
+    /// Exactly `Authorization: Bearer <token>`: managed mode's only check.
+    fn bearer_ok(&self, headers: &HeaderMap) -> bool {
+        headers
+            .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .is_some_and(|token| constant_time_eq(token.as_bytes(), self.token.as_bytes()))
     }
 
     fn tabs(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Tab>> {
@@ -150,14 +183,19 @@ impl BrowserServer {
         }
     }
 
-    /// Whether the request reached this server at `127.0.0.1`.
+    /// Whether the request reached this server at `127.0.0.1` (in managed
+    /// mode, through the launcher's gateway on this computer).
     fn is_local(&self, headers: &HeaderMap) -> bool {
-        headers.get(header::HOST).is_some_and(|host| host.as_bytes() == format!("127.0.0.1:{}", self.port).as_bytes())
+        self.service.is_some()
+            || headers
+                .get(header::HOST)
+                .is_some_and(|host| host.as_bytes() == format!("127.0.0.1:{}", self.port).as_bytes())
     }
 
     /// `127.0.0.1`, or with phone access any IPv4 address of this computer.
     /// A host name is never accepted, so a page that rebinds its own name to
-    /// this computer cannot reach the server.
+    /// this computer cannot reach the server. In managed mode the gateway
+    /// routes by host instead.
     fn host_ok(&self, headers: &HeaderMap) -> bool {
         self.is_local(headers)
             || (self.phone_token.is_some()
@@ -176,8 +214,12 @@ impl BrowserServer {
     }
 
     /// An accepted host, an origin that is this server at that host, and the
-    /// session or phone token as a bearer token or cookie.
+    /// session or phone token as a bearer token or cookie. In managed mode
+    /// [`handle`] has already required the bearer token.
     fn access(&self, headers: &HeaderMap) -> Option<Access> {
+        if self.service.is_some() {
+            return Some(Access::Desktop);
+        }
         if !self.host_ok(headers) {
             return None;
         }
@@ -250,6 +292,37 @@ fn json_response(status: StatusCode, value: &Value) -> Response {
 
 fn error(status: StatusCode, message: &str) -> Response {
     json_response(status, &json!({"error": message}))
+}
+
+/// Managed mode's answer to a request without the bearer token: no detail.
+fn unauthorized() -> Response {
+    let mut response = error(StatusCode::UNAUTHORIZED, "Unauthorized.");
+    response.headers_mut().insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+    response
+}
+
+/// `GET /api/state`: the state document with an `ETag`; `304` when it equals
+/// the client's `If-None-Match`.
+fn state_response(headers: &HeaderMap, document: &Value) -> Response {
+    use sha2::{Digest, Sha256};
+    let body = py::dumps(document).into_bytes();
+    let etag = format!("\"{}\"", hex::encode(&Sha256::digest(&body)[..16]));
+    let matches = headers
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|tags| tags.split(',').any(|tag| tag.trim() == etag || tag.trim() == "*"));
+    let mut response = if matches {
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+        response
+    } else {
+        send(StatusCode::OK, body, "application/json; charset=utf-8", &[])
+    };
+    let headers = response.headers_mut();
+    // Clients may keep the document, but must check that it is current.
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    headers.insert(header::ETAG, HeaderValue::from_str(&etag).expect("hex is a valid header"));
+    response
 }
 
 /// The response, and the connection closed after it.
@@ -380,6 +453,25 @@ async fn get(server: Arc<BrowserServer>, request: Request) -> Response {
         return error(StatusCode::FORBIDDEN, "Invalid host.");
     }
     let path = unquote(request.uri().path());
+    if path == "/api/health" || path == "/api/state" {
+        if !server.authorized(headers) {
+            return error(StatusCode::FORBIDDEN, "Unauthorized.");
+        }
+        // Computed from the files without the operation lock, so a long
+        // command (an update, say) never delays them.
+        if path == "/api/health" {
+            let id = server.service_id().to_string();
+            let health = tokio::task::spawn_blocking(move || state::health(&id)).await.unwrap_or_else(|e| {
+                json!({"id": server.service_id(), "version": launchx::VERSION, "status": "degraded", "detail": e.to_string()})
+            });
+            return json_response(StatusCode::OK, &health);
+        }
+        return match tokio::task::spawn_blocking(state::document).await {
+            Ok(Ok(document)) => state_response(headers, &document),
+            Ok(Err(e)) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.message),
+            Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
+        };
+    }
     if path == "/health" {
         if !server.authorized(headers) {
             return error(StatusCode::FORBIDDEN, "Unauthorized.");
@@ -441,6 +533,8 @@ async fn post(server: Arc<BrowserServer>, request: Request) -> Response {
         return error(StatusCode::BAD_REQUEST, "Invalid JSON.");
     };
     match parts.uri.path() {
+        // The gateway keeps the browser signed in under LaunchX.
+        "/session" if server.service.is_some() => error(StatusCode::NOT_FOUND, "Not found."),
         "/session" => {
             let cookie = server.session_cookie(access);
             send(
@@ -475,6 +569,9 @@ async fn post(server: Arc<BrowserServer>, request: Request) -> Response {
 }
 
 async fn handle(State(server): State<Arc<BrowserServer>>, request: Request) -> Response {
+    if server.service.is_some() && !server.bearer_ok(request.headers()) {
+        return closing(unauthorized());
+    }
     match *request.method() {
         Method::GET => get(server, request).await,
         Method::POST => post(server, request).await,
@@ -523,14 +620,28 @@ fn clear_registry(registry: &Path) {
     }
 }
 
-/// `rmd __web-server --root R --port P`: serve the workspace for config root
-/// `root` on `port` (0 picks a free port) until shut down. A replacement
-/// server keeps its predecessor's token, passed in `REMINDER_BROWSER_TOKEN`.
-/// Phone access is on when `root` holds `.phone.json` at startup.
-pub fn run(root: &Path, port: u16) -> i32 {
+/// How a server was started.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Launch {
+    /// `rmd web`'s detached server (`rmd __web-server`): it records itself in
+    /// `.browser.json`, keeps a replaced predecessor's token (passed in
+    /// `REMINDER_BROWSER_TOKEN`), and serves paired phones when `.phone.json`
+    /// exists at startup. Port 0 picks a free port.
+    Detached { port: u16 },
+    /// `rmd serve` without LaunchX: in the foreground on `127.0.0.1` with a
+    /// new token, printed in a private link. `rmd web` does not see it.
+    Foreground { port: u16 },
+    /// `rmd serve` under LaunchX (managed mode).
+    Managed(Managed),
+}
+
+/// Serve the workspace for config root `root` until shut down (by the
+/// `server_shutdown` command, Ctrl-C or SIGTERM); returns the exit code.
+pub fn run(root: &Path, launch: Launch) -> i32 {
     // Fingerprint first, so an update that lands mid-startup makes this server
-    // look stale rather than current.
-    let build = code_fingerprint();
+    // look stale rather than current. Only `rmd web` replaces outdated servers,
+    // so only its server needs one.
+    let build = if matches!(launch, Launch::Detached { .. }) { code_fingerprint() } else { String::new() };
     let root = paths::resolve(&paths::expand_user(&root.to_string_lossy()));
     // SAFETY: this runs at startup, before the runtime or any other thread exists.
     unsafe { std::env::set_var("REMINDER_CONFIG_DIR", &root) };
@@ -540,9 +651,16 @@ pub fn run(root: &Path, port: u16) -> i32 {
     }
     // The token arrives by environment to stay out of the process list; keep
     // it away from the commands this server runs.
-    let token = std::env::var(TOKEN_ENV).ok().filter(|token| !token.is_empty());
+    let token = match &launch {
+        Launch::Detached { .. } => std::env::var(TOKEN_ENV).ok().filter(|token| !token.is_empty()),
+        Launch::Foreground { .. } => None,
+        Launch::Managed(managed) => Some(managed.token.clone()),
+    };
     // SAFETY: as above, no other thread exists yet.
-    unsafe { std::env::remove_var(TOKEN_ENV) };
+    unsafe {
+        std::env::remove_var(TOKEN_ENV);
+        std::env::remove_var("LAUNCHX_TOKEN");
+    }
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(e) => {
@@ -550,34 +668,63 @@ pub fn run(root: &Path, port: u16) -> i32 {
             return 1;
         }
     };
-    let phone = phone::load(&root);
-    let address = if phone.is_some() { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST };
+    let phone = if matches!(launch, Launch::Detached { .. }) { phone::load(&root) } else { None };
+    let (host, port) = match &launch {
+        Launch::Managed(managed) => (managed.host.clone(), managed.port),
+        Launch::Detached { port } | Launch::Foreground { port } => {
+            let address = if phone.is_some() { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST };
+            (address.to_string(), *port)
+        }
+    };
     let code = runtime.block_on(async move {
-        let listener = match TcpListener::bind((address, port)).await {
+        let listener = match TcpListener::bind((host.as_str(), port)).await {
             Ok(listener) => listener,
             Err(e) => {
-                eprintln!("Could not listen on {address}:{port}: {e}");
+                eprintln!("Could not listen on {host}:{port}: {e}");
                 return 1;
             }
         };
-        let port = match listener.local_addr() {
-            Ok(address) => address.port(),
+        let address = match listener.local_addr() {
+            Ok(address) => address,
             Err(e) => {
                 eprintln!("Could not read the server address: {e}");
                 return 1;
             }
         };
+        let port = address.port();
         let token = token.unwrap_or_else(|| workspace::token_urlsafe(32));
         let mut server = BrowserServer::new(port, token, build);
         if let Some(phone) = phone {
             server = server.with_phone_access(phone.token);
         }
+        if let Launch::Managed(managed) = &launch {
+            server = server.managed(managed.id.clone());
+        }
         let server = Arc::new(server);
         let registry = root.join(".browser.json");
-        if let Err(e) = write_registry(&registry, port, &server.token) {
-            eprintln!("Could not write {}: {e}", registry.display());
-            return 1;
+        match &launch {
+            Launch::Detached { .. } => {
+                if let Err(e) = write_registry(&registry, port, &server.token) {
+                    eprintln!("Could not write {}: {e}", registry.display());
+                    return 1;
+                }
+            }
+            Launch::Foreground { .. } => {
+                println!("Schedule Everything workspace: http://127.0.0.1:{port}/#token={}", server.token);
+                println!("Press Ctrl-C to stop it.");
+            }
+            Launch::Managed(managed) => {
+                // Never the token: the launcher keeps this output.
+                println!(
+                    "Schedule Everything {} serving {} on http://{address}/ as LaunchX service {}",
+                    launchx::VERSION,
+                    root.display(),
+                    managed.id
+                );
+            }
         }
+        use std::io::Write as _;
+        let _ = std::io::stdout().flush();
         // Ctrl-C, or SIGTERM from a launcher replacing this server: shut down
         // cleanly so open tabs are told and `.browser.json` is removed.
         let interrupt = server.clone();
@@ -603,7 +750,9 @@ pub fn run(root: &Path, port: u16) -> i32 {
         });
         let result = serve(server.clone(), listener).await;
         server.close_tabs();
-        clear_registry(&registry);
+        if matches!(launch, Launch::Detached { .. }) {
+            clear_registry(&registry);
+        }
         match result {
             Ok(()) => 0,
             Err(e) => {
@@ -642,7 +791,17 @@ mod tests {
 
         /// A server with phone access when `phone_token` is given.
         fn start_with(phone_token: Option<&str>) -> Self {
+            Self::start_as(phone_token, None)
+        }
+
+        /// A server in LaunchX's managed mode as service `id`.
+        fn start_managed(id: &str) -> Self {
+            Self::start_as(None, Some(id))
+        }
+
+        fn start_as(phone_token: Option<&str>, service: Option<&str>) -> Self {
             let phone_token = phone_token.map(str::to_string);
+            let service = service.map(str::to_string);
             let (sender, receiver) = std::sync::mpsc::channel();
             let thread = std::thread::spawn(move || {
                 let runtime =
@@ -653,6 +812,9 @@ mod tests {
                     let mut server = BrowserServer::new(port, TOKEN.to_string(), "test-build".to_string());
                     if let Some(token) = phone_token {
                         server = server.with_phone_access(token);
+                    }
+                    if let Some(id) = service {
+                        server = server.managed(id);
                     }
                     let server = Arc::new(server);
                     sender.send(server.clone()).unwrap();
@@ -1049,6 +1211,80 @@ mod tests {
         write_registry(&registry, 8765, "secret").unwrap();
         clear_registry(&registry);
         assert!(!registry.exists());
+    }
+
+    #[test]
+    fn managed_mode_requires_the_bearer_token_on_every_path() {
+        let _env = TestEnv::new();
+        let server = TestServer::start_managed("rmd");
+        let port = server.port();
+        let body = r#"{"command": "settings_get_task_types"}"#;
+        let cookie = format!("rmd_{port}=test-token");
+        // Only `Authorization: Bearer <token>` counts: no cookie, bare token or empty bearer.
+        for headers in [
+            vec![],
+            vec![("Authorization", "Bearer wrong")],
+            vec![("Authorization", "test-token")],
+            vec![("Authorization", "Bearer ")],
+            vec![("Cookie", cookie.as_str())],
+        ] {
+            for (method, path) in [("GET", "/"), ("GET", "/api/health"), ("GET", "/api/state"), ("GET", "/events")] {
+                let reply = request(port, method, path, None, &headers);
+                assert_eq!(
+                    (reply.status, reply.json()),
+                    (401, json!({"error": "Unauthorized."})),
+                    "{path} {headers:?}"
+                );
+                assert_eq!(reply.header("WWW-Authenticate"), Some("Bearer"));
+            }
+            assert_eq!(request(port, "POST", "/api", Some(body), &headers).status, 401, "{headers:?}");
+        }
+        // Through the gateway: its host and origin, the token it adds.
+        let gateway = [auth(), ("Host", "rmd.localhost:7600"), ("Origin", "http://rmd.localhost:7600")];
+        let reply = request(port, "GET", "/", None, &gateway);
+        assert!(reply.status == 200 && String::from_utf8_lossy(&reply.body).contains("<main id=\"app\">"));
+        let reply = request(port, "POST", "/api", Some(body), &gateway);
+        assert_eq!((reply.status, reply.json()["ok"].clone()), (200, json!(true)));
+        // No cookie session under LaunchX: the gateway signs the browser in.
+        let reply = request(port, "POST", "/session", Some("{}"), &gateway);
+        assert_eq!((reply.status, reply.header("Set-Cookie")), (404, None));
+        let health = request(port, "GET", "/api/health", None, &[auth()]).json();
+        assert_eq!((&health["id"], &health["version"]), (&json!("rmd"), &json!(env!("CARGO_PKG_VERSION"))));
+    }
+
+    #[test]
+    fn health_and_state_follow_the_launchx_contract() {
+        let mut env = TestEnv::with_fixture();
+        env.set_now("2026-11-10T10:00:00");
+        let server = TestServer::start();
+        let port = server.port();
+        assert_eq!(request(port, "GET", "/api/health", None, &[]).status, 403);
+        assert_eq!(request(port, "GET", "/api/state", None, &[]).status, 403);
+        let health = request(port, "GET", "/api/health", None, &[auth()]);
+        assert_eq!(health.status, 200);
+        let health = health.json();
+        assert_eq!((&health["id"], &health["status"]), (&json!("rmd"), &json!("ok")));
+        assert!(health["summary"].as_str().unwrap().contains("open task"));
+
+        let state = request(port, "GET", "/api/state", None, &[auth()]);
+        assert_eq!(state.status, 200);
+        assert_eq!(state.json(), crate::web::state::document().unwrap());
+        assert!(!String::from_utf8_lossy(&state.body).contains(TOKEN));
+        assert_eq!(state.header("Cache-Control"), Some("no-cache"));
+        let etag = state.header("ETag").unwrap().to_string();
+        assert!(etag.starts_with('"') && etag.ends_with('"') && etag.len() == 34, "{etag}");
+        let unchanged = request(port, "GET", "/api/state", None, &[auth(), ("If-None-Match", &etag)]);
+        assert_eq!((unchanged.status, unchanged.body.len()), (304, 0));
+        assert_eq!(unchanged.header("ETag"), Some(etag.as_str()));
+        // A change made elsewhere (the CLI, say) shows up at once.
+        let added = r#"{"command": "task_add", "payload": {"description": "Write the LaunchX docs", "priority": 5}}"#;
+        assert_eq!(request(port, "POST", "/api", Some(added), &[auth()]).json()["ok"], json!(true));
+        let changed = request(port, "GET", "/api/state", None, &[auth(), ("If-None-Match", &etag)]);
+        assert_eq!(changed.status, 200);
+        assert_ne!(changed.header("ETag"), Some(etag.as_str()));
+        assert!(
+            changed.json()["tasks"].as_array().unwrap().iter().any(|t| t["description"] == "Write the LaunchX docs")
+        );
     }
 
     #[test]

@@ -18,6 +18,9 @@ files are missing or invalid, a banner offers **Build a schedule with your AI
 agent** (which opens the Schedule page) and **Edit configuration**; malformed
 files can be repaired in the browser.
 
+If you use LaunchX to run your local services, the workspace can run under it
+instead; see [LaunchX](advanced/launchx.md).
+
 <Figure
   src="img/screens/overview-j.webp"
   darkSrc="img/screens/overview-j-dark.webp"

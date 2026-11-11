@@ -152,6 +152,11 @@ session token of the tab it opens. It reads and writes the same files as the
 CLI, and running `rmd web` again reuses the open tab. To use it from your phone
 as well, see [On your phone, too](#on-your-phone-too).
 
+If you run your local services with [LaunchX](https://github.com/AutoPhd-org/launchx), register this repository with
+`lx add` and the workspace becomes one of them: `rmd web` then hands over to
+`lx open rmd`, and scripts and agents can read and change it over HTTP. See
+[LaunchX](https://autophd-org.github.io/schedule-everything/docs/advanced/launchx).
+
 ## The browser workspace
 
 Five pages: **Overview**, **Schedule**, **Routines & deadlines**,
@@ -316,6 +321,7 @@ fill. A plan changes only today; your weekly files never change.
 | Command | What it does |
 | --- | --- |
 | `rmd web [--port N] [--no-open] [--phone \| --no-phone]` | Open the browser workspace, reusing a running server and its tab; `--phone` lets your phone use it too |
+| `rmd serve [--port N]` · `rmd state` | Run the workspace server in the foreground (LaunchX runs this), or print everything the workspace shows as JSON |
 | `rmd status [-v]` | What is happening now and next, with today's planned task titles |
 | `rmd add "task" 8 [type] [days]` | Add a task with importance 1–10, an optional type ID, and optionally postpone its urgent alarms by some days |
 | `rmd ls [-t TYPE]` | List tasks by importance, optionally of one type |
