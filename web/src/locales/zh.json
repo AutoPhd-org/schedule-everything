@@ -807,7 +807,7 @@
   "The local server is unavailable. Try again.": "本地服务器不可用。请重试。",
   "The middle time to finish among the tasks you completed: half were quicker, half took longer.": "在你完成的任务中，处于中间位置的完成用时：一半比它快，一半比它慢。",
   "The most important things you finished.": "你完成的最重要的事。",
-  "The page’s colors follow your level. Where each one starts is up to you in Settings.": "页面颜色会随等级变化。每个等级从哪里开始，可以在设置中自定。",
+  "The page’s colors follow your workload, blending from one level’s colors into the next as it changes. Where each level starts is up to you in Settings.": "页面颜色会随工作量变化，从一个等级的颜色逐渐过渡到下一个。每个等级从哪里开始，可以在设置中自定。",
   "The plugin also appears in the ChatGPT desktop app once the marketplace is added.": "添加市场后，插件也会出现在 ChatGPT 桌面应用中。",
   "The plugin’s tasks are the tasks of this type.": "插件的任务就是这个类型的任务。",
   "The theme follows your workload again.": "主题又会随工作量变化了。",

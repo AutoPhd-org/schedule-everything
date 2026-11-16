@@ -1,7 +1,8 @@
 // Workload: how much open work there is, weighted by importance. Every open task counts its importance out of
 // 10, times the share of it still left: an importance-8 task counts 0.8 untouched, 0.4 half done, and nothing
-// at 100%. Tasks postponed to a later day do not count yet. The total picks the workspace's theme (the
-// [data-load] rules in styles.css), and each group's own workload places it in the spread board layout.
+// at 100%. Tasks postponed to a later day do not count yet. The total sets the workspace's theme, blended
+// between the palettes of the levels it falls between (loadBlend and the [data-load] rules in styles.css), and
+// each group's own workload places it in the spread board layout.
 // Where Steady, Busy, and Heavy start is a display preference set in Settings (see setLoadThresholds).
 import { msg, t, tn } from "./i18n";
 import { progressOf } from "./timers";
@@ -91,9 +92,28 @@ export type Workload = {
   done: number;
 };
 
+/** The workload before it is rounded for display, for what follows it smoothly: the theme. */
+export const exactLoad = (tasks: readonly TaskItem[], today: string) => tasks.reduce((sum, task) => sum + taskLoad(task, today), 0);
+
+/** Where the theme sits for a workload: between the palettes of levels `from` and `to` (neighbors), `mix` of the way
+ *  (0–1) from one to the other. Each level's palette is pure at its anchor, the middle of its range (All clear at 0,
+ *  Heavy as far past where it starts as Busy's middle is before it), and blends evenly into the next, so every
+ *  change of the workload changes the colors, not only a change of level. */
+export type LoadBlend = {from: LoadLevel; to: LoadLevel; mix: number};
+export function loadBlend(points: number): LoadBlend {
+  const [steady, busy, heavy] = thresholds;
+  const anchors: [LoadLevel, number][] = [["clear", 0], ["light", steady / 2], ["steady", (steady + busy) / 2], ["busy", (busy + heavy) / 2], ["heavy", heavy + (heavy - busy) / 2]];
+  for (let i = 1; i < anchors.length; i++) {
+    const [from, start] = anchors[i - 1];
+    const [to, end] = anchors[i];
+    if (points < end || i === anchors.length - 1) return {from, to, mix: Math.max(0, Math.min(1, (points - start) / (end - start)))};
+  }
+  throw new Error("unreachable");
+}
+
 export function workload(tasks: readonly TaskItem[], today: string): Workload {
   const counted = tasks.filter(task => !isPostponed(task, today));
-  const points = roundLoad(counted.reduce((sum, task) => sum + taskLoad(task, today), 0));
+  const points = roundLoad(exactLoad(counted, today));
   const average = (value: (task: TaskItem) => number) => counted.reduce((sum, task) => sum + value(task), 0) / counted.length;
   return {
     points,

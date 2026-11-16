@@ -383,10 +383,14 @@ display choices, the numbers are saved in your browser.
 The level shows in the header on every page (select it to open the daily
 overview), and the workspace's theme follows it: the background, its color
 blobs, and the glass surfaces shift from cool greens and blues when your plate
-is clear to warm oranges and reds when it is heavy. Your progress tempers it:
+is clear to warm oranges and reds when it is heavy. The colors follow the
+workload number itself, not just its level: each level's colors are at their
+purest in the middle of its range and blend into the next level's on either
+side, so any change of the workload, however small, moves them a little. A warm
+glow rises from the bottom of the page as the workload climbs past Steady.
+Your progress tempers it:
 as the day's progress fills, the colors ease back toward the calm of All clear
-(up to 65% of the way once it is full), and the warm glow of a busy or heavy day
-fades. The day's progress is today's timed work bar when any timed work is due
+(up to 65% of the way once it is full), and the warm glow fades. The day's progress is today's timed work bar when any timed work is due
 today, and otherwise the average progress of all your open tasks. The workload
 still sets the tone.
 
