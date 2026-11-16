@@ -25,22 +25,35 @@ sign-in themselves.
 
 ## Set up
 
-Register this repository's manifest, `launchx.toml`, then open the workspace:
+When `lx` is installed, the [installer](../installation.md) registers the
+workspace for you. It writes a manifest next to the installed binary,
+`~/SCHEDULE_MANAGEMENT/launchx.toml`, and registers it in place of any other
+manifest that defines the workspace, such as a source checkout's. It also
+restarts the workspace under LaunchX if it was running, so it runs the new
+binary. Then open the workspace:
 
 ```bash
-lx add /path/to/schedule-everything
 lx open rmd
 ```
 
+To work on the code instead, register this repository's `launchx.toml`, which
+runs the development build of the checkout (`target/debug/rmd`, built with
+`cargo build -p rmd`):
+
+```bash
+lx rm rmd
+lx add /path/to/schedule-everything
+```
+
 `lx open rmd` starts the workspace if it is not running and opens a signed-in
-tab. While LaunchX runs, a plain `rmd web` does the same thing: it hands over to
-`lx open rmd`. With an option (`--port`, `--no-open`, `--if-running`,
+tab. While LaunchX runs, a plain `rmd web` opens the workspace the way
+[`open_workspace_in`](../browser.md#opening-the-workspace) says. For a window
+of its own (the default) or an app window, it first asks a workspace tab that
+is already open to come forward. Without one, it gets a one-time signed-in link
+from `lx open --print rmd` and opens that in a new window. For a tab, it hands
+over to `lx open rmd`. With an option (`--port`, `--no-open`, `--if-running`,
 `--phone`, `--no-phone`), `rmd web` still manages its own server, because those
 options are about that server.
-
-The manifest in the repository runs the development build of the checkout
-(`target/debug/rmd`, built with `cargo build -p rmd`). For an installed copy,
-use `run = ["rmd", "serve"]` and `cli = "rmd"`.
 
 `lx check rmd` starts a test copy on a spare port and verifies it against the
 contract.

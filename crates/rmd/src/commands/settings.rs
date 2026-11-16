@@ -95,7 +95,7 @@ impl FieldMeta {
 }
 
 /// Explicit metadata for known setting keys.
-pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 12] = [
+pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 13] = [
     (("settings", "sound_file"), FieldMeta::new(EditorType::Text, "Path to notification sound file")),
     (("settings", "alarm_interval"), FieldMeta::range(EditorType::Number, "Seconds between alarm repeats", 1, 120)),
     (
@@ -104,6 +104,10 @@ pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 12] = [
     ),
     (("settings", "skip_days"), FieldMeta::choices(EditorType::MultiSelect, "Days to skip all reminders", &WEEKDAYS)),
     (("settings", "language"), FieldMeta::choices(EditorType::Picker, "UI language", &crate::i18n::LANGUAGES)),
+    (
+        ("settings", "open_workspace_in"),
+        FieldMeta::choices(EditorType::Picker, "How rmd web opens the workspace", &crate::opener::CHOICES),
+    ),
     (("settings", "show_tasks_after_change"), FieldMeta::new(EditorType::Toggle, "Print task list after rmd add/rm")),
     (("tasks", "daily_urgent"), FieldMeta::new(EditorType::TimeList, "Times for urgent task reminders (HH:MM)")),
     (("tasks", "ddl_urgent"), FieldMeta::new(EditorType::TimeList, "Times for deadline reminders (HH:MM)")),

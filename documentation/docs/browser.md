@@ -545,12 +545,29 @@ block in the timeline shows its task. **Clear today's plan** removes it, like
 `rmd sync --clear`; your weekly routine files are not changed. Task, schedule,
 and settings editing in the browser works without an agent.
 
-## Reusing an open tab
+## Opening the workspace
+
+`rmd web` opens the workspace in your default browser in one of three ways,
+chosen in **Settings → Opening the workspace** (saved as
+`[settings] open_workspace_in` in `settings.toml`):
+
+- **Its own window** (`"window"`, the default): a new browser window rather
+  than a tab among your others.
+- **App window** (`"app"`): a window without tabs or an address bar, like a
+  desktop app. It needs Chrome, Edge, Brave, Vivaldi, Opera, or Chromium;
+  Firefox and Safari open a plain window instead.
+- **A tab** (`"tab"`): a new tab in a browser window that is already open.
+
+A browser `rmd web` does not know how to ask for a window, such as Arc, gets a
+tab. On macOS the default browser is the one set in **System Settings →
+Desktop & Dock**; on Linux it is `xdg-settings get default-web-browser`. On
+Windows the workspace always opens in a tab.
 
 A second `rmd web` invocation contacts the existing server for the active config
-root and signals its open workspace tab instead of opening another one. The tab
-requests focus, but browser settings may prevent automatic foregrounding.
-Closing the tab leaves the server running; relaunching opens a tab again.
+root and signals its open workspace tab or window instead of opening another
+one. The page requests focus, and on macOS `rmd web` also brings the browser
+forward, but browser settings may still keep the window behind others.
+Closing the window leaves the server running; relaunching opens it again.
 Use **Settings → Close browser service** to shut down the local browser server.
 Different config roots have separate servers and workspaces.
 

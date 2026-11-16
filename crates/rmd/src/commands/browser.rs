@@ -9,8 +9,10 @@
 //! A server is replaced the same way when phone access is turned on or off,
 //! since that changes where it listens.
 //!
-//! While a LaunchX launcher runs, a plain `rmd web` lets it open the
-//! workspace instead (`lx open rmd`, see [`crate::launchx`]).
+//! The workspace opens in a window of its own, an app window, or a tab, as
+//! `[settings] open_workspace_in` says (see [`crate::opener`]). While a
+//! LaunchX launcher runs, a plain `rmd web` lets it open the workspace instead
+//! (see [`crate::launchx`]).
 //!
 //! [`code_fingerprint`]: crate::web::fingerprint::code_fingerprint
 
@@ -45,6 +47,8 @@ trait Backend {
     fn spawn_server(&self, root: &Path, port: u16, token: Option<&str>) -> io::Result<Box<dyn ServerProcess>>;
     fn terminate(&self, pid: i64) -> io::Result<()>;
     fn open_url(&self, url: &str);
+    /// Bring the browser forward, after an open tab was asked to focus itself.
+    fn bring_forward(&self);
     /// Fingerprint of the code a freshly started server would run.
     fn fingerprint(&self) -> String;
     /// Addresses a phone can reach this computer at, best first.
@@ -109,7 +113,11 @@ impl Backend for Desktop {
     }
 
     fn open_url(&self, url: &str) {
-        let _ = open::that_detached(url);
+        crate::opener::open(url, crate::opener::OpenIn::configured());
+    }
+
+    fn bring_forward(&self) {
+        crate::opener::bring_forward();
     }
 
     fn fingerprint(&self) -> String {
@@ -379,6 +387,8 @@ fn launch_browser(backend: &dyn Backend, open_browser: bool, port: u16, phone: O
     let private_url = format!("{url}#token={}", state.get("token").map(py::py_str).unwrap_or_default());
     if open_browser && !reused {
         backend.open_url(&private_url);
+    } else if open_browser {
+        backend.bring_forward();
     }
     let fingerprint = Value::String(backend.fingerprint());
     let replaced = replaced
@@ -540,7 +550,7 @@ fn browser_command_with(backend: &dyn Backend, out: &mut dyn Write, color: bool,
 /// runs; the options are about the workspace's own server, so they keep it.
 pub fn browser_command(request: WebRequest) -> i32 {
     if request == WebRequest::default()
-        && let Some(code) = crate::launchx::hand_over(crate::launchx::SERVICE_ID)
+        && let Some(code) = crate::launchx::hand_over(crate::launchx::SERVICE_ID, crate::opener::OpenIn::configured())
     {
         return code;
     }
@@ -578,6 +588,8 @@ mod tests {
         servers: RefCell<Vec<SimServer>>,
         spawned: RefCell<Vec<(u16, Option<String>)>>,
         opened: RefCell<Vec<String>>,
+        /// How often the browser was brought forward for a reused tab.
+        forwarded: Cell<usize>,
         terminated: RefCell<Vec<i64>>,
     }
 
@@ -591,6 +603,7 @@ mod tests {
                 servers: RefCell::new(Vec::new()),
                 spawned: RefCell::new(Vec::new()),
                 opened: RefCell::new(Vec::new()),
+                forwarded: Cell::new(0),
                 terminated: RefCell::new(Vec::new()),
             }
         }
@@ -685,6 +698,10 @@ mod tests {
             self.opened.borrow_mut().push(url.to_string());
         }
 
+        fn bring_forward(&self) {
+            self.forwarded.set(self.forwarded.get() + 1);
+        }
+
         fn fingerprint(&self) -> String {
             self.build.borrow().clone()
         }
@@ -708,6 +725,7 @@ mod tests {
 
         let launch = launch_browser(&sim, true, 0, None).unwrap();
         assert!(launch.reused && launch.replaced.is_none() && sim.opened.borrow().is_empty());
+        assert_eq!(sim.forwarded.get(), 1);
         assert_eq!(launch.url, "http://127.0.0.1:12345/");
 
         sim.has_tab.set(false);
@@ -830,6 +848,7 @@ mod tests {
                 Ok(())
             }
             fn open_url(&self, _: &str) {}
+            fn bring_forward(&self) {}
             fn fingerprint(&self) -> String {
                 String::new()
             }

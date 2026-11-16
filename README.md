@@ -109,7 +109,10 @@ The installer:
 - creates your config root in `~/.schedule_management/config` with a first
   `user_config_0`, and asks for any required settings that are missing;
 - registers the reminder service (a LaunchAgent on macOS, a systemd user
-  service on Linux) and restarts it on the new binary when you upgrade.
+  service on Linux) and restarts it on the new binary when you upgrade;
+- when [LaunchX](https://github.com/AutoPhd-org/launchx) is installed,
+  registers the browser workspace with it from `~/SCHEDULE_MANAGEMENT`, so
+  LaunchX runs the installed binary rather than a source checkout.
 
 Existing configuration is never overwritten. To update, run the installer
 again.
