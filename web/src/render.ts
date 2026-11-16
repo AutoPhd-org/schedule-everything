@@ -16,7 +16,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { AiAuth, AiProvider, AiSettings, AiSuggestResult, BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { AiAuth, AiProvider, AiSettings, AiSuggestResult, BridgeClient, OpenIn, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
 import { DEFAULT_THRESHOLDS, describeLoad, exactLoad, levelInfo, loadBlend, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
@@ -520,6 +520,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         state.notice = t("The workspace, the rmd command line, and reminder popups now use {name}.", {name: LANGUAGES.find(entry => entry.id === language())!.name});
       });
     });
+    bindOpenIn(root);
     root.querySelectorAll<HTMLButtonElement>("[data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
     root.querySelector<HTMLAnchorElement>(".brand")!.onclick = event => { event.preventDefault(); navigate("today"); };
     root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(btn => btn.onclick = () => void action(() => runAction(btn.dataset.action!)));
@@ -1783,9 +1784,35 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     return `<article class="card language-card"><h2>${icons.language} ${t("Interface language")}</h2><p class="muted">${t("Used by this workspace, the rmd command line, and reminder popups. Saved in settings.toml.")}</p>
       <div class="layout-switch language-switch" role="group" aria-label="${t("Interface language")}">${LANGUAGES.map(entry => `<button type="button" data-language="${entry.id}" lang="${entry.locale}" aria-pressed="${entry.id === language()}">${entry.name}</button>`).join("")}</div></article>`;
   }
+  /** How `rmd web` opens this workspace: a window of its own, an app window, or a tab (`[settings] open_workspace_in`). */
+  const OPEN_IN: [OpenIn, string, string][] = [
+    ["window", msg("Its own window"), msg("A window of its own. Running rmd web again brings it forward instead of opening another.")],
+    ["app", msg("App window"), msg("A window without tabs or an address bar, like an app. Needs Chrome, Edge, Brave, or another Chromium browser; other browsers open a plain window.")],
+    ["tab", msg("A tab"), msg("A new tab in a browser window that is already open.")]
+  ];
+  function openCard() {
+    const current = state.workspace?.openIn ?? "window";
+    const note = OPEN_IN.find(([id]) => id === current)![2];
+    return `<article class="card open-card"><h2>${icons.window} ${t("Opening the workspace")}</h2><p class="muted">${t("How rmd web opens this workspace in your default browser. Saved in settings.toml.")}</p>
+      <div class="layout-switch open-switch" role="group" aria-label="${t("Opening the workspace")}">${OPEN_IN.map(([id, label]) => `<button type="button" data-open-in="${id}" aria-pressed="${id === current}">${t(label)}</button>`).join("")}</div>
+      <p class="muted open-note">${t(note)}</p></article>`;
+  }
+  function bindOpenIn(scope: ParentNode) {
+    scope.querySelectorAll<HTMLButtonElement>("[data-open-in]").forEach(btn => btn.onclick = () => {
+      const choice = btn.dataset.openIn as OpenIn;
+      if (choice === (state.workspace?.openIn ?? "window")) return;
+      void action(async () => {
+        const saved = await request<{openIn: OpenIn}>("open_in_set", {openIn: choice});
+        if (state.workspace) state.workspace.openIn = saved.openIn;
+        const card = root.querySelector<HTMLElement>(".open-card");
+        if (card) { card.outerHTML = openCard(); bindOpenIn(root.querySelector(".open-card")!); }
+        state.notice = saved.openIn === "app" ? t("rmd web now opens the workspace in an app window.") : saved.openIn === "tab" ? t("rmd web now opens the workspace in a tab.") : t("rmd web now opens the workspace in a window of its own.");
+      });
+    });
+  }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${aiCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------

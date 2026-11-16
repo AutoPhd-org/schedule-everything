@@ -377,6 +377,78 @@ refresh_browser_workspace() {
         || log_warning "Could not restart the running browser workspace. Run 'rmd web' to restart it."
 }
 
+# A LaunchX manifest that runs the browser workspace from this installation:
+# the repository's launchx.toml without its header, with `run` and `cli`
+# pointing at the installed binary instead of a development build.
+write_launchx_manifest() {
+    local target="$1"
+    local binary
+    binary=$(printf '%s' "$RMD_BIN" | sed -e 's/[\\&|]/\\&/g')
+    {
+        echo "# LaunchX manifest for the installed Schedule Everything: LaunchX runs the"
+        echo "# browser workspace from this installation. The installer writes it on"
+        echo "# every install and registers it with LaunchX (lx add $INSTALL_DIR)."
+        sed -n '/^launchx[[:space:]]*=/,$p' "$SCRIPT_DIR/launchx.toml" \
+            | sed -e "s|^run[[:space:]]*=.*|run           = [\"$binary\", \"serve\"]|" \
+                  -e "s|^cli[[:space:]]*=.*|cli           = \"$binary\"|"
+    } > "$target"
+}
+
+# When LaunchX is installed, let it run the workspace from this installation:
+# register the manifest written next to the binary in place of any other that
+# defines the workspace (such as a source checkout's), and restart the
+# workspace if it was running, since it still runs the binary this install
+# replaced.
+register_launchx() {
+    local lx
+    lx="$(command -v lx || true)"
+    if [[ -z "$lx" && -x "$HOME/.local/bin/lx" ]]; then
+        lx="$HOME/.local/bin/lx"
+    fi
+    if [[ -z "$lx" || ! -f "$SCRIPT_DIR/launchx.toml" ]]; then
+        return 0
+    fi
+    log_info "Registering the browser workspace with LaunchX..."
+    local manifest="$INSTALL_DIR/launchx.toml"
+    write_launchx_manifest "$manifest"
+
+    local registered="" entry
+    for entry in "${LAUNCHX_HOME:-$HOME/.launchx}"/services/*.toml; do
+        if [[ -e "$entry" ]] && grep -q '^\[service\.rmd\]' "$entry"; then
+            registered="$(readlink "$entry" || echo "$entry")"
+        fi
+    done
+    local listing
+    listing="$("$lx" ls 2>/dev/null || true)"
+    local was_running="false"
+    if grep -Eq '^rmd[[:space:]]+running' <<<"$listing"; then
+        was_running="true"
+    fi
+
+    if [[ "$registered" != "$manifest" ]]; then
+        if [[ -n "$registered" ]]; then
+            log_info "LaunchX ran the workspace from $registered; switching it to $INSTALL_DIR"
+            if ! "$lx" rm rmd >/dev/null; then
+                log_warning "Could not unregister $registered. Run: lx rm rmd && lx add $INSTALL_DIR"
+                return 0
+            fi
+        fi
+        if ! "$lx" add "$INSTALL_DIR" >/dev/null; then
+            log_warning "Could not register $manifest with LaunchX. Run: lx add $INSTALL_DIR"
+            return 0
+        fi
+    fi
+    log_success "LaunchX runs the workspace from $INSTALL_DIR"
+
+    if [[ "$was_running" == "true" ]]; then
+        if "$lx" restart rmd >/dev/null 2>&1 || "$lx" start rmd >/dev/null 2>&1; then
+            log_success "Restarted the workspace under LaunchX on the new binary"
+        else
+            log_warning "Could not restart the workspace under LaunchX. Run: lx restart rmd"
+        fi
+    fi
+}
+
 # Request permissions (platform-specific)
 request_permissions() {
     if [[ "$OS_TYPE" == "macos" ]]; then
@@ -574,6 +646,7 @@ main() {
     request_permissions
     create_scripts
     refresh_browser_workspace
+    register_launchx
     test_installation
     setup_autocompletion
     restart_service_if_needed

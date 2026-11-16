@@ -216,7 +216,9 @@ export type DailyOverview = {
 };
 
 /** `language` is `[settings] language` as the server reads it (see i18n.ts). */
-export type Workspace = {configIds: number[]; activeId: number; rootDir: string; mode: string; language?: string};
+/** How `rmd web` opens the workspace (`[settings] open_workspace_in`). */
+export type OpenIn = "window" | "app" | "tab";
+export type Workspace = {configIds: number[]; activeId: number; rootDir: string; mode: string; language?: string; openIn?: OpenIn};
 
 export type Snapshot = {
   config: {
