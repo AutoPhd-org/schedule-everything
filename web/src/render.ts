@@ -19,7 +19,7 @@ import { bindTree, scrollTreeTo, treeView } from "./tree";
 import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
-import { DEFAULT_THRESHOLDS, describeLoad, levelInfo, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
+import { DEFAULT_THRESHOLDS, describeLoad, exactLoad, levelInfo, loadBlend, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
 
 export { escapeHtml, groupTasks };
 
@@ -401,17 +401,23 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   // ----- Workload and the daily overview ------------------------------------------
 
-  /** The theme follows the workload, unless that is turned off in Settings: the workload's level picks the
-   *  palette, and the day's progress (today's timed work when any is due, otherwise all open tasks, weighed as
-   *  the bars weigh them) eases it back toward calm as it fills (--day-progress, see styles.css). */
+  /** The theme follows the workload, unless that is turned off in Settings: the palette blends between those of
+   *  the two levels the workload falls between (data-load-span and --load-mix, from loadBlend), so it moves with
+   *  every change of the workload, and the day's progress (today's timed work when any is due, otherwise all open
+   *  tasks, weighed as the bars weigh them) eases it back toward calm as it fills (--day-progress). See styles.css. */
   function applyLoad(s: Snapshot) {
     const html = document.documentElement;
     if (!state.prefs.workloadTheme) {
       delete html.dataset.load;
+      delete html.dataset.loadSpan;
+      html.style.removeProperty("--load-mix");
       html.style.removeProperty("--day-progress");
       return;
     }
+    const blend = loadBlend(exactLoad(s.tasks, s.today.date));
     html.dataset.load = workload(s.tasks, s.today.date).level;
+    html.dataset.loadSpan = blend.from;
+    html.style.setProperty("--load-mix", blend.mix.toFixed(3));
     html.style.setProperty("--day-progress", dayProgress(s, Date.now(), state.prefs.weighted).toFixed(3));
   }
   /** The workload in the header, on every page; it opens the daily overview. */

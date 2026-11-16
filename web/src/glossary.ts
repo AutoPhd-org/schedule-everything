@@ -166,7 +166,7 @@ const TERMS: Term[] = [
       const ranges = levelRanges();
       const levels = loadLevels().map((level, i) => `<li class="g-level load-${level.id} ${level.id === load.level ? "is-you" : ""}" style="--i:${i}" data-tip="${e(level.note)}">${level.icon}<b>${e(level.label)}</b><small>${e(ranges[i])}</small>${level.id === load.level ? `<em>${t("You are here")}</em>` : ""}</li>`).join("");
       const tryIt = `<div class="g-try"><span class="g-k">${icons.zap}${t("Try it")}</span><label><span>${t("Importance")}</span><input type="range" name="gTryImportance" min="1" max="10" step="1" value="8"><output data-try="importance">8</output></label><label><span>${t("Progress")}</span><input type="range" name="gTryProgress" min="0" max="100" step="10" value="50"><output data-try="progress">50%</output></label><div class="g-try-meter"><i data-try="meter" style="--p:.4"></i></div><p>${t("This task adds {points} to your workload.", {points: `<b data-try="points">0.4</b>`})}</p></div>`;
-      return `<div class="g-extra"><div><span class="g-k">${icons.waves}${t("Levels")}</span><ol class="g-levels">${levels}</ol><p class="g-fine">${t("The page’s colors follow your level. Where each one starts is up to you in Settings.")}</p></div>${tryIt}</div>`;
+      return `<div class="g-extra"><div><span class="g-k">${icons.waves}${t("Levels")}</span><ol class="g-levels">${levels}</ol><p class="g-fine">${t("The page’s colors follow your workload, blending from one level’s colors into the next as it changes. Where each level starts is up to you in Settings.")}</p></div>${tryIt}</div>`;
     },
     yours: c => { const load = workload(c.snapshot.tasks, c.snapshot.today.date); return `${load.points.toFixed(1)} <small>${e(levelInfo(load.level).label)}</small>`; }
   },

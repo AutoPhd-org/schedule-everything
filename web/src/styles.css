@@ -19,7 +19,7 @@
   --display: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", Inter, -apple-system, sans-serif;
   --spring: cubic-bezier(.2, .9, .25, 1.15);
   --ease: cubic-bezier(.2, .8, .2, 1);
-  --bg: #f6f3ff;
+  --base-bg: #f6f3ff;
   --glass: rgba(255, 255, 255, .72);
   --surface: rgba(255, 255, 255, .86);
   --surface-solid: #ffffff;
@@ -43,20 +43,23 @@
   --c-blue: #2a78d6; --c-orange: #eb6834; --c-aqua: #1baf7a; --c-yellow: #eda100;
   --c-magenta: #e87ba4; --c-green: #008300; --c-violet: #6250d6; --c-red: #e34948;
   --c: var(--accent);
-  --blob-1: #8f7bff; --blob-2: #ff8fb1; --blob-3: #5fd4b0; --blob-4: #ffd166;
-  --blob-opacity: .55;
+  /* The planning mode's own backdrop (Steady's palette), which the workload theme blends from and to. */
+  --base-1: #8f7bff; --base-2: #ff8fb1; --base-3: #5fd4b0; --base-4: #ffd166;
+  --base-op: .55;
+  --bg: var(--base-bg); --blob-1: var(--base-1); --blob-2: var(--base-2); --blob-3: var(--base-3); --blob-4: var(--base-4);
+  --blob-opacity: var(--base-op);
   /* All clear's palette, which the day's progress pulls the workload theme toward: up to 65% of the way once
      it is all done, so the workload still sets the tone. The pull follows progress quickly, so a slider being
      moved visibly moves the page with it. */
   --done-bg: #effaf5; --done-1: #7fe3c4; --done-2: #9fd3ff; --done-3: #c6f09b; --done-4: #ffe08f;
   --pull: calc(var(--day-progress) * 65%);
-  transition: --blob-1 1.2s var(--ease), --blob-2 1.2s var(--ease), --blob-3 1.2s var(--ease), --blob-4 1.2s var(--ease), --bg 1.2s var(--ease), --blob-opacity 1.2s var(--ease), --day-progress .5s var(--ease);
+  transition: --blob-1 .7s var(--ease), --blob-2 .7s var(--ease), --blob-3 .7s var(--ease), --blob-4 .7s var(--ease), --bg .7s var(--ease), --blob-opacity .7s var(--ease), --day-progress .5s var(--ease);
   color: var(--text);
   background: color-mix(in oklab, var(--bg), var(--done-bg) var(--pull));
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0f0c1d;
+  --base-bg: #0f0c1d;
   --glass: rgba(26, 21, 46, .74);
   --surface: rgba(30, 25, 54, .86);
   --surface-solid: #1d1833;
@@ -78,8 +81,8 @@
   --shadow-lg: 0 34px 70px -24px rgba(0, 0, 0, .75), 0 6px 16px rgba(0, 0, 0, .35);
   --c-blue: #3987e5; --c-orange: #d95926; --c-aqua: #199e70; --c-yellow: #c98500;
   --c-magenta: #d55181; --c-green: #008300; --c-violet: #9085e9; --c-red: #e66767;
-  --blob-1: #5b46d6; --blob-2: #b03f86; --blob-3: #137a62; --blob-4: #8a5a12;
-  --blob-opacity: .42;
+  --base-1: #5b46d6; --base-2: #b03f86; --base-3: #137a62; --base-4: #8a5a12;
+  --base-op: .42;
   --done-bg: #0a1613; --done-1: #137a5e; --done-2: #1e5c8c; --done-3: #3f7a1c; --done-4: #7a6514;
 }
 /* P mode: a warmer, looser palette for flexible days. */
@@ -88,29 +91,65 @@
   --accent-ink: #a3154e;
   --grad: linear-gradient(120deg, #c2410c 0%, #be185d 50%, #7c3aed 100%);
   --grad-soft: linear-gradient(120deg, rgba(235, 104, 52, .16), rgba(213, 81, 129, .14) 50%, rgba(124, 58, 237, .1));
-  --blob-1: #ff9a6b; --blob-2: #ff7eb3; --blob-3: #ffd166; --blob-4: #b69cff;
+  --base-1: #ff9a6b; --base-2: #ff7eb3; --base-3: #ffd166; --base-4: #b69cff;
 }
 :root[data-mode="p"][data-theme="dark"] {
   --accent: #ff8fb1;
   --accent-ink: #ffb0c8;
-  --blob-1: #9a3d1c; --blob-2: #a32a62; --blob-3: #8a6a12; --blob-4: #5b3fb0;
+  --base-1: #9a3d1c; --base-2: #a32a62; --base-3: #8a6a12; --base-4: #5b3fb0;
 }
-/* Workload themes (workload.ts): the page tint, the backdrop, glass surfaces, and the dot grid follow how much
-   open work there is, from cool and airy when the plate is clear to warm and dense when it is heavy. Steady keeps
-   each mode's own backdrop. Accents stay with the planning mode. --load-c is the level's color for highlights.
-   The day's progress then eases the page and the backdrop part of the way toward All clear (--pull, on :root). */
-:root[data-load] { --glass: color-mix(in oklab, var(--load-c) 5%, rgba(255, 255, 255, .72)); }
-:root[data-load][data-theme="dark"] { --glass: color-mix(in oklab, var(--load-c) 9%, rgba(26, 21, 46, .74)); }
-:root[data-load="clear"] { --load-c: #16a374; --bg: #effaf5; --blob-1: #7fe3c4; --blob-2: #9fd3ff; --blob-3: #c6f09b; --blob-4: #ffe08f; --blob-opacity: .5; --dots: 34px; }
-:root[data-load="light"] { --load-c: #2a7fd6; --bg: #f2f7ff; --blob-1: #8fbcff; --blob-2: #7fe0c8; --blob-3: #b6a6ff; --blob-4: #ffe1a8; --blob-opacity: .52; --dots: 30px; }
-:root[data-load="steady"] { --load-c: #6250d6; }
-:root[data-load="busy"] { --load-c: #d9670d; --bg: #fff5ea; --blob-1: #ffb26b; --blob-2: #ff8fa6; --blob-3: #ffd166; --blob-4: #c79cff; --blob-opacity: .6; --dots: 22px; }
-:root[data-load="heavy"] { --load-c: #d33245; --bg: #fff0ee; --blob-1: #ff6b6b; --blob-2: #ff9b5c; --blob-3: #ec5f9e; --blob-4: #ffb54d; --blob-opacity: .64; --dots: 18px; }
-:root[data-load="clear"][data-theme="dark"] { --load-c: #3fd9a4; --bg: #0a1613; --blob-1: #137a5e; --blob-2: #1e5c8c; --blob-3: #3f7a1c; --blob-4: #7a6514; --blob-opacity: .42; }
-:root[data-load="light"][data-theme="dark"] { --load-c: #6fb3ff; --bg: #0c1222; --blob-1: #2a5fb0; --blob-2: #137a62; --blob-3: #4c3db0; --blob-4: #6a5a20; --blob-opacity: .42; }
-:root[data-load="steady"][data-theme="dark"] { --load-c: #9085e9; }
-:root[data-load="busy"][data-theme="dark"] { --load-c: #ffa04d; --bg: #170f09; --blob-1: #9a4d12; --blob-2: #a32a52; --blob-3: #8a6a12; --blob-4: #5b3fb0; --blob-opacity: .46; }
-:root[data-load="heavy"][data-theme="dark"] { --load-c: #ff7a85; --bg: #1a0a0d; --blob-1: #a3222f; --blob-2: #9a3d1c; --blob-3: #8f1f5c; --blob-4: #8a5a12; --blob-opacity: .5; }
+/* Workload themes (workload.ts): the page tint, the backdrop, glass surfaces, the dot grid, and a warm glow follow
+   how much open work there is, from cool and airy when the plate is clear to warm and dense when it is heavy.
+   Each level has a palette (--lv-*; Steady's is the planning mode's own backdrop), and the page blends between
+   the two levels the workload sits between: data-load-span names the lower one and --load-mix how far it is
+   toward the next, both set by render.ts (applyLoad, from loadBlend). So every change of the workload shows,
+   not only a new level. Accents stay with the planning mode. --load-c is the blended color for highlights. The
+   day's progress then eases the page and the backdrop part of the way toward All clear (--pull, on :root). */
+:root {
+  --lv-clear-c: #16a374; --lv-clear-bg: #effaf5; --lv-clear-1: #7fe3c4; --lv-clear-2: #9fd3ff; --lv-clear-3: #c6f09b; --lv-clear-4: #ffe08f; --lv-clear-op: .5; --lv-clear-dots: 34; --lv-clear-glow: 0;
+  --lv-light-c: #2a7fd6; --lv-light-bg: #f2f7ff; --lv-light-1: #8fbcff; --lv-light-2: #7fe0c8; --lv-light-3: #b6a6ff; --lv-light-4: #ffe1a8; --lv-light-op: .52; --lv-light-dots: 30; --lv-light-glow: 0;
+  --lv-steady-c: #6250d6; --lv-steady-bg: var(--base-bg); --lv-steady-1: var(--base-1); --lv-steady-2: var(--base-2); --lv-steady-3: var(--base-3); --lv-steady-4: var(--base-4); --lv-steady-op: var(--base-op); --lv-steady-dots: 26; --lv-steady-glow: 0;
+  --lv-busy-c: #d9670d; --lv-busy-bg: #fff5ea; --lv-busy-1: #ffb26b; --lv-busy-2: #ff8fa6; --lv-busy-3: #ffd166; --lv-busy-4: #c79cff; --lv-busy-op: .6; --lv-busy-dots: 22; --lv-busy-glow: .55;
+  --lv-heavy-c: #d33245; --lv-heavy-bg: #fff0ee; --lv-heavy-1: #ff6b6b; --lv-heavy-2: #ff9b5c; --lv-heavy-3: #ec5f9e; --lv-heavy-4: #ffb54d; --lv-heavy-op: .64; --lv-heavy-dots: 18; --lv-heavy-glow: .85;
+}
+:root[data-theme="dark"] {
+  --lv-clear-c: #3fd9a4; --lv-clear-bg: #0a1613; --lv-clear-1: #137a5e; --lv-clear-2: #1e5c8c; --lv-clear-3: #3f7a1c; --lv-clear-4: #7a6514; --lv-clear-op: .42;
+  --lv-light-c: #6fb3ff; --lv-light-bg: #0c1222; --lv-light-1: #2a5fb0; --lv-light-2: #137a62; --lv-light-3: #4c3db0; --lv-light-4: #6a5a20; --lv-light-op: .42;
+  --lv-steady-c: #9085e9;
+  --lv-busy-c: #ffa04d; --lv-busy-bg: #170f09; --lv-busy-1: #9a4d12; --lv-busy-2: #a32a52; --lv-busy-3: #8a6a12; --lv-busy-4: #5b3fb0; --lv-busy-op: .46;
+  --lv-heavy-c: #ff7a85; --lv-heavy-bg: #1a0a0d; --lv-heavy-1: #a3222f; --lv-heavy-2: #9a3d1c; --lv-heavy-3: #8f1f5c; --lv-heavy-4: #8a5a12; --lv-heavy-op: .5;
+}
+/* From (--f-*) and to (--t-*): the palettes of the levels on either side of the workload. */
+:root[data-load-span="clear"] {
+  --f-c: var(--lv-clear-c); --f-bg: var(--lv-clear-bg); --f-1: var(--lv-clear-1); --f-2: var(--lv-clear-2); --f-3: var(--lv-clear-3); --f-4: var(--lv-clear-4); --f-op: var(--lv-clear-op); --f-dots: var(--lv-clear-dots); --f-glow: var(--lv-clear-glow);
+  --t-c: var(--lv-light-c); --t-bg: var(--lv-light-bg); --t-1: var(--lv-light-1); --t-2: var(--lv-light-2); --t-3: var(--lv-light-3); --t-4: var(--lv-light-4); --t-op: var(--lv-light-op); --t-dots: var(--lv-light-dots); --t-glow: var(--lv-light-glow);
+}
+:root[data-load-span="light"] {
+  --f-c: var(--lv-light-c); --f-bg: var(--lv-light-bg); --f-1: var(--lv-light-1); --f-2: var(--lv-light-2); --f-3: var(--lv-light-3); --f-4: var(--lv-light-4); --f-op: var(--lv-light-op); --f-dots: var(--lv-light-dots); --f-glow: var(--lv-light-glow);
+  --t-c: var(--lv-steady-c); --t-bg: var(--lv-steady-bg); --t-1: var(--lv-steady-1); --t-2: var(--lv-steady-2); --t-3: var(--lv-steady-3); --t-4: var(--lv-steady-4); --t-op: var(--lv-steady-op); --t-dots: var(--lv-steady-dots); --t-glow: var(--lv-steady-glow);
+}
+:root[data-load-span="steady"] {
+  --f-c: var(--lv-steady-c); --f-bg: var(--lv-steady-bg); --f-1: var(--lv-steady-1); --f-2: var(--lv-steady-2); --f-3: var(--lv-steady-3); --f-4: var(--lv-steady-4); --f-op: var(--lv-steady-op); --f-dots: var(--lv-steady-dots); --f-glow: var(--lv-steady-glow);
+  --t-c: var(--lv-busy-c); --t-bg: var(--lv-busy-bg); --t-1: var(--lv-busy-1); --t-2: var(--lv-busy-2); --t-3: var(--lv-busy-3); --t-4: var(--lv-busy-4); --t-op: var(--lv-busy-op); --t-dots: var(--lv-busy-dots); --t-glow: var(--lv-busy-glow);
+}
+:root[data-load-span="busy"] {
+  --f-c: var(--lv-busy-c); --f-bg: var(--lv-busy-bg); --f-1: var(--lv-busy-1); --f-2: var(--lv-busy-2); --f-3: var(--lv-busy-3); --f-4: var(--lv-busy-4); --f-op: var(--lv-busy-op); --f-dots: var(--lv-busy-dots); --f-glow: var(--lv-busy-glow);
+  --t-c: var(--lv-heavy-c); --t-bg: var(--lv-heavy-bg); --t-1: var(--lv-heavy-1); --t-2: var(--lv-heavy-2); --t-3: var(--lv-heavy-3); --t-4: var(--lv-heavy-4); --t-op: var(--lv-heavy-op); --t-dots: var(--lv-heavy-dots); --t-glow: var(--lv-heavy-glow);
+}
+:root[data-load] {
+  --load-pct: calc(var(--load-mix, 0) * 100%);
+  --load-c: color-mix(in oklab, var(--f-c), var(--t-c) var(--load-pct));
+  --bg: color-mix(in oklab, var(--f-bg), var(--t-bg) var(--load-pct));
+  --blob-1: color-mix(in oklab, var(--f-1), var(--t-1) var(--load-pct));
+  --blob-2: color-mix(in oklab, var(--f-2), var(--t-2) var(--load-pct));
+  --blob-3: color-mix(in oklab, var(--f-3), var(--t-3) var(--load-pct));
+  --blob-4: color-mix(in oklab, var(--f-4), var(--t-4) var(--load-pct));
+  --blob-opacity: calc(var(--f-op) + (var(--t-op) - var(--f-op)) * var(--load-mix, 0));
+  --dots: calc((var(--f-dots) + (var(--t-dots) - var(--f-dots)) * var(--load-mix, 0)) * 1px);
+  --glow: calc(var(--f-glow) + (var(--t-glow) - var(--f-glow)) * var(--load-mix, 0));
+  --glass: color-mix(in oklab, var(--load-c) 10%, rgba(255, 255, 255, .72));
+}
+:root[data-load][data-theme="dark"] { --glass: color-mix(in oklab, var(--load-c) 14%, rgba(26, 21, 46, .74)); }
 /* Each level's own color, for the header chip, gauges, and badges, whether or not the theme follows it. */
 .load-clear { --lc: #16a374; } .load-light { --lc: #2a7fd6; } .load-steady { --lc: #6250d6; } .load-busy { --lc: #d9670d; } .load-heavy { --lc: #d33245; }
 :root[data-theme="dark"] .load-clear { --lc: #3fd9a4; } :root[data-theme="dark"] .load-light { --lc: #6fb3ff; } :root[data-theme="dark"] .load-steady { --lc: #a99ff0; }
@@ -142,11 +181,11 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .backdrop i:nth-child(3) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-3), var(--done-3) var(--pull)) 0%, transparent 64%); bottom: -26vmax; left: 18vw; animation-duration: 31s; animation-delay: -16s; }
 .backdrop i:nth-child(4) { background: radial-gradient(circle, color-mix(in oklab, var(--blob-4), var(--done-4) var(--pull)) 0%, transparent 64%); bottom: -18vmax; right: -8vmax; width: 40vmax; height: 40vmax; animation-duration: 25s; animation-delay: -4s; }
 .backdrop::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(var(--line) 1px, transparent 1.2px); background-size: var(--dots, 26px) var(--dots, 26px); mask-image: linear-gradient(to bottom, #000, transparent 70%); opacity: .7; }
-.backdrop::before { content: ""; position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse 90% 60% at 50% 115%, color-mix(in oklab, var(--load-c, transparent) 32%, transparent), transparent 70%); transition: opacity 1.2s var(--ease); }
-/* The warm glow of a busy or heavy day fades as the day's progress fills: by up to 85% once it is full. */
-:root[data-load="busy"] .backdrop::before { opacity: calc(.55 * (1 - var(--day-progress) * .85)); }
-:root[data-load="heavy"] .backdrop::before { opacity: calc(.85 * (1 - var(--day-progress) * .85)); animation: breathe 7s ease-in-out infinite; }
-@keyframes breathe { 50% { opacity: calc(.45 * (1 - var(--day-progress) * .85)); } }
+/* A warm glow rises from the bottom as the workload climbs from Steady through Busy to Heavy (--glow), and fades as
+   the day's progress fills: by up to 85% once it is full. On a heavy day it breathes. */
+.backdrop::before { content: ""; position: absolute; inset: 0; opacity: calc(var(--glow, 0) * (1 - var(--day-progress) * .85)); background: radial-gradient(ellipse 90% 60% at 50% 115%, color-mix(in oklab, var(--load-c, transparent) 32%, transparent), transparent 70%); transition: opacity .7s var(--ease); }
+:root[data-load="heavy"] .backdrop::before { animation: breathe 7s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: calc(var(--glow, 0) * .53 * (1 - var(--day-progress) * .85)); } }
 
 /* ----- Shell -------------------------------------------------------------- */
 .workspace { display: flex; min-height: 100vh; }

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "./render";
 import type { BridgeClient, Snapshot, TaskItem } from "./types";
-import { asThresholds, DEFAULT_THRESHOLDS, describeLoad, levelOf, levelRanges, loadScale, setLoadThresholds, taskLoad, thresholdProblem, workload } from "./workload";
+import { asThresholds, DEFAULT_THRESHOLDS, describeLoad, levelOf, levelRanges, loadBlend, loadScale, setLoadThresholds, taskLoad, thresholdProblem, workload } from "./workload";
 
 const task = (description: string, priority: number, extra: Partial<TaskItem> = {}): TaskItem =>
   ({description, priority, type: "1", typeName: "Coding", alarmFrom: null, procrastinated: false, procrastinateDays: null, ...extra});
@@ -39,6 +39,26 @@ describe("workload", () => {
     setLoadThresholds(DEFAULT_THRESHOLDS);
     expect(levelRanges()).toEqual(["0", "under 2.5", "2.5 – 5.5", "5.5 – 9", "9 and up"]);
     expect(loadScale()).toBe(12);
+  });
+
+  it("blends the theme between the levels on either side of the workload", () => {
+    // Each level is pure in the middle of its range: All clear at 0, Light at 1.25, Steady at 4, Busy at 7.25,
+    // and Heavy at 10.75, as far past where it starts (9) as Busy's middle is before it.
+    const at = (points: number) => { const {from, to, mix} = loadBlend(points); return `${from}→${to} ${mix.toFixed(3)}`; };
+    expect(at(0)).toBe("clear→light 0.000");
+    expect(at(0.5)).toBe("clear→light 0.400");
+    expect(at(1.25)).toBe("light→steady 0.000");
+    // A Steady workload of 2.5 still carries some of Light's colors, and 5 some of Busy's.
+    expect(at(2.5)).toBe("light→steady 0.455");
+    expect(at(5)).toBe("steady→busy 0.308");
+    expect(at(5.1)).toBe("steady→busy 0.338");
+    expect(at(10.75)).toBe("busy→heavy 1.000");
+    expect(at(30)).toBe("busy→heavy 1.000");
+    // The anchors move with where the levels start.
+    setLoadThresholds([1, 4, 12]);
+    expect(at(2.5)).toBe("steady→busy 0.000");
+    expect(at(16)).toBe("busy→heavy 1.000");
+    setLoadThresholds(DEFAULT_THRESHOLDS);
   });
 
   it("only takes numbers that can start the levels", () => {
@@ -85,7 +105,7 @@ beforeEach(() => {
   });
   client = {send};
 });
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); delete document.documentElement.dataset.load; document.documentElement.style.removeProperty("--day-progress"); setLoadThresholds(DEFAULT_THRESHOLDS); document.querySelectorAll(".theme-wave, .float-tag").forEach(el => el.remove()); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); delete document.documentElement.dataset.load; delete document.documentElement.dataset.loadSpan; document.documentElement.style.removeProperty("--load-mix"); document.documentElement.style.removeProperty("--day-progress"); setLoadThresholds(DEFAULT_THRESHOLDS); document.querySelectorAll(".theme-wave, .float-tag").forEach(el => el.remove()); });
 
 describe("the workload theme", () => {
   it("tints the workspace by workload, shows it in the header, and can be turned off", async () => {
@@ -158,6 +178,28 @@ describe("the workload theme", () => {
     await flush();
     expect(document.documentElement.dataset.load).toBe("light");
     expect(root.querySelector(".load-chip")?.textContent).toBe("Light2.0");
+  });
+
+  it("moves its colors with every change of the workload, not only a change of level", async () => {
+    // 6 × 0.9 = 5.4: Steady, a little over a third of the way toward Busy's colors.
+    data.tasks = Array.from({length: 6}, (_, i) => task(`Task ${i}`, 9));
+    await renderApp(root, client);
+    const html = document.documentElement;
+    const theme = () => `${html.dataset.load} ${html.dataset.loadSpan} ${html.style.getPropertyValue("--load-mix")}`;
+    expect(theme()).toBe("steady steady 0.431");
+    const slider = root.querySelector<HTMLInputElement>('#board-area input[data-progress="0"]')!;
+    // Each step of the slider moves the colors toward calm, while the level stays Steady.
+    slider.value = "20"; slider.dispatchEvent(new Event("input"));
+    expect(theme()).toBe("steady steady 0.375");
+    slider.value = "60"; slider.dispatchEvent(new Event("input")); slider.dispatchEvent(new Event("change"));
+    expect(theme()).toBe("steady steady 0.265");
+    expect(root.querySelector(".load-chip")?.textContent).toBe("Steady4.9");
+    // With the theme off, the page keeps its own colors.
+    click('[data-page="settings"]');
+    const toggle = root.querySelector<HTMLInputElement>('[data-pref="workloadTheme"]')!;
+    toggle.checked = false; toggle.dispatchEvent(new Event("change"));
+    expect(html.dataset.loadSpan).toBeUndefined();
+    expect(html.style.getPropertyValue("--load-mix")).toBe("");
   });
 
   it("follows a slider while it moves, and goes back if it is let go where it started", async () => {
