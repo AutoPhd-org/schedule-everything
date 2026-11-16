@@ -6,12 +6,13 @@
 
 use std::io::Read;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::Mutex;
 
 use serde_json::{Value, json};
 
 use crate::py::{self, Dict};
 use crate::web::services::{self, WebError, WebResult};
-use crate::web::{insights, plugins, pyjson, suggestions, workspace};
+use crate::web::{ai, insights, plugins, pyjson, suggestions, workspace};
 
 /// A browser API command.
 pub type Handler = fn(&Dict) -> WebResult;
@@ -24,7 +25,7 @@ fn sync_clear(_payload: &Dict) -> WebResult {
 
 /// Every command the browser can send (except `server_shutdown`, which only
 /// the HTTP server handles).
-pub const COMMANDS: [(&str, Handler); 35] = [
+pub const COMMANDS: [(&str, Handler); 38] = [
     ("config_read", workspace::config_read),
     ("config_save", workspace::config_save),
     ("workspace_info", workspace::workspace_info),
@@ -44,6 +45,9 @@ pub const COMMANDS: [(&str, Handler); 35] = [
     ("suggestion_accept", suggestions::suggestion_accept),
     ("suggestion_reject", suggestions::suggestion_reject),
     ("suggestion_undo", suggestions::suggestion_undo),
+    ("ai_settings_read", ai::ai_settings_read),
+    ("ai_settings_save", ai::ai_settings_save),
+    (ai::SUGGEST_COMMAND, ai::ai_suggest),
     ("plugin_save", plugins::plugin_save),
     ("plugin_delete", plugins::plugin_delete),
     ("plugin_restore", plugins::plugin_restore),
@@ -75,7 +79,7 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
 }
 
 /// Run `handler`, reporting failures (and panics) as error responses.
-pub fn run_handler(handler: Handler, payload: &Dict) -> Value {
+pub fn run_handler(handler: impl FnOnce(&Dict) -> WebResult, payload: &Dict) -> Value {
     match catch_unwind(AssertUnwindSafe(|| handler(payload))) {
         Ok(Ok(data)) => json!({"ok": true, "data": data}),
         Ok(Err(error)) => json!({"ok": false, "error": error.to_value()}),
@@ -88,20 +92,42 @@ pub fn dispatch(request: &Value) -> Value {
     dispatch_with(request, |name| COMMANDS.iter().find(|(command, _)| *command == name).map(|(_, handler)| *handler))
 }
 
-fn dispatch_with(request: &Value, lookup: impl Fn(&str) -> Option<Handler>) -> Value {
+/// Run a request for the HTTP server, one operation at a time. Asking a
+/// language model for suggestions holds `lock` only while it reads and writes
+/// local files, so the workspace stays usable while the model thinks.
+pub fn dispatch_locked(request: &Value, lock: &Mutex<()>) -> Value {
+    if let Ok((command, payload)) = parse_request(request)
+        && command == ai::SUGGEST_COMMAND
+    {
+        return run_handler(|payload| ai::suggest_with_lock(payload, lock), &payload);
+    }
+    let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    dispatch(request)
+}
+
+/// A request's command and payload, or the error response for a malformed one.
+fn parse_request(request: &Value) -> Result<(&str, Dict), Value> {
     let Value::Object(request) = request else {
-        return error_response("invalid_request", "request must be an object.");
+        return Err(error_response("invalid_request", "request must be an object."));
     };
     let command = match request.get("command") {
         Some(Value::String(command)) if !services::py_strip(command).is_empty() => command,
-        _ => return error_response("invalid_request", "command is required."),
+        _ => return Err(error_response("invalid_request", "command is required.")),
     };
-    let empty = Value::Object(Dict::new());
-    let Value::Object(payload) = request.get("payload").unwrap_or(&empty) else {
-        return error_response("invalid_request", "payload must be an object.");
+    match request.get("payload") {
+        None => Ok((command, Dict::new())),
+        Some(Value::Object(payload)) => Ok((command, payload.clone())),
+        Some(_) => Err(error_response("invalid_request", "payload must be an object.")),
+    }
+}
+
+fn dispatch_with(request: &Value, lookup: impl Fn(&str) -> Option<Handler>) -> Value {
+    let (command, payload) = match parse_request(request) {
+        Ok(parsed) => parsed,
+        Err(response) => return response,
     };
     match lookup(command) {
-        Some(handler) => run_handler(handler, payload),
+        Some(handler) => run_handler(handler, &payload),
         None => error_response("unknown_command", format!("unknown command: {command}")),
     }
 }
@@ -187,6 +213,22 @@ mod tests {
                 json!("unknown_command")
             );
         }
+    }
+
+    #[test]
+    fn the_server_runs_every_command_under_its_lock_but_waits_for_a_model_outside_it() {
+        let _env = TestEnv::new();
+        let lock = Mutex::new(());
+        let snapshot = dispatch_locked(&json!({"command": "workspace_info"}), &lock);
+        assert_eq!(snapshot["ok"], json!(true));
+        // Suggest takes the lock itself, so holding it here would deadlock if it did not.
+        let suggest = dispatch_locked(&json!({"command": "ai_suggest", "payload": {}}), &lock);
+        assert_eq!(suggest["error"]["code"], json!("not_configured"));
+        assert_eq!(
+            dispatch_locked(&json!({"command": "ai_suggest", "payload": []}), &lock)["error"]["code"],
+            json!("invalid_request")
+        );
+        assert!(lock.try_lock().is_ok());
     }
 
     #[test]

@@ -56,7 +56,8 @@ Ask: "Build my weekly schedule". What happens:
 - It validates the files with `rmd check` and reloads reminders with `rmd update`.
 
 The agent sends what it reads to its own model provider; Schedule Everything
-itself makes no AI calls.
+itself makes no AI calls unless you connect a model for the optional
+[Suggest](browser.md#ask-a-model-for-suggestions) button.
 
 ### 4. Add tasks and plan today
 

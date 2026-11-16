@@ -22,7 +22,8 @@ You build the routine with your own AI coding agent (Claude Code, OpenAI
 Codex, or Google Antigravity) through the [`schedule-everything`
 plugin](ai-agents.md). Its `build-schedule` skill interviews you, confirms a
 plain-language summary, and writes the files; `plan-day` fills today's focus
-blocks with real tasks. Schedule Everything itself makes no AI calls.
+blocks with real tasks. Schedule Everything itself makes no AI calls unless you connect a model for
+the optional [Suggest](browser.md#ask-a-model-for-suggestions) button.
 
 ## How it works
 

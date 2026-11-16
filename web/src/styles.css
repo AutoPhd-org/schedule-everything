@@ -522,6 +522,11 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .suggestion-note:hover { border-style: solid; border-color: var(--accent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
 .suggestion-pill { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 4px 9px; border: 1px dashed color-mix(in oklab, var(--accent) 55%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--accent) 7%, transparent); color: var(--accent-ink); font: 700 12px/1 var(--display); vertical-align: middle; white-space: nowrap; }
 .suggestion-pill svg { width: 13px; height: 13px; }
+/* Suggest asks the model connected in Settings; while it thinks, its sparkle breathes and the page stays usable. */
+.suggest-button svg { color: var(--accent); }
+.suggest-button.is-thinking:disabled { opacity: 1; cursor: progress; }
+.suggest-button.is-thinking svg { animation: suggest-think 1.2s var(--ease) infinite; }
+@keyframes suggest-think { 50% { transform: scale(.78) rotate(18deg); opacity: .45; } }
 .dialog-suggestion { display: flex; align-items: flex-start; gap: 8px; margin: 4px 0 14px; padding: 10px 12px; border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--line-strong)); border-radius: 14px; font-size: 13px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
 .dialog-suggestion svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; color: var(--accent); }
 @keyframes suggestion-in { from { opacity: 0; transform: translateY(-6px) scale(.97); } }
@@ -1691,8 +1696,19 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .content.enter .day-panel .highlight { animation: rise .6s var(--ease) both; animation-delay: calc(.2s + var(--i) * 90ms); }
 
 /* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
-.display-card h2, .language-card h2 { display: flex; align-items: center; gap: 8px; }
-.display-card h2 svg, .language-card h2 svg { color: var(--accent); }
+.display-card h2, .language-card h2, .ai-card h2 { display: flex; align-items: center; gap: 8px; }
+.display-card h2 svg, .language-card h2 svg, .ai-card h2 svg { color: var(--accent); }
+/* Settings → AI suggestions. */
+.ai-providers { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 14px; }
+.ai-provider-note { margin: 8px 0 0; font-size: 12px; }
+.ai-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
+.ai-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }
+.ai-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+.ai-key-saved { display: flex; align-items: center; gap: 6px; margin: -6px 0 0; color: var(--muted); font-size: 12px; }
+.ai-key-saved svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
+.ai-key-saved .text-button { margin-left: auto; }
+.ai-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 14px; }
+.ai-privacy { font-size: 11.5px; line-height: 1.55; }
 .language-switch { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 12px; }
 .setting-block { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; margin: 18px 0 6px; }
 .setting-copy { display: grid; gap: 3px; min-width: 0; flex: 1 1 240px; }

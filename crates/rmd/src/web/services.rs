@@ -789,6 +789,7 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "timedDone": timed_done_today(current),
         "suggestions": crate::web::suggestions::snapshot_rows(),
         "plugins": crate::plugins::snapshot_rows(&load_task_types()),
+        "ai": crate::web::ai::snapshot_row(),
     }))
 }
 
@@ -1470,7 +1471,7 @@ pub fn habit_mark(payload: &Dict) -> WebResult {
 // =============================================================================
 
 /// The most recent finished tasks (newest first); `None` for all of them.
-fn history_rows(count: Option<usize>) -> Vec<Value> {
+pub(crate) fn history_rows(count: Option<usize>) -> Vec<Value> {
     let log_entries = load_task_log();
     if log_entries.is_empty() {
         return Vec::new();

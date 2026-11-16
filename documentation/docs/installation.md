@@ -115,7 +115,8 @@ The installer also copies the plugin to `~/SCHEDULE_MANAGEMENT/plugins/schedule-
 so Antigravity users can run `agy plugin install ~/SCHEDULE_MANAGEMENT/plugins/schedule-everything`
 instead of cloning. See [AI agent plugins](ai-agents.md) for the skills and
 example prompts. The agent sends what it reads to its own model provider;
-Schedule Everything itself makes no AI calls.
+Schedule Everything itself makes no AI calls unless you connect a model for
+the optional [Suggest](browser.md#ask-a-model-for-suggestions) button.
 
 ## Browser workspace
 

@@ -554,10 +554,7 @@ async fn post(server: Arc<BrowserServer>, request: Request) -> Response {
                 );
             }
             let lock = server.operation_lock.clone();
-            let response = tokio::task::spawn_blocking(move || {
-                let _guard = lock.lock().unwrap_or_else(|p| p.into_inner());
-                api::dispatch(&payload)
-            })
+            let response = tokio::task::spawn_blocking(move || api::dispatch_locked(&payload, &lock))
             .await
             .unwrap_or_else(
                 |e| json!({"ok": false, "error": {"code": "internal_error", "message": e.to_string(), "details": {}}}),
