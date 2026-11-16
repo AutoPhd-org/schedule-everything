@@ -231,6 +231,26 @@ describe("AI suggestions", () => {
   });
 });
 
+describe("opening the workspace", () => {
+  it("chooses how rmd web opens the workspace, a window by default", async () => {
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush();
+    expect(root.querySelector('[data-open-in="window"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".open-note")?.textContent).toContain("A window of its own.");
+    send.mockImplementation(async (command: string, payload: Record<string, unknown> = {}) => command === "open_in_set" ? {openIn: payload.openIn} : {});
+    click('[data-open-in="app"]'); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("open_in_set", {openIn: "app"});
+    expect(root.querySelector('[data-open-in="app"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector('[data-open-in="window"]')?.getAttribute("aria-pressed")).toBe("false");
+    expect(root.querySelector(".open-note")?.textContent).toContain("without tabs or an address bar");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("rmd web now opens the workspace in an app window.");
+    // The redrawn card still answers clicks.
+    click('[data-open-in="tab"]'); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("open_in_set", {openIn: "tab"});
+    expect(root.querySelector(".notice-text")?.textContent).toBe("rmd web now opens the workspace in a tab.");
+  });
+});
+
 describe("daily overview", () => {
   afterEach(() => window.localStorage.removeItem("schedule-everything-display"));
   const after = (first: Element, second: Element) => !!(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);

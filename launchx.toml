@@ -6,8 +6,8 @@
 # to LaunchX while it runs). See documentation/docs/advanced/launchx.md.
 #
 # This manifest runs the development build of this checkout
-# (`cargo build -p rmd`). An installed copy runs `rmd` from PATH instead:
-# run = ["rmd", "serve"] and cli = "rmd".
+# (`cargo build -p rmd`). The installer writes its own copy for the installed
+# binary (~/SCHEDULE_MANAGEMENT/launchx.toml) and registers that one instead.
 #
 # The reminder service (`rmd daemon`) is not listed: it still runs under its
 # own launchd agent or systemd unit.

@@ -19,6 +19,7 @@ use crate::commands::settings::SettingsModel;
 use crate::config::{ScheduleConfig, WeeklySchedule};
 use crate::config_check::{config_file_name, validate_content};
 use crate::data::load_mode;
+use crate::opener::{self, OpenIn};
 use crate::py::{self, Dict};
 use crate::web::services::{WebError, WebResult, invalid, os_error, require_text, utf8_error};
 use crate::{i18n, paths};
@@ -158,6 +159,7 @@ pub fn workspace_info(_payload: &Dict) -> WebResult {
         "rootDir": runtime_paths.root_dir.display().to_string(),
         "mode": load_mode(),
         "language": i18n::get_language(),
+        "openIn": OpenIn::configured().as_str(),
     }))
 }
 
@@ -169,26 +171,44 @@ pub fn language_set(payload: &Dict) -> WebResult {
     let Some(language) = i18n::normalize_language(&requested) else {
         return Err(invalid(format!("unsupported language: {requested}. Use one of {}.", i18n::LANGUAGES.join(", "))));
     };
+    save_setting("language", language)?;
+    Ok(json!({"language": i18n::get_language()}))
+}
+
+/// Save `[settings] open_workspace_in`: whether `rmd web` opens the workspace
+/// in a window of its own, an app window, or a tab (see [`crate::opener`]).
+pub fn open_in_set(payload: &Dict) -> WebResult {
+    let requested = require_text(payload, "openIn")?;
+    let Some(how) = OpenIn::parse(&requested) else {
+        return Err(invalid(format!("unknown choice: {requested}. Use one of {}.", opener::CHOICES.join(", "))));
+    };
+    save_setting(opener::SETTING, how.as_str())?;
+    Ok(json!({"openIn": OpenIn::configured().as_str()}))
+}
+
+/// Set `[settings] <key>` to the text `value` in the active settings.toml,
+/// editing only that line when it can.
+fn save_setting(key: &str, value: &str) -> WebResult<()> {
     let settings_path = crate::web::services::snapshot_runtime_paths().settings_path;
-    if let Some(edited) = with_language(&read(&settings_path)?, language) {
+    if let Some(edited) = with_setting(&read(&settings_path)?, key, value) {
         std::fs::write(&settings_path, edited).map_err(|e| {
             WebError::new("storage_error", format!("failed to save settings: {}", os_error(&e, &settings_path)))
         })?;
     } else {
         let mut model = SettingsModel::new(&settings_path)
             .map_err(|e| WebError::new("config_error", format!("failed to load settings: {e}")))?;
-        model.set("settings", "language", json!(language));
+        model.set("settings", key, json!(value));
         model.save().map_err(|e| WebError::new("storage_error", format!("failed to save settings: {e}")))?;
     }
-    Ok(json!({"language": i18n::get_language()}))
+    Ok(())
 }
 
-/// `content` (a settings.toml) with `[settings] language` set to `language`,
-/// changing only that line so the file's comments and layout stay as they
-/// are. `None` when it cannot be done that way and still mean the same as the
-/// file with only the language changed; the caller then rewrites the file.
-fn with_language(content: &str, language: &str) -> Option<String> {
-    let assignment = format!("language = \"{language}\"");
+/// `content` (a settings.toml) with `[settings] <key>` set to the text
+/// `value`, changing only that line so the file's comments and layout stay as
+/// they are. `None` when it cannot be done that way and still mean the same as
+/// the file with only that setting changed; the caller then rewrites the file.
+fn with_setting(content: &str, key_name: &str, value: &str) -> Option<String> {
+    let assignment = format!("{key_name} = \"{value}\"");
     let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
     let mut section = String::new();
     let mut header = None;
@@ -203,7 +223,7 @@ fn with_language(content: &str, language: &str) -> Option<String> {
             continue;
         }
         let Some((key, value)) = line.split_once('=') else { continue };
-        if section != "settings" || key.trim() != "language" {
+        if section != "settings" || key.trim() != key_name {
             continue;
         }
         // Keep whatever follows the quoted value, such as a comment.
@@ -223,7 +243,7 @@ fn with_language(content: &str, language: &str) -> Option<String> {
     let edited = lines.join("\n") + "\n";
     let mut expected = crate::config::parse_toml_str(content).ok()?;
     let settings = expected.entry("settings").or_insert_with(|| json!({})).as_object_mut()?;
-    settings.insert("language".into(), json!(language));
+    settings.insert(key_name.into(), json!(value));
     (crate::config::parse_toml_str(&edited).ok()? == expected).then_some(edited)
 }
 
@@ -458,24 +478,27 @@ mod tests {
     fn language_edits_only_its_own_line() {
         let template = "# Settings\n[settings]\nalarm_interval = 5  # seconds\nlanguage = \"en\"  # \"en\", \"zh\", \"es\", or \"ko\"\n\n[task_types]\n1 = \"Work\"\n";
         assert_eq!(
-            with_language(template, "ko").unwrap(),
+            with_setting(template, "language", "ko").unwrap(),
             template.replace("language = \"en\"  #", "language = \"ko\"  #")
         );
-        assert_eq!(with_language("[settings]\nlanguage='zh'\n", "es").unwrap(), "[settings]\nlanguage = \"es\"\n");
+        assert_eq!(
+            with_setting("[settings]\nlanguage='zh'\n", "language", "es").unwrap(),
+            "[settings]\nlanguage = \"es\"\n"
+        );
         // A language key in another table is not the setting; the setting goes under [settings].
         assert_eq!(
-            with_language("[tasks]\nlanguage = \"x\"\n\n[settings]\nsound = 1 # loud\n", "zh").unwrap(),
+            with_setting("[tasks]\nlanguage = \"x\"\n\n[settings]\nsound = 1 # loud\n", "language", "zh").unwrap(),
             "[tasks]\nlanguage = \"x\"\n\n[settings]\nlanguage = \"zh\"\nsound = 1 # loud\n"
         );
-        assert_eq!(with_language("", "ko").unwrap(), "[settings]\nlanguage = \"ko\"\n\n");
+        assert_eq!(with_setting("", "language", "ko").unwrap(), "[settings]\nlanguage = \"ko\"\n\n");
         assert_eq!(
-            with_language("# mine\n[task_types]\n1 = \"Work\"\n", "es").unwrap(),
+            with_setting("# mine\n[task_types]\n1 = \"Work\"\n", "language", "es").unwrap(),
             "[settings]\nlanguage = \"es\"\n\n# mine\n[task_types]\n1 = \"Work\"\n"
         );
         // Shapes it cannot edit in place are left to the full rewrite.
-        assert_eq!(with_language("[settings]\nlanguage = [\"en\"]\n", "zh"), None);
-        assert_eq!(with_language("[settings]\n\"language\" = \"en\"\n", "zh"), None);
-        assert_eq!(with_language("not toml [", "zh"), None);
+        assert_eq!(with_setting("[settings]\nlanguage = [\"en\"]\n", "language", "zh"), None);
+        assert_eq!(with_setting("[settings]\n\"language\" = \"en\"\n", "language", "zh"), None);
+        assert_eq!(with_setting("not toml [", "language", "zh"), None);
     }
 
     #[test]
@@ -499,6 +522,22 @@ mod tests {
         // A file the line edit cannot handle is rewritten whole, and still gets the language.
         env.write("user_config_0/settings.toml", "[settings]\nlanguage = [\"en\"]\n");
         assert_eq!(language_set(&payload(json!({"language": "ko"}))).unwrap(), json!({"language": "ko"}));
+    }
+
+    #[test]
+    fn open_in_set_saves_how_rmd_web_opens_the_workspace() {
+        let env = TestEnv::with_fixture();
+        assert_eq!(workspace_info(&Dict::new()).unwrap()["openIn"], json!("window"));
+        for choice in ["app", "Tab", "window"] {
+            let saved = choice.to_lowercase();
+            assert_eq!(open_in_set(&payload(json!({"openIn": choice}))).unwrap(), json!({"openIn": saved}));
+            assert_eq!(workspace_info(&Dict::new()).unwrap()["openIn"], json!(saved));
+        }
+        let settings = std::fs::read_to_string(env.root().join("user_config_0/settings.toml")).unwrap();
+        assert!(settings.contains("[settings]\nopen_workspace_in = \"window\"\n"), "{settings}");
+        assert!(settings.contains("alarm_interval = 5  # seconds between alarm repeats"), "{settings}");
+        let error = open_in_set(&payload(json!({"openIn": "popup"}))).unwrap_err();
+        assert_eq!(error.message, "unknown choice: popup. Use one of window, app, tab.");
     }
 
     #[test]

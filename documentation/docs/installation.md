@@ -48,7 +48,8 @@ The script:
 *   stops a running reminder service first and starts it again on the new binary, so upgrading from an older (Python-based) installation keeps the service running;
 *   creates your config root in `~/.schedule_management/config` with a first `user_config_0` version (an existing config is kept);
 *   prompts for missing required config values one by one (time blocks, reminders, and task types are your own lists, so entries you removed are not asked for again; their examples are offered only when a whole section is missing);
-*   registers the background service (LaunchAgent on macOS, systemd user service on Linux).
+*   registers the background service (LaunchAgent on macOS, systemd user service on Linux);
+*   when [LaunchX](advanced/launchx.md) is installed, writes `~/SCHEDULE_MANAGEMENT/launchx.toml` and registers it, in place of a source checkout's manifest, so LaunchX runs the installed binary; a workspace running under LaunchX is restarted on it.
 
 Then start the service:
 

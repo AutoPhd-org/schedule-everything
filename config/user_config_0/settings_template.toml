@@ -5,6 +5,7 @@ max_alarm_duration = 300  # maximum alarm duration in seconds (5 minutes)
 skip_days = ["sunday"]
 language = "en"  # Language: "en" English, "zh" Chinese (中文), "es" Spanish (Español), "ko" Korean (한국어). Default is "en".
 show_tasks_after_change = true  # If true, rmd add/rm prints the rmd ls task table after saving.
+# open_workspace_in = "window"  # How rmd web opens the browser workspace: "window" (default, a window of its own), "app" (a window without tabs; Chromium browsers), or "tab".
 
 [time_blocks]
 # time in minutes

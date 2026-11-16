@@ -1,7 +1,7 @@
 // Shared markup helpers, icons, and color assignments for the browser workspace.
 // Every page module builds HTML strings with these helpers; user text must pass through escapeHtml.
 import {
-  AlarmClock, ArrowDownRight, ArrowLeft, Ban, BicepsFlexed, Blocks, BookOpenText, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown,
+  AlarmClock, AppWindow, ArrowDownRight, ArrowLeft, Ban, BicepsFlexed, Blocks, BookOpenText, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown,
   ChevronLeft, ChevronRight, ChevronsDownUp, BellRing, ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Crown,
   Dumbbell, Ellipsis, Feather, Repeat, Flag, Flame, Gauge, GalleryHorizontalEnd, GripVertical, History, Hourglass, Languages, LayoutDashboard,
   LayoutGrid, Leaf, Lightbulb, ListChecks, ListPlus, ListTodo, MapPin, Medal, Monitor, Moon, Orbit, Palette, PartyPopper, Pencil, Percent, Plus,
@@ -36,7 +36,7 @@ export const icons = {
   gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale),
   glossary: icon(BookOpenText), blocks: icon(Blocks), week: icon(CalendarRange), history: icon(History), puzzle: icon(Puzzle), sigma: icon(Sigma),
   bulb: icon(Lightbulb), pin: icon(MapPin), crown: icon(Crown), percent: icon(Percent), dumbbell: icon(Dumbbell), medal: icon(Medal),
-  muscle: icon(BicepsFlexed)
+  muscle: icon(BicepsFlexed), window: icon(AppWindow)
 };
 
 /** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */
