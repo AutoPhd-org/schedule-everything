@@ -25,6 +25,11 @@ use crate::web::services::{default_task_type, load_task_types};
 pub const PENDING: &str = "pending";
 pub const ACCEPTED: &str = "accepted";
 pub const REJECTED: &str = "rejected";
+/// What the user said about the kind of task a suggestion is: they want more
+/// like it, or fewer. Agents read it (`rmd suggest context`), and so does the
+/// board's Suggest button.
+pub const MORE_LIKE: &str = "more";
+pub const LESS_LIKE: &str = "less";
 /// The most suggestions that can wait for review at once, so a runaway agent
 /// cannot bury the board.
 pub const MAX_PENDING: usize = 20;
@@ -104,6 +109,11 @@ pub fn id_of(item: &Dict) -> String {
 
 pub fn description_of(item: &Dict) -> String {
     item.get("description").and_then(Value::as_str).map(|d| d.trim().to_string()).unwrap_or_default()
+}
+
+/// [`MORE_LIKE`], [`LESS_LIKE`], or none.
+pub fn feedback_of(item: &Dict) -> Option<&str> {
+    item.get("feedback").and_then(Value::as_str).filter(|f| *f == MORE_LIKE || *f == LESS_LIKE)
 }
 
 /// `pending` (also for an entry without a status), `accepted`, or `rejected`.
@@ -372,6 +382,7 @@ pub fn suggestion_row(item: &Dict, task_types: &Dict) -> Value {
         "suggestedAt": text("suggested_at"),
         "status": status_of(item),
         "decidedAt": text("decided_at"),
+        "feedback": feedback_of(item),
         "plugin": item.get("plugin").filter(|data| data.is_object()),
     })
 }

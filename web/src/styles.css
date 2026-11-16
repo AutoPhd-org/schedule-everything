@@ -514,6 +514,12 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .suggestion-actions .suggestion-adjust:hover { border-color: var(--accent); color: var(--accent-ink); }
 .suggestion-actions .suggestion-reject { margin-left: auto; border-color: transparent; background: transparent; color: var(--muted); }
 .suggestion-actions .suggestion-reject:hover { color: var(--critical-ink); background: color-mix(in oklab, var(--critical) 9%, transparent); }
+.suggestion-tune { display: flex; flex-wrap: wrap; gap: 2px; margin: 6px 0 0 -6px; }
+.suggestion-tune button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 600; transition: background .2s, color .2s; }
+.suggestion-tune svg { width: 13px; height: 13px; }
+.suggestion-tune button:hover { background: var(--surface-sunk); color: var(--text); }
+.suggestion-tune .suggestion-more[aria-pressed="true"] { background: color-mix(in oklab, var(--accent) 10%, transparent); color: var(--accent-ink); }
+.suggestion-tune .suggestion-less:hover { color: var(--critical-ink); }
 .suggestion.is-leaving { pointer-events: none; animation: suggestion-out .4s var(--ease) forwards; }
 /* A folded group only says how many suggestions wait, and opens to show them. */
 .suggestion-note { display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 10px; padding: 9px 12px; border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--line-strong)); border-radius: 16px; background: color-mix(in oklab, var(--accent) 6%, transparent); color: var(--text); font-size: 12px; text-align: left; transition: border-color .2s, background .2s; }
@@ -1701,6 +1707,8 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 /* Settings → AI suggestions. */
 .ai-providers { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 14px; }
 .ai-provider-note { margin: 8px 0 0; font-size: 12px; }
+.ai-auth { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 12px; }
+.ai-provider-note code { font-size: 11.5px; }
 .ai-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .ai-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }
 .ai-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }

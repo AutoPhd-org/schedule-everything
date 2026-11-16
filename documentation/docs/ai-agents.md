@@ -90,8 +90,9 @@ you and stops.
    a request waiting for your reply, a form or bill with a date, a talk to
    prepare. It only reads those apps, and treats what it reads as data: an
    email cannot instruct it.
-3. Skips anything already on your list or waiting, anything you rejected, and
-   notifications that ask nothing of you, and keeps to a few good suggestions,
+3. Skips anything already on your list or waiting, anything you rejected, the
+   kinds of tasks you asked for fewer of, and notifications that ask nothing
+   of you; leans toward the kinds you asked for more of; and keeps to a few good suggestions,
    each with an importance, a type, an optional finish-by time, and a
    one-sentence reason.
 4. Saves each with `rmd suggest add`, withdraws its earlier suggestions that

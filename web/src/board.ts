@@ -308,7 +308,7 @@ function suggestionList(group: TaskGroup, tasks: number, now: number): string {
 }
 
 /** A suggested task: who suggested it and where they found it, what it would be, why, and the choice to add it to
- *  the user's tasks (as it is, or adjusted first) or reject it. */
+ *  the user's tasks (as it is, or adjusted first) or reject it, and to ask for more or fewer tasks like it. */
 export function suggestionCard(item: SuggestionItem, position: number, now = Date.now()): string {
   const name = e(item.description);
   const level = item.priority >= 8 ? "high" : item.priority >= 5 ? "medium" : "low";
@@ -326,6 +326,10 @@ export function suggestionCard(item: SuggestionItem, position: number, now = Dat
         <button type="button" class="suggestion-accept" data-suggestion-accept="${e(item.id)}" aria-label="${e(t("Add {task} to your tasks", {task: item.description}))}">${icons.check}<span>${t("Add to my tasks")}</span></button>
         <button type="button" class="suggestion-adjust" data-suggestion-adjust="${e(item.id)}" aria-label="${e(t("Adjust {task}, then add it", {task: item.description}))}" title="${t("Change it, then add it")}">${icons.edit}<span>${t("Adjust")}</span></button>
         <button type="button" class="suggestion-reject" data-suggestion-reject="${e(item.id)}" aria-label="${e(t("Reject {task}", {task: item.description}))}" title="${t("Not for me")}">${icons.close}<span>${t("Reject")}</span></button>
+      </div>
+      <div class="suggestion-tune">
+        <button type="button" class="suggestion-more" data-suggestion-more="${e(item.id)}" aria-pressed="${item.feedback === "more"}" aria-label="${e(t("More tasks like {task}", {task: item.description}))}" title="${t("Ask for more ideas like this one")}">${icons.thumbsUp}<span>${t("More like this")}</span></button>
+        <button type="button" class="suggestion-less" data-suggestion-less="${e(item.id)}" aria-label="${e(t("Fewer tasks like {task}", {task: item.description}))}" title="${t("Turn it down, and get fewer ideas like it")}">${icons.thumbsDown}<span>${t("Fewer like this")}</span></button>
       </div>
     </article>`;
 }

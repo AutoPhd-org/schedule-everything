@@ -16,7 +16,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { AiProvider, AiSettings, AiSuggestResult, BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { AiAuth, AiProvider, AiSettings, AiSuggestResult, BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
 import { DEFAULT_THRESHOLDS, describeLoad, exactLoad, levelInfo, loadBlend, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
@@ -43,7 +43,7 @@ type AgentTab = "claude" | "codex" | "antigravity";
 /** Suggestions from a model the user connects in Settings: its settings once loaded, the provider shown in the
  *  Settings card (saved or not), whether Suggest is waiting for an answer, whether to bring the card into view
  *  when it loads, and whether suggestions arrived while the page could not be redrawn. */
-type AiState = {settings: AiSettings | null; provider: AiProvider | null; suggesting: boolean; focus: boolean; stale: boolean};
+type AiState = {settings: AiSettings | null; provider: AiProvider | null; auth: AiAuth | null; suggesting: boolean; focus: boolean; stale: boolean};
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
@@ -151,7 +151,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     closedTimers: loadClosedTimers(),
     prefs: loadPrefs(),
     daily: null,
-    ai: {settings: null, provider: null, suggesting: false, focus: false, stale: false}
+    ai: {settings: null, provider: null, auth: null, suggesting: false, focus: false, stale: false}
   };
   setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
@@ -1041,9 +1041,10 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   /** Whether the page can be redrawn without getting in the way: nothing is being saved, edited, or typed. */
   const quiet = () => !state.busy && state.page !== "settings" && !root.querySelector("dialog[open]") && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "");
-  /** Ask the model for suggestions. The page stays usable while it thinks; what it suggests then joins the board
-   *  as suggestions to review. Without a model connected, Settings opens at the card that connects one. */
-  async function suggestTasks() {
+  /** Ask the model for suggestions, or with `like`, for more like that one. The page stays usable while it thinks;
+   *  what it suggests then joins the board as suggestions to review. Without a model connected, Settings opens at
+   *  the card that connects one. */
+  async function suggestTasks(options: {like?: SuggestionItem} = {}) {
     const s = state.snapshot;
     if (!s || state.ai.suggesting) return;
     if (!s.ai?.ready) {
@@ -1056,12 +1057,14 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const agent = s.ai.agent;
     state.ai.suggesting = true;
     state.undo = null;
-    state.notice = t("Asking {agent} for task ideas. You can keep working meanwhile.", {agent});
+    state.notice = options.like
+      ? t("Asking {agent} for more like “{task}”. You can keep working meanwhile.", {agent, task: options.like.description})
+      : t("Asking {agent} for task ideas. You can keep working meanwhile.", {agent});
     refreshSuggestButtons();
     status();
     let notice: string;
     try {
-      const result = await request<AiSuggestResult>("ai_suggest");
+      const result = await request<AiSuggestResult>("ai_suggest", options.like ? {like: options.like.id} : {});
       const count = result.added.length + result.updated.length;
       state.ai.suggesting = false;
       if (quiet()) await reload({morph: true});
@@ -1089,28 +1092,38 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const provider = state.ai.provider ?? settings.provider;
     const connection = settings.providers[provider];
     const anthropic = provider === "anthropic";
+    const savedAuth = connection.auth ?? "apiKey";
+    const token = anthropic && (state.ai.auth ?? savedAuth) === "token";
     const service = serviceOf(provider, connection.baseUrl || connection.defaultBaseUrl);
-    const status = provider !== settings.provider
-      ? `<p class="ai-status">${t("Save to use this provider for Suggest.")}</p>`
+    const unsaved = provider !== settings.provider ? t("Save to use this provider for Suggest.") : anthropic && (state.ai.auth ?? savedAuth) !== savedAuth ? t("Save to sign in this way.") : "";
+    const status = unsaved
+      ? `<p class="ai-status">${unsaved}</p>`
       : settings.ready
         ? `<p class="ai-status is-ready">${icons.check}<span>${settings.agent === settings.model ? t("Suggest asks {agent}.", {agent: e(settings.agent)}) : t("Suggest asks {agent} ({model}).", {agent: e(settings.agent), model: e(settings.model)})}</span></p>`
-        : `<p class="ai-status">${anthropic ? t("Add an API key to turn on Suggest.") : t("Choose a model to turn on Suggest.")}</p>`;
-    const keyPlaceholder = connection.hasKey ? t("Paste a new key to replace the saved one") : anthropic ? t("Paste your API key") : t("Paste your API key, if your service needs one");
+        : `<p class="ai-status">${token ? t("Add an auth token to turn on Suggest.") : anthropic ? t("Add an API key to turn on Suggest.") : t("Choose a model to turn on Suggest.")}</p>`;
+    const hasSecret = token ? !!connection.hasToken : connection.hasKey;
+    const keyPlaceholder = token
+      ? hasSecret ? t("Paste a new token to replace the saved one") : t("Paste the token from claude setup-token")
+      : hasSecret ? t("Paste a new key to replace the saved one") : anthropic ? t("Paste your API key") : t("Paste your API key, if your service needs one");
+    const secretSaved = token ? t("Token saved, ending in {hint}.", {hint: e(connection.tokenHint ?? "…")}) : t("Key saved, ending in {hint}.", {hint: e(connection.keyHint ?? "…")});
     const providers: [AiProvider, string][] = [["anthropic", t("Claude (Anthropic)")], ["openai", t("OpenAI-compatible")]];
+    const auths: [AiAuth, string][] = [["apiKey", t("API key")], ["token", t("Auth token")]];
+    const authSwitch = anthropic ? `<div class="layout-switch ai-auth" role="group" aria-label="${t("Sign in with")}">${auths.map(([id, label]) => `<button type="button" data-ai-auth="${id}" aria-pressed="${(id === "token") === token}">${label}</button>`).join("")}</div>` : "";
     return `<article class="card ai-card" id="ai-card">${heading}
       <p class="muted">${t("The Suggest button on the task board asks a model for tasks you may need, from your situation right now. Its ideas wait on the board as suggestions until you add or reject them.")}</p>
       <div class="layout-switch ai-providers" role="group" aria-label="${t("Provider")}">${providers.map(([id, label]) => `<button type="button" data-ai-provider="${id}" aria-pressed="${id === provider}">${label}</button>`).join("")}</div>
-      <p class="muted ai-provider-note">${anthropic ? t("Uses the Anthropic API with your own key.") : t("OpenAI, OpenRouter, a local Ollama, or any service with an OpenAI-style chat completions API.")}</p>
+      <p class="muted ai-provider-note">${token ? t("Signs in to the Anthropic API with an auth token, such as the one <code>claude setup-token</code> prints.") : anthropic ? t("Uses the Anthropic API with your own key.") : t("OpenAI, OpenRouter, a local Ollama, or any service with an OpenAI-style chat completions API.")}</p>
+      ${authSwitch}
       ${status}
-      <label>${t("API key")}<input type="password" name="aiKey" autocomplete="off" spellcheck="false" placeholder="${e(keyPlaceholder)}"></label>
-      ${connection.hasKey ? `<p class="ai-key-saved">${icons.check}<span>${t("Key saved, ending in {hint}.", {hint: e(connection.keyHint ?? "…")})}</span><button type="button" class="text-button" data-ai-clear-key>${t("Remove")}</button></p>` : ""}
+      <label>${token ? t("Auth token") : t("API key")}<input type="password" name="aiKey" autocomplete="off" spellcheck="false" placeholder="${e(keyPlaceholder)}"></label>
+      ${hasSecret ? `<p class="ai-key-saved">${icons.check}<span>${secretSaved}</span><button type="button" class="text-button" data-ai-clear-key>${t("Remove")}</button></p>` : ""}
       <div class="ai-pair">
         <label>${t("Model")}<input name="aiModel" value="${e(connection.model)}" placeholder="${e(connection.defaultModel ?? t("Model name from your service"))}" autocomplete="off" spellcheck="false"></label>
         <label>${t("Address (optional)")}<input name="aiBaseUrl" value="${e(connection.baseUrl)}" placeholder="${e(connection.defaultBaseUrl)}" autocomplete="off" spellcheck="false" inputmode="url"></label>
       </div>
       <label>${t("Suggestions per press")}<input type="number" name="aiCount" min="1" max="${settings.limits.maxCount}" step="1" inputmode="numeric" value="${settings.count}"></label>
       <label>${t("What to keep in mind (optional)")}<textarea name="aiInstructions" rows="3" maxlength="${settings.limits.instructions}" placeholder="${e(t("For example: I’m writing my thesis this month. Keep weekends light."))}">${e(settings.instructions)}</textarea></label>
-      <p class="muted ai-privacy">${t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`})}</p>
+      <p class="muted ai-privacy">${token ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The token stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`}) : t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`})}</p>
       <div class="button-row"><button type="button" class="button primary" data-ai-save>${icons.check}<span>${t("Save")}</span></button></div>
     </article>`;
   }
@@ -1147,6 +1160,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       redrawAiCard(aiShared(card));
       root.querySelector<HTMLButtonElement>(`#ai-card [data-ai-provider="${provider}"]`)?.focus();
     });
+    card.querySelectorAll<HTMLButtonElement>("[data-ai-auth]").forEach(btn => btn.onclick = () => {
+      const auth = btn.dataset.aiAuth as AiAuth;
+      if (auth === (state.ai.auth ?? settings.providers.anthropic.auth ?? "apiKey")) return;
+      state.ai.auth = auth;
+      redrawAiCard(aiShared(card));
+      root.querySelector<HTMLButtonElement>(`#ai-card [data-ai-auth="${auth}"]`)?.focus();
+    });
     // The privacy note names where the data goes as the address is typed, before it is saved.
     card.querySelector<HTMLInputElement>('[name="aiBaseUrl"]')?.addEventListener("input", event => {
       const provider = state.ai.provider ?? settings.provider;
@@ -1155,27 +1175,44 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
     card.querySelector<HTMLButtonElement>("[data-ai-save]")!.onclick = () => void action(() => saveAi(card));
     card.querySelector<HTMLButtonElement>("[data-ai-clear-key]")?.addEventListener("click", () => {
-      if (!window.confirm(t("Remove the saved API key from this computer? Suggest stops working until you add one again."))) return;
-      void action(() => saveAi(card, {clearKey: true}));
+      const token = aiAuth() === "token";
+      if (!window.confirm(token ? t("Remove the saved auth token from this computer? Suggest stops working until you add one again.") : t("Remove the saved API key from this computer? Suggest stops working until you add one again."))) return;
+      void action(() => saveAi(card, token ? {clearToken: true} : {clearKey: true}));
     });
     card.querySelectorAll<HTMLInputElement>("input").forEach(input => input.addEventListener("keydown", event => {
       if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void action(() => saveAi(card)); }
     }));
   }
+  /** How the card signs in to Anthropic: as chosen on it, else as saved. Other providers use a key. */
+  function aiAuth(): AiAuth {
+    const settings = state.ai.settings;
+    if (!settings || (state.ai.provider ?? settings.provider) !== "anthropic") return "apiKey";
+    return state.ai.auth ?? settings.providers.anthropic.auth ?? "apiKey";
+  }
   async function saveAi(card: HTMLElement, extra: Record<string, unknown> = {}) {
     const value = (name: string) => card.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`)!.value;
     const key = value("aiKey").trim();
+    const provider = state.ai.provider ?? state.ai.settings!.provider;
+    const auth = aiAuth();
     const saved = await request<AiSettings>("ai_settings_save", {
-      provider: state.ai.provider ?? state.ai.settings!.provider, model: value("aiModel"), baseUrl: value("aiBaseUrl"),
-      count: Number(value("aiCount")), instructions: value("aiInstructions"), ...(key ? {apiKey: key} : {}), ...extra
+      provider, model: value("aiModel"), baseUrl: value("aiBaseUrl"),
+      count: Number(value("aiCount")), instructions: value("aiInstructions"), ...(provider === "anthropic" ? {auth} : {}),
+      ...(key ? {[auth === "token" ? "authToken" : "apiKey"]: key} : {}), ...extra
     });
     state.ai.settings = saved;
     state.ai.provider = saved.provider;
+    state.ai.auth = saved.providers.anthropic.auth ?? null;
     if (state.snapshot) state.snapshot.ai = {ready: saved.ready, agent: saved.agent};
     redrawAiCard();
+    // A pasted Anthropic secret is saved as what it is, which may not be what the card was set to.
+    const recognized = provider === "anthropic" && key && saved.providers.anthropic.auth !== auth;
     state.notice = extra.clearKey
       ? t("The API key was removed from this computer.")
-      : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
+      : extra.clearToken
+        ? t("The auth token was removed from this computer.")
+        : recognized
+          ? saved.providers.anthropic.auth === "token" ? t("Saved. That was an auth token, so Suggest signs in with it.") : t("Saved. That was an API key, so Suggest signs in with it.")
+          : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
   }
   /** Load the AI settings for the Settings page, and bring the card into view when Suggest sent the user here. */
   async function loadAi() {
@@ -1185,6 +1222,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (!settings?.providers?.anthropic || !settings.providers.openai) return;
       state.ai.settings = settings;
       state.ai.provider = settings.provider;
+      state.ai.auth = settings.providers.anthropic.auth ?? null;
     } catch (error) {
       state.notice = error instanceof Error ? error.message : String(error);
       status();
@@ -1218,6 +1256,27 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       const item = find(btn.dataset.suggestionReject);
       if (item) rejectSuggestion(item, btn);
     });
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-more]").forEach(btn => btn.onclick = () => {
+      const item = find(btn.dataset.suggestionMore);
+      if (item) void moreLike(item);
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-less]").forEach(btn => btn.onclick = () => {
+      const item = find(btn.dataset.suggestionLess);
+      if (item) rejectSuggestion(item, btn, {fewer: true});
+    });
+  }
+  /** More like this: remember it, so the connected model and agents lean toward such tasks, then ask the connected
+   *  model for more in the same vein right away. The suggestion itself stays for review. */
+  async function moreLike(item: SuggestionItem) {
+    const ask = !!state.snapshot?.ai?.ready && !state.ai.suggesting;
+    let noted = false;
+    await action(async () => {
+      await request("suggestion_feedback", {id: item.id, feedback: "more"});
+      noted = true;
+      await reload({morph: true});
+      if (!ask) state.notice = t("Noted: more like “{task}”. Suggestions lean toward tasks like it from now on.", {task: item.description});
+    });
+    if (noted && ask) await suggestTasks({like: item});
   }
   /** Add a suggestion to the user's tasks, as it is or with `adjust` (description, priority, type, due), and greet
    *  it on the board as one of their own. The notice can take it back. */
@@ -1232,15 +1291,23 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     offerUndo(t("Added “{task}” to {type}. It’s one of your tasks now.", {task: description, type: typeName(state.snapshot!, type)}), () => takeBack(item, result.undo));
     status();
   }
-  function rejectSuggestion(item: SuggestionItem, pressed: HTMLElement) {
+  /** Reject a suggestion; with `fewer`, also ask for fewer like it from now on. The notice can take it back. */
+  function rejectSuggestion(item: SuggestionItem, pressed: HTMLElement, options: {fewer?: boolean} = {}) {
     void action(async () => {
       const exit = leave(pressed.closest<HTMLElement>(".suggestion"));
       let result: {undo: Record<string, unknown>};
-      try { result = await request<{undo: Record<string, unknown>}>("suggestion_reject", {id: item.id}); }
+      try {
+        result = options.fewer
+          ? await request<{undo: Record<string, unknown>}>("suggestion_feedback", {id: item.id, feedback: "less"})
+          : await request<{undo: Record<string, unknown>}>("suggestion_reject", {id: item.id});
+      }
       catch (error) { exit.revert(); throw error; }
       await exit.done;
       await reload({morph: true});
-      offerUndo(t("Rejected “{task}”. It stays off your list.", {task: item.description}), () => takeBack(item, result.undo));
+      const notice = options.fewer
+        ? t("Rejected “{task}”. Suggestions lean away from tasks like it from now on.", {task: item.description})
+        : t("Rejected “{task}”. It stays off your list.", {task: item.description});
+      offerUndo(notice, () => takeBack(item, result.undo));
     });
   }
   /** Undo an accept or a reject: the suggestion waits for review again. */

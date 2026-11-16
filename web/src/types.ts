@@ -54,6 +54,8 @@ export type SuggestionItem = {
   /** Who suggested it, such as Claude. */
   agent: string;
   suggestedAt?: string | null;
+  /** The user asked for more suggestions like it, or fewer. */
+  feedback?: "more" | "less" | null;
   /** Data for the plugin that owns its type, such as a workout the agent planned. */
   plugin?: Record<string, unknown> | null;
 };
@@ -258,7 +260,13 @@ export type Snapshot = {
 export type AiStatus = {ready: boolean; agent: string};
 export type AiProvider = "anthropic" | "openai";
 /** One provider's connection as the browser sees it: whether a key is saved and how it ends, never the key. */
-export type AiConnection = {model: string; baseUrl: string; hasKey: boolean; keyHint: string | null; defaultModel: string | null; defaultBaseUrl: string};
+/** How Suggest signs in to Anthropic: an API key, or an auth token such as `claude setup-token` prints. */
+export type AiAuth = "apiKey" | "token";
+/** `auth`, `hasToken`, and `tokenHint` come only with Anthropic's connection. */
+export type AiConnection = {
+  model: string; baseUrl: string; hasKey: boolean; keyHint: string | null; defaultModel: string | null; defaultBaseUrl: string;
+  auth?: AiAuth; hasToken?: boolean; tokenHint?: string | null;
+};
 /** Settings → AI suggestions: the provider in use, each provider's connection, and the options for Suggest. */
 export type AiSettings = {
   provider: AiProvider; count: number; instructions: string; ready: boolean; agent: string; model: string;
