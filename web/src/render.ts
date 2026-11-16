@@ -16,7 +16,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { AiProvider, AiSettings, AiSuggestResult, BridgeClient, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
 import { DEFAULT_THRESHOLDS, describeLoad, exactLoad, levelInfo, loadBlend, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
@@ -40,11 +40,15 @@ type BoardState = {
   order: string[] | null; fresh: boolean; subtaskComposer: SubtaskComposer | null;
 };
 type AgentTab = "claude" | "codex" | "antigravity";
+/** Suggestions from a model the user connects in Settings: its settings once loaded, the provider shown in the
+ *  Settings card (saved or not), whether Suggest is waiting for an answer, whether to bring the card into view
+ *  when it loads, and whether suggestions arrived while the page could not be redrawn. */
+type AiState = {settings: AiSettings | null; provider: AiProvider | null; suggesting: boolean; focus: boolean; stale: boolean};
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
 /** Deadline timers the user closed, by deadline name and date (see timerKey). */
-type State = {page: Page; glossary: string | null; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null};
+type State = {page: Page; glossary: string | null; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null; ai: AiState};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -146,7 +150,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null, order: null, fresh: true, subtaskComposer: null},
     closedTimers: loadClosedTimers(),
     prefs: loadPrefs(),
-    daily: null
+    daily: null,
+    ai: {settings: null, provider: null, suggesting: false, focus: false, stale: false}
   };
   setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
@@ -186,6 +191,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
    *  `then` runs right after the redraw. */
   async function reload(options: {morph?: boolean; then?: () => void} = {}) {
     state.snapshot = await request<Snapshot>("status_snapshot");
+    state.ai.stale = false;
     // Progress and subtasks still on their way to the server win over what the server had a moment ago.
     for (const [description, progress] of progressPending) {
       const task = state.snapshot.tasks.find(item => item.description === description);
@@ -317,6 +323,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (page === "activity") void refreshActivity();
     if (page === "today") void refreshDaily();
     if (page === "glossary") void refreshGlossary();
+    if (page === "settings") void loadAi();
+    // Suggestions that arrived while the page was busy show up now.
+    if (state.ai.stale) void reload().catch(() => {});
   }
 
   // ----- Glossary ------------------------------------------------------------------------------------------
@@ -551,6 +560,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const plugin = pluginPageId(state.page) === null ? null : pluginById(s, pluginPageId(state.page)!);
     if (plugin) bindPluginPage(root, plugin, host);
     bindPluginControls(root, host);
+    root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach(btn => btn.onclick = () => void suggestTasks());
+    bindAi(root);
   }
 
   async function runAction(id: string) {
@@ -1011,6 +1022,183 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindTaskExtras(scope, host);
   }
 
+  // ----- Suggestions from a model connected in Settings ------------------------------
+
+  /** The board's Suggest button: asks the connected model for task ideas, which wait on the board for review. */
+  function suggestButton(s: Snapshot) {
+    const thinking = state.ai.suggesting;
+    const tip = s.ai?.ready
+      ? t("Ask {agent} for task ideas from your tasks, deadlines, and today’s schedule. They wait on the board until you add them.", {agent: s.ai.agent})
+      : t("Connect a model in Settings to get task ideas.");
+    return `<button type="button" class="button suggest-button ${thinking ? "is-thinking" : ""}" data-suggest data-tip="${e(tip)}" ${thinking ? `disabled aria-busy="true"` : ""}>${icons.spark}<span>${thinking ? t("Thinking…") : t("Suggest")}</span></button>`;
+  }
+  /** Show the Suggest buttons as they are now, leaving the rest of the page alone. */
+  function refreshSuggestButtons() {
+    const s = state.snapshot;
+    if (!s) return;
+    root.querySelectorAll<HTMLElement>("[data-suggest]").forEach(btn => { btn.outerHTML = suggestButton(s); });
+    root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach(btn => btn.onclick = () => void suggestTasks());
+  }
+  /** Whether the page can be redrawn without getting in the way: nothing is being saved, edited, or typed. */
+  const quiet = () => !state.busy && state.page !== "settings" && !root.querySelector("dialog[open]") && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "");
+  /** Ask the model for suggestions. The page stays usable while it thinks; what it suggests then joins the board
+   *  as suggestions to review. Without a model connected, Settings opens at the card that connects one. */
+  async function suggestTasks() {
+    const s = state.snapshot;
+    if (!s || state.ai.suggesting) return;
+    if (!s.ai?.ready) {
+      state.ai.focus = true;
+      navigate("settings");
+      state.notice = t("Connect a model here first. Then Suggest on the task board asks it for ideas.");
+      status();
+      return;
+    }
+    const agent = s.ai.agent;
+    state.ai.suggesting = true;
+    state.undo = null;
+    state.notice = t("Asking {agent} for task ideas. You can keep working meanwhile.", {agent});
+    refreshSuggestButtons();
+    status();
+    let notice: string;
+    try {
+      const result = await request<AiSuggestResult>("ai_suggest");
+      const count = result.added.length + result.updated.length;
+      state.ai.suggesting = false;
+      if (quiet()) await reload({morph: true});
+      else state.ai.stale = true;
+      notice = count
+        ? tn("{agent} suggested {count} task. It waits on the board for your review.", "{agent} suggested {count} tasks. They wait on the board for your review.", count, {agent: result.agent})
+        : result.skipped.length
+          ? t("{agent} had no new ideas: what it thought of is already on your list or was turned down before.", {agent: result.agent})
+          : t("{agent} has nothing to suggest right now.", {agent: result.agent});
+    } catch (error) {
+      notice = error instanceof Error ? error.message : String(error);
+    }
+    state.ai.suggesting = false;
+    state.notice = notice;
+    refreshSuggestButtons();
+    status();
+  }
+
+  /** Settings → AI suggestions: which model Suggest asks, its key, and what to ask for. The saved key never comes
+   *  back to the page; the card shows only how it ends. */
+  function aiCard() {
+    const settings = state.ai.settings;
+    const heading = `<h2>${icons.spark} ${t("AI suggestions")}</h2>`;
+    if (!settings) return `<article class="card ai-card" id="ai-card">${heading}<p class="muted">${t("Loading…")}</p></article>`;
+    const provider = state.ai.provider ?? settings.provider;
+    const connection = settings.providers[provider];
+    const anthropic = provider === "anthropic";
+    const service = serviceOf(provider, connection.baseUrl || connection.defaultBaseUrl);
+    const status = provider !== settings.provider
+      ? `<p class="ai-status">${t("Save to use this provider for Suggest.")}</p>`
+      : settings.ready
+        ? `<p class="ai-status is-ready">${icons.check}<span>${settings.agent === settings.model ? t("Suggest asks {agent}.", {agent: e(settings.agent)}) : t("Suggest asks {agent} ({model}).", {agent: e(settings.agent), model: e(settings.model)})}</span></p>`
+        : `<p class="ai-status">${anthropic ? t("Add an API key to turn on Suggest.") : t("Choose a model to turn on Suggest.")}</p>`;
+    const keyPlaceholder = connection.hasKey ? t("Paste a new key to replace the saved one") : anthropic ? t("Paste your API key") : t("Paste your API key, if your service needs one");
+    const providers: [AiProvider, string][] = [["anthropic", t("Claude (Anthropic)")], ["openai", t("OpenAI-compatible")]];
+    return `<article class="card ai-card" id="ai-card">${heading}
+      <p class="muted">${t("The Suggest button on the task board asks a model for tasks you may need, from your situation right now. Its ideas wait on the board as suggestions until you add or reject them.")}</p>
+      <div class="layout-switch ai-providers" role="group" aria-label="${t("Provider")}">${providers.map(([id, label]) => `<button type="button" data-ai-provider="${id}" aria-pressed="${id === provider}">${label}</button>`).join("")}</div>
+      <p class="muted ai-provider-note">${anthropic ? t("Uses the Anthropic API with your own key.") : t("OpenAI, OpenRouter, a local Ollama, or any service with an OpenAI-style chat completions API.")}</p>
+      ${status}
+      <label>${t("API key")}<input type="password" name="aiKey" autocomplete="off" spellcheck="false" placeholder="${e(keyPlaceholder)}"></label>
+      ${connection.hasKey ? `<p class="ai-key-saved">${icons.check}<span>${t("Key saved, ending in {hint}.", {hint: e(connection.keyHint ?? "…")})}</span><button type="button" class="text-button" data-ai-clear-key>${t("Remove")}</button></p>` : ""}
+      <div class="ai-pair">
+        <label>${t("Model")}<input name="aiModel" value="${e(connection.model)}" placeholder="${e(connection.defaultModel ?? t("Model name from your service"))}" autocomplete="off" spellcheck="false"></label>
+        <label>${t("Address (optional)")}<input name="aiBaseUrl" value="${e(connection.baseUrl)}" placeholder="${e(connection.defaultBaseUrl)}" autocomplete="off" spellcheck="false" inputmode="url"></label>
+      </div>
+      <label>${t("Suggestions per press")}<input type="number" name="aiCount" min="1" max="${settings.limits.maxCount}" step="1" inputmode="numeric" value="${settings.count}"></label>
+      <label>${t("What to keep in mind (optional)")}<textarea name="aiInstructions" rows="3" maxlength="${settings.limits.instructions}" placeholder="${e(t("For example: I’m writing my thesis this month. Keep weekends light."))}">${e(settings.instructions)}</textarea></label>
+      <p class="muted ai-privacy">${t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`})}</p>
+      <div class="button-row"><button type="button" class="button primary" data-ai-save>${icons.check}<span>${t("Save")}</span></button></div>
+    </article>`;
+  }
+  /** Who receives what Suggest sends: Anthropic, or the host at the address of an OpenAI-compatible service. */
+  function serviceOf(provider: AiProvider, address: string) {
+    if (provider === "anthropic") return "Anthropic";
+    try { return new URL(address).host; } catch { return t("your service"); }
+  }
+  /** The options both providers share, as typed but maybe not saved yet. */
+  const aiShared = (card: HTMLElement) => ({
+    count: card.querySelector<HTMLInputElement>('[name="aiCount"]')!.value,
+    instructions: card.querySelector<HTMLTextAreaElement>('[name="aiInstructions"]')!.value
+  });
+  /** Draw the AI card again in place, keeping `keep` (unsaved shared options) in its fields. */
+  function redrawAiCard(keep?: {count: string; instructions: string}) {
+    const card = root.querySelector<HTMLElement>("#ai-card");
+    if (!card) return;
+    card.outerHTML = aiCard();
+    const fresh = root.querySelector<HTMLElement>("#ai-card")!;
+    if (keep && state.ai.settings) {
+      fresh.querySelector<HTMLInputElement>('[name="aiCount"]')!.value = keep.count;
+      fresh.querySelector<HTMLTextAreaElement>('[name="aiInstructions"]')!.value = keep.instructions;
+    }
+    bindAi(root);
+  }
+  function bindAi(scope: ParentNode) {
+    const card = scope.querySelector<HTMLElement>("#ai-card");
+    const settings = state.ai.settings;
+    if (!card || !settings) return;
+    card.querySelectorAll<HTMLButtonElement>("[data-ai-provider]").forEach(btn => btn.onclick = () => {
+      const provider = btn.dataset.aiProvider as AiProvider;
+      if (provider === (state.ai.provider ?? settings.provider)) return;
+      state.ai.provider = provider;
+      redrawAiCard(aiShared(card));
+      root.querySelector<HTMLButtonElement>(`#ai-card [data-ai-provider="${provider}"]`)?.focus();
+    });
+    // The privacy note names where the data goes as the address is typed, before it is saved.
+    card.querySelector<HTMLInputElement>('[name="aiBaseUrl"]')?.addEventListener("input", event => {
+      const provider = state.ai.provider ?? settings.provider;
+      const address = (event.target as HTMLInputElement).value.trim() || settings.providers[provider].defaultBaseUrl;
+      card.querySelector("[data-ai-service]")!.textContent = serviceOf(provider, address);
+    });
+    card.querySelector<HTMLButtonElement>("[data-ai-save]")!.onclick = () => void action(() => saveAi(card));
+    card.querySelector<HTMLButtonElement>("[data-ai-clear-key]")?.addEventListener("click", () => {
+      if (!window.confirm(t("Remove the saved API key from this computer? Suggest stops working until you add one again."))) return;
+      void action(() => saveAi(card, {clearKey: true}));
+    });
+    card.querySelectorAll<HTMLInputElement>("input").forEach(input => input.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void action(() => saveAi(card)); }
+    }));
+  }
+  async function saveAi(card: HTMLElement, extra: Record<string, unknown> = {}) {
+    const value = (name: string) => card.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`)!.value;
+    const key = value("aiKey").trim();
+    const saved = await request<AiSettings>("ai_settings_save", {
+      provider: state.ai.provider ?? state.ai.settings!.provider, model: value("aiModel"), baseUrl: value("aiBaseUrl"),
+      count: Number(value("aiCount")), instructions: value("aiInstructions"), ...(key ? {apiKey: key} : {}), ...extra
+    });
+    state.ai.settings = saved;
+    state.ai.provider = saved.provider;
+    if (state.snapshot) state.snapshot.ai = {ready: saved.ready, agent: saved.agent};
+    redrawAiCard();
+    state.notice = extra.clearKey
+      ? t("The API key was removed from this computer.")
+      : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
+  }
+  /** Load the AI settings for the Settings page, and bring the card into view when Suggest sent the user here. */
+  async function loadAi() {
+    try {
+      const settings = await request<AiSettings>("ai_settings_read");
+      // An answer without both providers' connections is not one the card can show.
+      if (!settings?.providers?.anthropic || !settings.providers.openai) return;
+      state.ai.settings = settings;
+      state.ai.provider = settings.provider;
+    } catch (error) {
+      state.notice = error instanceof Error ? error.message : String(error);
+      status();
+      return;
+    }
+    if (state.page !== "settings") return;
+    redrawAiCard();
+    if (!state.ai.focus) return;
+    state.ai.focus = false;
+    const card = root.querySelector<HTMLElement>("#ai-card");
+    card?.scrollIntoView?.({block: "center", behavior: reducedMotion() ? "auto" : "smooth"});
+    card?.querySelector<HTMLInputElement>(state.ai.settings.provider === "anthropic" ? '[name="aiKey"]' : '[name="aiModel"]')?.focus({preventScroll: true});
+  }
+
   // ----- Task board: suggestions from AI agents ----------------------------------
 
   const suggestionsOf = (s: Snapshot) => s.suggestions ?? [];
@@ -1436,11 +1624,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   const searchPill = () => `<label class="search-pill">${icons.search}<input class="search" name="search" aria-label="${t("Search tasks")}" placeholder="${t("Find a task…")}" value="${e(state.search)}"></label>`;
   function overviewP(s: Snapshot) {
-    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} ${t("P MODE · GO WITH THE FLOW")}</p><h1>${t("Tasks by type")}<span class="accent-dot">.</span></h1><p class="muted">${t("{tasks} open tasks. No clock to chase. Pick whatever pulls you in.", {tasks: s.tasks.length})}${suggestionPill(s)}</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${button("add-task", t("New task"), icons.plus, "button primary")}</div></div>
+    return `<div class="page-heading p-heading"><div><p class="eyebrow">${icons.feather} ${t("P MODE · GO WITH THE FLOW")}</p><h1>${t("Tasks by type")}<span class="accent-dot">.</span></h1><p class="muted">${t("{tasks} open tasks. No clock to chase. Pick whatever pulls you in.", {tasks: s.tasks.length})}${suggestionPill(s)}</p></div><div class="heading-actions">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}${suggestButton(s)}${button("add-task", t("New task"), icons.plus, "button primary")}</div></div>
       ${timerArea(s)}${boardArea(s, true)}${dayPanel(dayOptions(s))}`;
   }
   function taskSection(s: Snapshot) {
-    return `<div class="section-heading board-heading"><div><h2>${t("Tasks by type")} <span class="count">${s.tasks.length}</span>${suggestionPill(s)}</h2><p class="muted">${spread() ? t("Groups sit by workload: the heaviest in the middle, lighter ones farther out.") : t("Groups with more important work come first.")} ${t("They keep their places while you work here, and are arranged anew when you come back.")}</p></div><div class="board-tools">${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
+    return `<div class="section-heading board-heading"><div><h2>${t("Tasks by type")} <span class="count">${s.tasks.length}</span>${suggestionPill(s)}</h2><p class="muted">${spread() ? t("Groups sit by workload: the heaviest in the middle, lighter ones farther out.") : t("Groups with more important work come first.")} ${t("They keep their places while you work here, and are arranged anew when you come back.")}</p></div><div class="board-tools">${suggestButton(s)}${searchPill()}${foldSwitch(state.board.view)}${layoutSwitch(state.prefs.layout)}</div></div>${timerArea(s)}${boardArea(s, false)}`;
   }
   function timeline(s: Snapshot) {
     const events = s.schedule.events;
@@ -1530,7 +1718,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${aiCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------

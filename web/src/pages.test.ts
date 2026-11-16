@@ -5,7 +5,7 @@ import { GLOSSARY_IDS } from "./glossary";
 import { axisTones, layoutTree, packLabels, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
-import type { BridgeClient, ConferencePayload, DailyOverview, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
+import type { AiSettings, BridgeClient, ConferencePayload, DailyOverview, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
 import { addDays } from "./ui";
 
 const snapshot: Snapshot = {
@@ -121,6 +121,113 @@ describe("planning modes", () => {
     expect(send).toHaveBeenCalledWith("service_action", {action: "mode", mode: "p"});
     expect(root.querySelector(".status-grid")).toBeNull();
     expect(root.querySelector('[data-mode-choice="p"]')?.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("AI suggestions", () => {
+  const settings = (extra: Partial<AiSettings> = {}): AiSettings => ({
+    provider: "anthropic", count: 5, instructions: "", ready: false, agent: "Claude", model: "claude-opus-5-5",
+    providers: {
+      anthropic: {model: "", baseUrl: "", hasKey: false, keyHint: null, defaultModel: "claude-opus-5-5", defaultBaseUrl: "https://api.anthropic.com"},
+      openai: {model: "", baseUrl: "", hasKey: false, keyHint: null, defaultModel: null, defaultBaseUrl: "https://api.openai.com/v1"}
+    },
+    limits: {maxCount: 10, instructions: 1000},
+    ...extra
+  });
+  const suggestion = {id: "1", description: "Draft the methods section", priority: 7, type: "2", typeName: "Writing", due: null, alarmFrom: null, reason: "Your notes are open.", source: null, agent: "Claude", suggestedAt: null, status: "pending", decidedAt: null};
+  /** The client, answering Suggest and the AI settings as the server would. */
+  function connect(ready: boolean, answer: () => Promise<unknown>) {
+    let suggested = false;
+    let saved = settings({ready});
+    send.mockImplementation(async (command: string, payload: Record<string, unknown> = {}) => {
+      if (command === "status_snapshot") return {...structuredClone(snapshot), ai: {ready: saved.ready, agent: "Claude"}, suggestions: suggested ? [suggestion] : []};
+      if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
+      if (command === "daily_overview") return structuredClone(daily);
+      if (command === "ai_suggest") { const result = await answer(); suggested = true; return result; }
+      if (command === "ai_settings_read") return structuredClone(saved);
+      if (command === "ai_settings_save") {
+        const hasKey = typeof payload.apiKey === "string" || saved.providers.anthropic.hasKey;
+        saved = settings({ready: hasKey, count: Number(payload.count), instructions: String(payload.instructions)});
+        saved.providers.anthropic = {...saved.providers.anthropic, hasKey, keyHint: hasKey ? "…abcd" : null};
+        return structuredClone(saved);
+      }
+      return {};
+    });
+  }
+
+  it("asks the connected model from the board, and shows its ideas there once it answers", async () => {
+    let answer!: (value: unknown) => void;
+    connect(true, () => new Promise(resolve => { answer = resolve; }));
+    await renderApp(root, client);
+    const suggest = root.querySelector<HTMLButtonElement>("[data-suggest]")!;
+    expect(suggest.textContent).toBe("Suggest");
+    expect(suggest.dataset.tip).toContain("Ask Claude for task ideas");
+    suggest.click(); await flush();
+    expect(send).toHaveBeenCalledWith("ai_suggest", {});
+    const thinking = root.querySelector<HTMLButtonElement>("[data-suggest]")!;
+    expect(thinking.disabled).toBe(true);
+    expect(thinking.textContent).toBe("Thinking…");
+    expect(root.querySelector(".notice-text")?.textContent).toContain("Asking Claude for task ideas");
+    // The page stays usable while the model thinks.
+    expect(root.querySelector<HTMLButtonElement>('[data-action="refresh"]')?.disabled).toBe(false);
+
+    answer({agent: "Claude", added: ["Draft the methods section"], updated: [], skipped: []});
+    await flush(); await flush(); await flush();
+    expect(root.querySelector('[data-suggestion="1"]')?.textContent).toContain("Draft the methods section");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Claude suggested 1 task. It waits on the board for your review.");
+    expect(root.querySelector<HTMLButtonElement>("[data-suggest]")?.disabled).toBe(false);
+  });
+
+  it("says why when the model cannot help, and has a button in P mode too", async () => {
+    mode = "p";
+    connect(true, async () => { throw new Error("Claude could not make suggestions (HTTP 401): invalid x-api-key."); });
+    await renderApp(root, client);
+    expect(root.querySelector(".heading-actions [data-suggest]")).not.toBeNull();
+    click("[data-suggest]"); await flush(); await flush();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Claude could not make suggestions (HTTP 401): invalid x-api-key.");
+    expect(root.querySelector("[data-suggestion]")).toBeNull();
+    expect(root.querySelector<HTMLButtonElement>("[data-suggest]")?.textContent).toBe("Suggest");
+  });
+
+  it("opens Settings at the AI card when no model is connected, and saves a key without showing it again", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    expect(root.querySelector<HTMLElement>("[data-suggest]")?.dataset.tip).toBe("Connect a model in Settings to get task ideas.");
+    click("[data-suggest]"); await flush(); await flush();
+    expect(send).not.toHaveBeenCalledWith("ai_suggest", expect.anything());
+    expect(root.querySelector(".page-settings #ai-card")).not.toBeNull();
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Add an API key to turn on Suggest.");
+    const key = root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')!;
+    expect(key.type).toBe("password");
+    expect(document.activeElement).toBe(key);
+
+    key.value = "sk-ant-secret-0123abcd";
+    root.querySelector<HTMLInputElement>('#ai-card [name="aiCount"]')!.value = "3";
+    root.querySelector<HTMLTextAreaElement>('#ai-card [name="aiInstructions"]')!.value = "Keep weekends light.";
+    click("[data-ai-save]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("ai_settings_save", {provider: "anthropic", model: "", baseUrl: "", count: 3, instructions: "Keep weekends light.", apiKey: "sk-ant-secret-0123abcd"});
+    expect(root.querySelector('#ai-card [name="aiKey"]')?.getAttribute("value")).toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')!.value).toBe("");
+    expect(root.querySelector(".ai-key-saved")?.textContent).toContain("Key saved, ending in …abcd.");
+    expect(root.innerHTML).not.toContain("sk-ant-secret");
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Suggest asks Claude (claude-opus-5-5).");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. Press Suggest on the task board to get ideas from Claude.");
+  });
+
+  it("switches providers without losing the options typed so far", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    root.querySelector<HTMLTextAreaElement>('#ai-card [name="aiInstructions"]')!.value = "Thesis first.";
+    click('[data-ai-provider="openai"]');
+    expect(root.querySelector('[data-ai-provider="openai"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiBaseUrl"]')?.placeholder).toBe("https://api.openai.com/v1");
+    expect(root.querySelector<HTMLTextAreaElement>('#ai-card [name="aiInstructions"]')?.value).toBe("Thesis first.");
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Save to use this provider for Suggest.");
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("to api.openai.com.");
+    const address = root.querySelector<HTMLInputElement>('#ai-card [name="aiBaseUrl"]')!;
+    address.value = "http://localhost:11434/v1"; address.dispatchEvent(new Event("input"));
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("to localhost:11434.");
   });
 });
 

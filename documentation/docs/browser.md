@@ -284,6 +284,38 @@ line that opens the group. Search finds suggestions as well as tasks. New
 suggestions appear within 30 seconds while the page is open, or at once with
 **Refresh**.
 
+### Ask a model for suggestions
+
+**Suggest**, beside the board's search (and beside **New task** in P mode),
+asks a language model for a few tasks you are likely to need and have not
+written down. Its ideas arrive as suggestions in their type's groups, labeled
+with who suggested them and why, and you add, adjust, or reject them like any
+agent's. The page stays usable while the model thinks; the button reads
+**Thinking…** until it answers.
+
+Connect a model once in **Settings → AI suggestions**:
+
+- **Claude (Anthropic)**: paste an Anthropic API key. The model defaults to
+  `claude-opus-5-5`; type another Claude model to use it instead.
+- **OpenAI-compatible**: any service with an OpenAI-style chat completions
+  API, such as OpenAI, OpenRouter, or a local Ollama
+  (`http://localhost:11434/v1`). Give the model name and, unless it is OpenAI
+  itself, the address. A local server may need no key.
+
+You can also set how many suggestions one press asks for (1 to 10, five by
+default) and, in your own words, what the model should keep in mind ("I'm
+writing my thesis this month"). Each provider keeps its own key, model, and
+address, so switching between them loses nothing.
+
+Each press sends the model your open tasks with their progress and steps,
+your deadlines, today's schedule and habits, your recent finished work, your
+profile, and the suggestions waiting for review or turned down lately, so it
+does not repeat them. Nothing else is sent, and nothing is sent until you
+press **Suggest**. The settings, key included, are saved in `.ai.json` in your
+config root, readable only by you. The page never shows the key again, only
+how it ends. Ideas already on your list or turned down before are skipped,
+and at most 20 suggestions wait at once.
+
 ### Progress, subtasks, and timers
 
 Every task has a **Progress** slider from 0 to 100%. Drag it, or focus it and use
@@ -586,8 +618,10 @@ deletes the token, so turning phone access back on pairs phones anew.
 ## Local storage and access
 
 The server binds only to `127.0.0.1`, unless you turn on phone access. It checks
-the host, request origin, and session token before accepting API calls. It does not upload the local database
-and makes no AI requests. If you use an agent plugin, the agent sends what it
+the host, request origin, and session token before accepting API calls. It does not upload the local database,
+and it makes no AI requests unless you connect a model for
+[Suggest](#ask-a-model-for-suggestions); then each press sends your situation
+to the provider you chose. If you use an agent plugin, the agent sends what it
 reads to its own model provider. Browser settings edits are validated before saving and reject
 stale revisions. Saving changes reloads the installer-managed reminder service
 when available; standalone installs report when that helper is absent.

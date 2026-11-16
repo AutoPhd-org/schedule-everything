@@ -21,8 +21,8 @@ pub const VIEW_COMMANDS: [&str; 5] =
 
 /// Everything the workspace page shows when it loads: `workspace` (config
 /// sets, mode, language), today's `schedule`, `tasks`, `deadlines`,
-/// `habits`, `suggestions` and `plugins` (the `status_snapshot` command's
-/// fields), and `views`, which names the commands for the rest.
+/// `habits`, `suggestions`, `plugins` and `ai` (the `status_snapshot`
+/// command's fields), and `views`, which names the commands for the rest.
 pub fn document() -> WebResult {
     let mut state = Map::new();
     state.insert("workspace".into(), workspace::workspace_info(&Dict::new())?);
@@ -105,6 +105,7 @@ mod tests {
                 "timedDone",
                 "suggestions",
                 "plugins",
+                "ai",
                 "views"
             ]
         );

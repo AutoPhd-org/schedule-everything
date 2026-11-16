@@ -132,6 +132,7 @@ contains no tokens. It carries an `ETag`; send it back as `If-None-Match` to get
 | `timedDone` | Timed tasks finished today. |
 | `suggestions` | Tasks suggested by agents, waiting for review. |
 | `plugins` | Plugins with their settings, state and log. |
+| `ai` | Whether the Suggest button is connected to a model (`ready`) and who it asks (`agent`). Never the API key. |
 | `views` | The commands of `POST /api` behind the views the document leaves out, because they take a parameter or are large: `daily_overview`, `weekly_overview`, `task_history`, `conference_calendar`, `config_read`. |
 
 Within a major version, fields are only added.

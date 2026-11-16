@@ -20,3 +20,6 @@ pnpm-workspace.yaml
 
 # Rust build output
 /target/
+
+# Settings for AI suggestions, with the API key
+config/.ai.json

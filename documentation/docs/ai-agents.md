@@ -160,7 +160,9 @@ task list changes only when you accept one.
 ## Privacy
 
 :::info[Your files stay local]
-Schedule Everything makes no AI calls and has no server. Your agent reads and
+Schedule Everything has no server of its own, and it makes no AI calls unless
+you connect a model for the browser's
+[Suggest](browser.md#ask-a-model-for-suggestions) button. Your agent reads and
 writes your local schedule files and sends what it reads to **its own model
 provider**, under that agent's terms. Without an agent, everything else (the
 CLI, reminders, and the browser workspace) works the same.

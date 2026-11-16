@@ -41,7 +41,7 @@
     </td>
     <td width="33%" valign="top">
       <h3>🔒 Local and plain text</h3>
-      Your routine is TOML and your tasks and history are JSON, all on your computer. There is no account and no cloud service, and the app makes no AI calls itself: your agent talks to its own model provider.
+      Your routine is TOML and your tasks and history are JSON, all on your computer. There is no account and no cloud service. The app makes no AI calls unless you connect a model to its optional Suggest button; agents talk to their own model provider.
     </td>
   </tr>
 </table>
@@ -187,6 +187,12 @@ run `rmd mode j|p`.
   statistic includes them. **Add to my tasks** makes one a normal task,
   **Adjust** lets you change it first, and **Reject** turns it down so the
   agent does not suggest it again. Both can be undone.
+- **Suggest.** Paste an API key for Claude, or point it at any
+  OpenAI-compatible service (OpenAI, OpenRouter, a local Ollama), in
+  **Settings → AI suggestions**. **Suggest** on the board then asks that model
+  for a few tasks you are likely to need, from your open tasks, deadlines,
+  today's schedule, habits, recent work, and profile. Its ideas wait on the
+  board as suggestions, like an agent's.
 - **Timers.** Dials above the board count down to timed tasks due by tonight
   (overdue ones count up) and to deadlines in their last 24 hours. One bar
   shows the progress of today's timed work, optionally weighted by importance.

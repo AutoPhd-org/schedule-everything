@@ -1,5 +1,6 @@
 //! Local browser workspace: HTTP server, JSON API, and service operations.
 
+pub mod ai;
 pub mod api;
 pub mod fingerprint;
 pub mod insights;

@@ -251,7 +251,21 @@ export type Snapshot = {
   /** Tasks suggested by AI agents, waiting for review. */
   suggestions?: SuggestionItem[];
   plugins?: PluginItem[];
+  /** Whether the Suggest button is connected to a model, and who it asks. */
+  ai?: AiStatus;
 };
+
+export type AiStatus = {ready: boolean; agent: string};
+export type AiProvider = "anthropic" | "openai";
+/** One provider's connection as the browser sees it: whether a key is saved and how it ends, never the key. */
+export type AiConnection = {model: string; baseUrl: string; hasKey: boolean; keyHint: string | null; defaultModel: string | null; defaultBaseUrl: string};
+/** Settings → AI suggestions: the provider in use, each provider's connection, and the options for Suggest. */
+export type AiSettings = {
+  provider: AiProvider; count: number; instructions: string; ready: boolean; agent: string; model: string;
+  providers: Record<AiProvider, AiConnection>; limits: {maxCount: number; instructions: number};
+};
+/** What one press of Suggest did: suggestions added, ones already waiting that it refreshed, and ideas it skipped. */
+export type AiSuggestResult = {agent: string; added: string[]; updated: string[]; skipped: {description: string; reason: string}[]};
 
 export type BridgeClient = {
   send<T = unknown>(command: string, payload: Record<string, unknown>): Promise<T>;
