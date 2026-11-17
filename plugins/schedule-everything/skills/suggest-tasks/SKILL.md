@@ -30,6 +30,9 @@ Schedule Everything and stop. It prints:
   `source`, `reason`, and `suggestedAt`
 - `decided`: suggestions the user accepted or rejected in the last
   `limits.keepDecidedDays` days, with `status` and `decidedAt`
+- `feedback` on a pending or decided suggestion: `"more"` when the user asked
+  for more tasks like it, `"less"` when they asked for fewer (that one is
+  rejected too), or `null`
 - `limits.maxPending`: how many suggestions can wait at once
 - `plugins`: the workspace plugins the user chose to share with agents (see
   below); an empty list when they shared none
@@ -93,6 +96,8 @@ beats many. Aim for at most five in one run, and never more than
 - it is already in `openTasks` or `pending`, even in other words;
 - it is in `decided` with `status: "rejected"`. The user said no. Do not
   suggest it again unless they ask you to;
+- it is the same kind of task as one with `feedback: "less"`: the same area
+  of life and sort of action. Lean the other way for `feedback: "more"`;
 - it was accepted recently and is presumably done or on the list;
 - it is a newsletter, promotion, receipt, or automatic notification that asks
   nothing of the user;

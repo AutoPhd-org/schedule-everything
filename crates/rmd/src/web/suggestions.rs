@@ -1,6 +1,7 @@
 //! The board's side of agent suggestions (see `crate::suggestions`): show the
 //! pending ones, and let the user accept one (it becomes a normal task, as
-//! suggested or as they adjusted it), reject it, or take either back.
+//! suggested or as they adjusted it), reject it, ask for more or fewer like
+//! it, or take any of these back.
 
 use std::collections::HashSet;
 
@@ -9,8 +10,8 @@ use serde_json::{Value, json};
 use crate::data::{load_task_log, load_tasks, save_task_log};
 use crate::py::{self, Dict};
 use crate::suggestions::{
-    ACCEPTED, PENDING, SuggestionError, description_of, find_pending, id_of, load_suggestions, pending_rows,
-    save_suggestions, status_of,
+    ACCEPTED, LESS_LIKE, MORE_LIKE, PENDING, REJECTED, SuggestionError, description_of, feedback_of, find_pending,
+    id_of, load_suggestions, pending_rows, save_suggestions, status_of,
 };
 use crate::web::services::{
     WebError, WebResult, default_task_type, invalid, iso_date, load_task_types, log_task_or_error, os_error,
@@ -141,9 +142,41 @@ pub fn suggestion_reject(payload: &Dict) -> WebResult {
     Ok(json!({"id": id, "description": description_of(&items[index]), "undo": {"id": id}}))
 }
 
+/// Say what the user thinks of the kind of task a suggestion is.
+/// `feedback` is `more` (more like it: the suggestion stays for review, and the
+/// board can ask the connected model for more in the same vein) or `less`
+/// (fewer like it: the suggestion is turned down too). Agents and the Suggest
+/// button read it next time. The result carries an `undo` token for
+/// `suggestion_undo` when the suggestion was turned down, or `previous` to
+/// restore with another call.
+pub fn suggestion_feedback(payload: &Dict) -> WebResult {
+    let feedback = require_text(payload, "feedback")?;
+    if feedback != MORE_LIKE && feedback != LESS_LIKE {
+        return Err(invalid(format!("feedback must be {MORE_LIKE} or {LESS_LIKE}.")));
+    }
+    let mut items = load_suggestions();
+    let index = pending_index(&items, payload)?;
+    let previous = feedback_of(&items[index]).map(str::to_string);
+    let item = &mut items[index];
+    item.insert("feedback".into(), json!(feedback));
+    item.insert("feedback_at".into(), json!(py::utc_now_isoformat()));
+    if feedback == LESS_LIKE {
+        decide(item, REJECTED);
+    }
+    let id = id_of(item);
+    let description = description_of(item);
+    save_suggestions(&items).map_err(web_error)?;
+    let mut result = json!({"id": id, "description": description, "feedback": feedback, "previous": previous});
+    if feedback == LESS_LIKE {
+        result["undo"] = json!({"id": id, "feedback": previous});
+    }
+    Ok(result)
+}
+
 /// Take back an accept or a reject with the `undo` token it returned: the
 /// suggestion waits for review again, and an accepted one leaves the task list
-/// along with the history entry it wrote.
+/// along with the history entry it wrote. A token with `feedback` also puts
+/// back what the user had said about the suggestion before (none when null).
 pub fn suggestion_undo(payload: &Dict) -> WebResult {
     let id = require_text(payload, "id")?;
     let mut items = load_suggestions();
@@ -190,6 +223,16 @@ pub fn suggestion_undo(payload: &Dict) -> WebResult {
     item.insert("status".into(), json!(PENDING));
     item.shift_remove("decided_at");
     item.shift_remove("accepted_as");
+    match payload.get("feedback") {
+        None => {}
+        Some(Value::String(feedback)) if feedback == MORE_LIKE || feedback == LESS_LIKE => {
+            item.insert("feedback".into(), json!(feedback));
+        }
+        Some(_) => {
+            item.shift_remove("feedback");
+            item.shift_remove("feedback_at");
+        }
+    }
     let description = description_of(item);
     save_suggestions(&items).map_err(web_error)?;
     Ok(json!({"id": id, "description": description}))
@@ -340,6 +383,37 @@ mod tests {
 
         suggestion_undo(&payload(result["undo"].clone())).unwrap();
         assert_eq!(snapshot_rows().len(), 1);
+    }
+
+    #[test]
+    fn more_like_this_keeps_it_and_fewer_like_this_turns_it_down() {
+        let env = env();
+        let stamps = suggest("Buy stamps", NewSuggestion::default());
+        let gym = suggest("Renew gym", NewSuggestion::default());
+
+        let more = suggestion_feedback(&payload(json!({"id": stamps, "feedback": "more"}))).unwrap();
+        assert_eq!(more["feedback"], "more");
+        assert!(more.get("undo").is_none());
+        assert_eq!(snapshot_rows().len(), 2);
+        assert_eq!(snapshot_rows().iter().find(|row| row["id"] == stamps.as_str()).unwrap()["feedback"], "more");
+
+        let less = suggestion_feedback(&payload(json!({"id": gym, "feedback": "less"}))).unwrap();
+        assert_eq!(less["undo"], json!({"id": gym, "feedback": null}));
+        let saved = file(&env, "tasks/suggestions.json");
+        let row = saved.as_array().unwrap().iter().find(|item| item["id"] == gym.as_str()).unwrap().clone();
+        assert_eq!(row["status"], "rejected");
+        assert_eq!(row["feedback"], "less");
+        assert!(row["feedback_at"].as_str().is_some());
+        assert_eq!(snapshot_rows().len(), 1);
+
+        // Undo puts it back for review, and forgets the feedback it never had before.
+        suggestion_undo(&payload(less["undo"].clone())).unwrap();
+        let rows = snapshot_rows();
+        let back = rows.iter().find(|row| row["id"] == gym.as_str()).unwrap();
+        assert_eq!(back["feedback"], Value::Null);
+
+        assert_eq!(code(suggestion_feedback(&payload(json!({"id": stamps, "feedback": "meh"})))), "invalid_input");
+        assert_eq!(code(suggestion_feedback(&payload(json!({"id": "99", "feedback": "more"})))), "not_found");
     }
 
     #[test]

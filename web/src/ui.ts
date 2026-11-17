@@ -6,7 +6,7 @@ import {
   Dumbbell, Ellipsis, Feather, Repeat, Flag, Flame, Gauge, GalleryHorizontalEnd, GripVertical, History, Hourglass, Languages, LayoutDashboard,
   LayoutGrid, Leaf, Lightbulb, ListChecks, ListPlus, ListTodo, MapPin, Medal, Monitor, Moon, Orbit, Palette, PartyPopper, Pencil, Percent, Plus,
   Puzzle, RefreshCw, Scale, Search, Settings2, Shuffle, Sigma, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
-  Trophy, Undo2, Waves, X, Zap
+  ThumbsDown, ThumbsUp, Trophy, Undo2, Waves, X, Zap
 } from "lucide";
 import { locale, msg, t } from "./i18n";
 
@@ -36,7 +36,7 @@ export const icons = {
   gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale),
   glossary: icon(BookOpenText), blocks: icon(Blocks), week: icon(CalendarRange), history: icon(History), puzzle: icon(Puzzle), sigma: icon(Sigma),
   bulb: icon(Lightbulb), pin: icon(MapPin), crown: icon(Crown), percent: icon(Percent), dumbbell: icon(Dumbbell), medal: icon(Medal),
-  muscle: icon(BicepsFlexed), window: icon(AppWindow)
+  muscle: icon(BicepsFlexed), window: icon(AppWindow), thumbsUp: icon(ThumbsUp), thumbsDown: icon(ThumbsDown)
 };
 
 /** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */

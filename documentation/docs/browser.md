@@ -266,7 +266,7 @@ Claude · from Gmail**), with the agent's reason underneath. A **suggested**
 pill beside the board's heading counts what is waiting. Reminders, the task
 counts, the workload, timers, and your statistics leave suggestions out.
 
-Each suggestion has three buttons:
+Each suggestion has three buttons, and two smaller ones under them:
 
 - **Add to my tasks** makes it a normal task in that group, with the
   suggested importance, type, and finish-by time. From then on it is like any
@@ -276,6 +276,15 @@ Each suggestion has three buttons:
   in the form adds it.
 - **Reject** removes it from the board. Agents see that you turned it down,
   and `rmd suggest add` refuses to suggest the same task again.
+- **More like this** says you want more tasks of this kind. The suggestion
+  stays for review, and when a model is connected for
+  [Suggest](#ask-a-model-for-suggestions), it is asked at once for more in
+  the same vein.
+- **Fewer like this** rejects the suggestion and says you want fewer of its
+  kind.
+
+The connected model and agents (`rmd suggest ls --json`) see what you asked
+for more and fewer of, and lean that way the next time they suggest.
 
 The notice after adding or rejecting a suggestion has an **Undo** button that
 puts the suggestion back for review. A type whose only content is a suggestion
@@ -295,12 +304,28 @@ agent's. The page stays usable while the model thinks; the button reads
 
 Connect a model once in **Settings → AI suggestions**:
 
-- **Claude (Anthropic)**: paste an Anthropic API key. The model defaults to
-  `claude-opus-5-5`; type another Claude model to use it instead.
+- **Claude (Anthropic)**: sign in with an Anthropic API key or with an auth
+  token, such as the one `claude setup-token` prints. Choose **API key** or
+  **Auth token** and paste it; a pasted key or token that starts the way
+  Anthropic's do (`sk-ant-api…`, `sk-ant-oat…`) is saved as what it is
+  either way. Both are kept, so switching between them loses neither. The
+  model defaults to `claude-opus-5-5`; type another Claude model to use it
+  instead.
 - **OpenAI-compatible**: any service with an OpenAI-style chat completions
   API, such as OpenAI, OpenRouter, or a local Ollama
   (`http://localhost:11434/v1`). Give the model name and, unless it is OpenAI
   itself, the address. A local server may need no key.
+  - **Codex sign-in** instead of **API key** asks OpenAI through the
+    [Codex CLI](https://github.com/openai/codex) on this computer, with the
+    account it is signed in to: run `codex login` once in a terminal (a
+    ChatGPT account or an API key both work). No key goes into Schedule
+    Everything, and Codex keeps and refreshes its own sign-in. Each press
+    runs `codex exec` in an empty temporary folder with a read-only sandbox,
+    no approvals, none of your Codex settings or rules, and no saved
+    session. The model is Codex's default unless you name one. The card
+    shows where it found Codex and whether it is signed in; it looks on
+    your `PATH` and where Codex's installers put it (such as
+    `~/.local/bin` and `/opt/homebrew/bin`).
 
 You can also set how many suggestions one press asks for (1 to 10, five by
 default) and, in your own words, what the model should keep in mind ("I'm
@@ -309,11 +334,12 @@ address, so switching between them loses nothing.
 
 Each press sends the model your open tasks with their progress and steps,
 your deadlines, today's schedule and habits, your recent finished work, your
-profile, and the suggestions waiting for review or turned down lately, so it
-does not repeat them. Nothing else is sent, and nothing is sent until you
-press **Suggest**. The settings, key included, are saved in `.ai.json` in your
-config root, readable only by you. The page never shows the key again, only
-how it ends. Ideas already on your list or turned down before are skipped,
+profile, the suggestions waiting for review or turned down lately, so it
+does not repeat them, and what you asked for more and fewer of. Nothing else is sent, and nothing is sent until you
+press **Suggest** (or **More like this**). With Codex sign-in, it goes to
+OpenAI through the Codex CLI. The settings, key and token
+included, are saved in `.ai.json` in your config root, readable only by you.
+The page never shows the key or token again, only how it ends. Ideas already on your list or turned down before are skipped,
 and at most 20 suggestions wait at once.
 
 ### Progress, subtasks, and timers

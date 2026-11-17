@@ -25,7 +25,7 @@ fn sync_clear(_payload: &Dict) -> WebResult {
 
 /// Every command the browser can send (except `server_shutdown`, which only
 /// the HTTP server handles).
-pub const COMMANDS: [(&str, Handler); 39] = [
+pub const COMMANDS: [(&str, Handler); 40] = [
     ("config_read", workspace::config_read),
     ("config_save", workspace::config_save),
     ("workspace_info", workspace::workspace_info),
@@ -46,6 +46,7 @@ pub const COMMANDS: [(&str, Handler); 39] = [
     ("suggestion_accept", suggestions::suggestion_accept),
     ("suggestion_reject", suggestions::suggestion_reject),
     ("suggestion_undo", suggestions::suggestion_undo),
+    ("suggestion_feedback", suggestions::suggestion_feedback),
     ("ai_settings_read", ai::ai_settings_read),
     ("ai_settings_save", ai::ai_settings_save),
     (ai::SUGGEST_COMMAND, ai::ai_suggest),

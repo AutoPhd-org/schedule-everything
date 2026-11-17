@@ -136,19 +136,39 @@ describe("AI suggestions", () => {
   });
   const suggestion = {id: "1", description: "Draft the methods section", priority: 7, type: "2", typeName: "Writing", due: null, alarmFrom: null, reason: "Your notes are open.", source: null, agent: "Claude", suggestedAt: null, status: "pending", decidedAt: null};
   /** The client, answering Suggest and the AI settings as the server would. */
-  function connect(ready: boolean, answer: () => Promise<unknown>) {
-    let suggested = false;
+  function connect(ready: boolean, answer: () => Promise<unknown>, options: {suggested?: boolean} = {}) {
+    let suggested = options.suggested ?? false;
+    let feedback: string | null = null;
     let saved = settings({ready});
     send.mockImplementation(async (command: string, payload: Record<string, unknown> = {}) => {
-      if (command === "status_snapshot") return {...structuredClone(snapshot), ai: {ready: saved.ready, agent: "Claude"}, suggestions: suggested ? [suggestion] : []};
+      if (command === "status_snapshot") return {...structuredClone(snapshot), ai: {ready: saved.ready, agent: "Claude"}, suggestions: suggested ? [{...suggestion, feedback}] : []};
       if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
       if (command === "daily_overview") return structuredClone(daily);
       if (command === "ai_suggest") { const result = await answer(); suggested = true; return result; }
       if (command === "ai_settings_read") return structuredClone(saved);
+      if (command === "suggestion_feedback") {
+        feedback = String(payload.feedback);
+        if (feedback === "less") suggested = false;
+        return {id: "1", description: suggestion.description, feedback, previous: null, ...(feedback === "less" ? {undo: {id: "1", feedback: null}} : {})};
+      }
+      if (command === "suggestion_undo") { suggested = true; feedback = null; return {id: "1"}; }
+      if (command === "ai_settings_save" && payload.provider === "openai") {
+        // Codex signs in by itself; the server says whether it found and signed in the Codex CLI.
+        const codex = payload.auth === "codex";
+        saved = settings({provider: "openai", ready: codex, agent: codex ? "Codex" : String(payload.model), model: String(payload.model), count: Number(payload.count), instructions: String(payload.instructions)});
+        saved.providers.openai = {...saved.providers.openai, auth: payload.auth as "apiKey" | "codex", model: String(payload.model)};
+        saved.codex = codex ? {path: "/usr/local/bin/codex", signedIn: true, status: "Logged in using ChatGPT"} : null;
+        return structuredClone(saved);
+      }
       if (command === "ai_settings_save") {
-        const hasKey = typeof payload.apiKey === "string" || saved.providers.anthropic.hasKey;
-        saved = settings({ready: hasKey, count: Number(payload.count), instructions: String(payload.instructions)});
-        saved.providers.anthropic = {...saved.providers.anthropic, hasKey, keyHint: hasKey ? "…abcd" : null};
+        const before = saved.providers.anthropic;
+        // Like the server, a pasted auth token is saved as one, whichever field it came in.
+        const pasted = String(payload.apiKey ?? payload.authToken ?? "");
+        const auth = pasted.startsWith("sk-ant-oat") ? "token" : (payload.auth as "apiKey" | "token" | undefined) ?? before.auth ?? "apiKey";
+        const hasKey = (!!pasted && auth === "apiKey") || before.hasKey;
+        const hasToken = (!!pasted && auth === "token") || !!before.hasToken;
+        saved = settings({ready: auth === "token" ? hasToken : hasKey, count: Number(payload.count), instructions: String(payload.instructions)});
+        saved.providers.anthropic = {...saved.providers.anthropic, auth, hasKey, keyHint: hasKey ? "…abcd" : null, hasToken, tokenHint: hasToken ? "…wxyz" : null};
         return structuredClone(saved);
       }
       return {};
@@ -205,13 +225,96 @@ describe("AI suggestions", () => {
     root.querySelector<HTMLInputElement>('#ai-card [name="aiCount"]')!.value = "3";
     root.querySelector<HTMLTextAreaElement>('#ai-card [name="aiInstructions"]')!.value = "Keep weekends light.";
     click("[data-ai-save]"); await flush(); await flush();
-    expect(send).toHaveBeenCalledWith("ai_settings_save", {provider: "anthropic", model: "", baseUrl: "", count: 3, instructions: "Keep weekends light.", apiKey: "sk-ant-secret-0123abcd"});
+    expect(send).toHaveBeenCalledWith("ai_settings_save", {provider: "anthropic", model: "", baseUrl: "", count: 3, instructions: "Keep weekends light.", auth: "apiKey", apiKey: "sk-ant-secret-0123abcd"});
     expect(root.querySelector('#ai-card [name="aiKey"]')?.getAttribute("value")).toBeNull();
     expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')!.value).toBe("");
     expect(root.querySelector(".ai-key-saved")?.textContent).toContain("Key saved, ending in …abcd.");
     expect(root.innerHTML).not.toContain("sk-ant-secret");
     expect(root.querySelector(".ai-status")?.textContent).toBe("Suggest asks Claude (claude-opus-5-5).");
     expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. Press Suggest on the task board to get ideas from Claude.");
+  });
+
+  it("signs in with an auth token, and keeps it out of the page", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    click('[data-ai-auth="token"]');
+    expect(root.querySelector('[data-ai-auth="token"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector("#ai-card label")?.textContent).toContain("Auth token");
+    expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')?.placeholder).toBe("Paste the token from claude setup-token");
+    expect(root.querySelector(".ai-provider-note")?.textContent).toContain("claude setup-token");
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Save to sign in this way.");
+
+    root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')!.value = "proxy-token-0123wxyz";
+    click("[data-ai-save]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("ai_settings_save", expect.objectContaining({auth: "token", authToken: "proxy-token-0123wxyz"}));
+    expect(root.querySelector(".ai-key-saved")?.textContent).toContain("Token saved, ending in …wxyz.");
+    expect(root.innerHTML).not.toContain("proxy-token");
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("The token stays on this computer");
+  });
+
+  it("recognizes an auth token pasted where the API key goes", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    root.querySelector<HTMLInputElement>('#ai-card [name="aiKey"]')!.value = "sk-ant-oat01-secret";
+    click("[data-ai-save]"); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("ai_settings_save", expect.objectContaining({auth: "apiKey", apiKey: "sk-ant-oat01-secret"}));
+    expect(root.querySelector('[data-ai-auth="token"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. That was an auth token, so Suggest signs in with it.");
+  });
+
+  it("lets OpenAI go through the Codex CLI and its own sign-in", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    click('[data-ai-provider="openai"]');
+    click('[data-ai-auth="codex"]');
+    expect(root.querySelector('[data-ai-auth="codex"]')?.getAttribute("aria-pressed")).toBe("true");
+    // Codex keeps its own sign-in and address, so the card asks for neither.
+    expect(root.querySelector('#ai-card [name="aiKey"]')).toBeNull();
+    expect(root.querySelector('#ai-card [name="aiBaseUrl"]')).toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiModel"]')?.placeholder).toBe("Codex’s default model");
+    expect(root.querySelector(".ai-provider-note")?.textContent).toContain("codex exec");
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("to OpenAI through the Codex CLI");
+
+    click("[data-ai-save]"); await flush(); await flush();
+    const [, sent] = send.mock.calls.find(([command]) => command === "ai_settings_save")!;
+    expect(sent).toEqual({provider: "openai", model: "", count: 5, instructions: "", auth: "codex"});
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Suggest asks Codex.");
+    expect(root.querySelector(".ai-codex")?.textContent).toBe("Codex CLI at /usr/local/bin/codex. Logged in using ChatGPT.");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. Press Suggest on the task board to get ideas from Codex.");
+  });
+
+  it("asks for more like a suggestion, and for fewer, which turns it down", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({matches: query.includes("reduced-motion"), addEventListener: vi.fn()})));
+    connect(true, async () => ({agent: "Claude", added: ["Outline the results"], updated: [], skipped: []}), {suggested: true});
+    await renderApp(root, client);
+    const card = () => root.querySelector('[data-suggestion="1"]');
+    expect(card()?.querySelector("[data-suggestion-more]")?.getAttribute("aria-pressed")).toBe("false");
+
+    click('[data-suggestion-more="1"]'); await flush(); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_feedback", {id: "1", feedback: "more"});
+    expect(send).toHaveBeenCalledWith("ai_suggest", {like: "1"});
+    expect(card()?.querySelector("[data-suggestion-more]")?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Claude suggested 1 task. It waits on the board for your review.");
+
+    click('[data-suggestion-less="1"]'); await flush(); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_feedback", {id: "1", feedback: "less"});
+    expect(card()).toBeNull();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Rejected “Draft the methods section”. Suggestions lean away from tasks like it from now on.");
+    click("[data-notice-undo]"); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_undo", {id: "1", feedback: null});
+    expect(card()).not.toBeNull();
+  });
+
+  it("only notes more-like-this when no model is connected", async () => {
+    connect(false, async () => ({}), {suggested: true});
+    await renderApp(root, client);
+    click('[data-suggestion-more="1"]'); await flush(); await flush(); await flush();
+    expect(send).not.toHaveBeenCalledWith("ai_suggest", expect.anything());
+    expect(root.querySelector(".page-settings")).toBeNull();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Noted: more like “Draft the methods section”. Suggestions lean toward tasks like it from now on.");
   });
 
   it("switches providers without losing the options typed so far", async () => {
