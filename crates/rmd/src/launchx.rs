@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn an_open_tab_is_found_through_the_run_file() {
-        use std::io::{Read, Write};
+        use std::io::{BufRead, BufReader, Read, Write};
         let mut env = TestEnv::new();
         let home = env.root().join("launchx");
         env.set_var("LAUNCHX_HOME", home.to_str().unwrap());
@@ -293,10 +293,30 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = vec![0u8; 4096];
-            let read = stream.read(&mut request).unwrap();
-            let request = String::from_utf8_lossy(&request[..read]).to_string();
+            let (stream, _) = listener.accept().unwrap();
+            // Read the whole request, headers and body, before answering: the
+            // client may send them in separate writes, and closing with part of
+            // the request unread resets the connection, losing the answer.
+            let mut reader = BufReader::new(stream);
+            let mut request = String::new();
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().unwrap();
+                }
+                request.push_str(&line);
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+            }
+            let mut payload = vec![0; length];
+            reader.read_exact(&mut payload).unwrap();
+            request.push_str(&String::from_utf8_lossy(&payload));
+            let mut stream = reader.into_inner();
             let body = r#"{"hasTab": true}"#;
             write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             request
