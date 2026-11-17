@@ -42,6 +42,15 @@ describe("which timers run", () => {
     expect(tomorrow.map(timer => timer.kind === "task" ? timer.task.description : timer.deadline.event)).toEqual(["Fix flaky test", "Ship slides", "Plan trip", "Grant report"]);
   });
 
+  it("times tasks and deadlines due later this week too when asked, but not next week's", () => {
+    const later = structuredClone(snapshot);
+    later.tasks.push(task("Next week's talk", {due: "2026-11-09T10:00"}));
+    later.deadlines.push(deadline("Sunday review", "2026-11-08", {daysLeft: 3, status: "upcoming"}), deadline("Next week's form", "2026-11-09", {daysLeft: 4, status: "upcoming"}));
+    const names = (timers: ReturnType<typeof collectTimers>) => timers.map(timer => timer.kind === "task" ? timer.task.description : timer.deadline.event);
+    expect(names(collectTimers(later, NOW, new Set(), true))).toEqual(["Fix flaky test", "Ship slides", "Camera ready", "Plan trip", "Grant report", "Sunday review"]);
+    expect(names(collectTimers(later, NOW, new Set()))).toEqual(["Fix flaky test", "Ship slides", "Camera ready"]);
+  });
+
   it("leaves out deadline timers that were closed, until the deadline comes around again", () => {
     const key = timerKey(snapshot.deadlines[0]);
     expect(collectTimers(snapshot, NOW, new Set([key])).some(timer => timer.kind === "deadline")).toBe(false);
@@ -315,6 +324,20 @@ describe("timer strip", () => {
     // The week's bar weighs its tasks the same way, and leaves the chip to today's.
     expect(root.querySelectorAll(".today-weighted")).toHaveLength(1);
     expect(root.querySelector(".is-week .today-bar")?.getAttribute("aria-valuetext")).toContain("weighted by importance");
+  });
+
+  it("shows timers for the rest of the week once that is turned on in Settings", async () => {
+    await renderApp(root, client);
+    const names = () => [...root.querySelectorAll(".timer-task h4")].map(heading => heading.textContent);
+    expect(names()).toEqual(["Fix flaky test", "Ship slides"]);
+    root.querySelector<HTMLButtonElement>('[data-page="settings"]')!.click();
+    const toggle = root.querySelector<HTMLInputElement>('[data-pref="weekTimers"]')!;
+    expect(toggle.checked).toBe(false);
+    toggle.checked = true; toggle.dispatchEvent(new Event("change"));
+    expect(root.querySelector("#notice .notice-text")?.textContent).toBe("The timers now show every timed task and deadline due this week.");
+    expect(JSON.parse(window.localStorage.getItem("schedule-everything-display")!).weekTimers).toBe(true);
+    root.querySelector<HTMLButtonElement>('[data-page="today"]')!.click();
+    expect(names()).toEqual(["Fix flaky test", "Ship slides", "Plan trip"]);
   });
 
   it("explains itself when nothing is timed", async () => {
