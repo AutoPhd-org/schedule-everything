@@ -1772,6 +1772,7 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .editor-dialog[open] { animation: zoom-in .4s var(--spring); }
 .editor-dialog::backdrop { background: rgba(14, 8, 34, .5); backdrop-filter: blur(5px); }
 .editor-dialog h2 { font-size: 23px; }
+.editor-dialog textarea.task-text { min-height: 0; max-height: 40vh; resize: none; overflow-y: auto; overflow-wrap: anywhere; }
 .dialog-error { color: var(--critical-ink); font-size: 13px; line-height: 1.7; margin-top: 12px; }
 .loading { min-height: 100vh; display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 20px; }
 .loading-blob { display: grid; place-items: center; width: 74px; height: 74px; color: var(--on-grad); background: var(--grad); border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; animation: morph 3s ease-in-out infinite, float 3s ease-in-out infinite; box-shadow: var(--shadow-lg); }

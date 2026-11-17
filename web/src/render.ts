@@ -2148,7 +2148,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const timed = options.timed ?? !!draft?.due;
     const timer = `<fieldset class="timed-field ${timed ? "is-on" : ""}"><legend class="sr-only">${t("Timer")}</legend><label class="timed-toggle"><input type="checkbox" name="timed" ${timed ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="timed-copy"><strong>${icons.clock}${t("Timed task")}</strong><small>${t("Set when it should be finished. Due by tonight, it gets a timer above the board.")}</small></span></label><label class="timed-due">${t("Finish by")}<input type="datetime-local" name="due" value="${e(draft?.due ?? defaultDue())}" ${timed ? "required" : "disabled"}></label></fieldset>`;
     const why = offer ? `<p class="dialog-suggestion">${icons.spark}<span>${suggestedBy(offer)}</span></p>` : "";
-    dialog(task ? t("Edit task") : offer ? t("Adjust, then add it") : t("A new thing to work on"), `${why}${field("description", t("Task"), "text", draft?.description ?? "", 'required maxlength="500"')}${field("priority", t("Importance · 1 to 10"), "number", String(draft?.priority ?? 5), 'required min="1" max="10"')}<label>${t("Task type")}<select name="type">${typeOptions(state.snapshot!, draft?.type)}</select></label>${timer}`, async data => {
+    dialog(task ? t("Edit task") : offer ? t("Adjust, then add it") : t("A new thing to work on"), `${why}<label>${t("Task")}<textarea class="task-text" name="description" rows="1" required maxlength="500">${e(draft?.description ?? "")}</textarea></label>${field("priority", t("Importance · 1 to 10"), "number", String(draft?.priority ?? 5), 'required min="1" max="10"')}<label>${t("Task type")}<select name="type">${typeOptions(state.snapshot!, draft?.type)}</select></label>${timer}`, async data => {
       const due = data.get("timed") ? String(data.get("due") ?? "") : "";
       if (offer) { await acceptSuggestion(offer, {description: data.get("description"), priority: Number(data.get("priority")), type: data.get("type"), due}); return; }
       if (task) await flushTask(task.description);
@@ -2156,6 +2156,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       await reload();
       if (due && due !== task?.due) { state.notice = t("“{task}” is timed: finish by {time}.", {task: String(data.get("description")), time: formatDate(due, {weekday: "short", hour: "numeric", minute: "2-digit"})}); status(); }
     }, offer ? t("Add to my tasks") : t("Save"));
+    const text = root.querySelector<HTMLTextAreaElement>('dialog.editor-dialog [name="description"]');
+    if (text) bindTaskText(text);
     const form = root.querySelector<HTMLElement>("dialog.editor-dialog .timed-field");
     const toggle = form?.querySelector<HTMLInputElement>('[name="timed"]');
     const input = form?.querySelector<HTMLInputElement>('[name="due"]');
@@ -2167,6 +2169,26 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (toggle.checked) input.focus();
     };
     if (options.timed) input.focus();
+  }
+  /** A task is one line of text, but a long one should wrap so all of it can be read and edited:
+   *  the box grows with the text, Enter saves as it would in a one-line field, and line breaks become spaces. */
+  function bindTaskText(text: HTMLTextAreaElement) {
+    const fit = () => { text.style.height = "auto"; text.style.height = `${text.scrollHeight + text.offsetHeight - text.clientHeight}px`; };
+    text.addEventListener("input", () => {
+      if (/[\r\n]/.test(text.value)) {
+        const at = text.selectionStart;
+        text.value = text.value.replace(/\r\n?|\n/g, " ");
+        text.setSelectionRange(at, at);
+      }
+      fit();
+    });
+    text.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); text.form?.requestSubmit(); }
+    });
+    // Wrapping depends on the width, which can settle after the dialog opens or change with the window.
+    let width = text.clientWidth;
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(() => { if (text.clientWidth !== width) { width = text.clientWidth; fit(); } }).observe(text);
+    fit();
   }
   /** Who suggested a task, from where, and why, as one sentence in the interface language. */
   function suggestedBy(offer: SuggestionItem): string {
