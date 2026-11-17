@@ -1,6 +1,7 @@
 // Timers above the task board. Task timers count down to the finish-by time of timed tasks due by tonight
 // (overdue ones count up); deadline timers count down to deadlines ending within the next 24 hours, and can be
-// closed without touching the deadline. Each timer has a dial: a ring that drains as its time runs out, around
+// closed without touching the deadline. When Settings asks for this week's timers, both also cover what is due
+// by Sunday night. Each timer has a dial: a ring that drains as its time runs out, around
 // an icon for how close it is (a running clock, an hourglass, an alarm clock in the last hour, a ringing bell
 // once overdue, a party popper when the work is all done). A task timer also offers the task's next subtask.
 // On top, today's timed work fills one bar with the progress of every timed task due today, finished ones
@@ -68,9 +69,10 @@ export type DeadlineTimer = {kind: "deadline"; at: number; deadline: DeadlineIte
 export type Timer = TaskTimer | DeadlineTimer;
 
 /** Timed tasks due by tonight (overdue ones too, until they are finished) and deadlines ending within 24
- *  hours that were not closed, soonest first. */
-export function collectTimers(s: Snapshot, now: number, closed: ReadonlySet<string>): Timer[] {
-  const end = tonight(now);
+ *  hours that were not closed, soonest first. With `week`, both reach to the end of the week as well. */
+export function collectTimers(s: Snapshot, now: number, closed: ReadonlySet<string>, week = false): Timer[] {
+  const end = week ? weekEnd(now) : tonight(now);
+  const soon = (at: number) => at - now <= DAY || (week && at <= end);
   const tasks = s.tasks.flatMap((task, index): Timer[] => {
     const at = dueAt(task);
     return at !== null && at < end ? [{kind: "task", at, task, index, overdue: at <= now}] : [];
@@ -78,7 +80,7 @@ export function collectTimers(s: Snapshot, now: number, closed: ReadonlySet<stri
   const deadlines = s.deadlines.flatMap((deadline, index): Timer[] => {
     const at = deadlineEnd(deadline);
     const key = timerKey(deadline);
-    return at !== null && at > now && at - now <= DAY && !closed.has(key) ? [{kind: "deadline", at, deadline, index, key}] : [];
+    return at !== null && at > now && soon(at) && !closed.has(key) ? [{kind: "deadline", at, deadline, index, key}] : [];
   });
   return [...tasks, ...deadlines].sort((a, b) => a.at - b.at);
 }
@@ -172,11 +174,12 @@ export function dueLabel(due: string, now: number): string {
   return formatDate(due, {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
 }
 
-/** `extras` are cards plugins add to the row (plugins.ts), after the timers. */
-export type TimerOptions = {snapshot: Snapshot; now: number; closed: ReadonlySet<string>; weighted?: boolean; extras?: string[]};
+/** `week` adds timers for the timed tasks and deadlines due later this week; `extras` are cards plugins add to the row
+ *  (plugins.ts), after the timers. */
+export type TimerOptions = {snapshot: Snapshot; now: number; closed: ReadonlySet<string>; weighted?: boolean; week?: boolean; extras?: string[]};
 
-export function timerStrip({snapshot: s, now, closed, weighted = false, extras = []}: TimerOptions): string {
-  const timers = collectTimers(s, now, closed);
+export function timerStrip({snapshot: s, now, closed, weighted = false, week = false, extras = []}: TimerOptions): string {
+  const timers = collectTimers(s, now, closed, week);
   const tasks = timers.filter(timer => timer.kind === "task").length;
   const row = timers.length || extras.length
     ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}${extras.join("")}</div>`

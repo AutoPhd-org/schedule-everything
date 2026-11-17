@@ -11,7 +11,7 @@ import { bindGlossary, glossaryPage, showInGlossary, updateGlossaryValues, type 
 import { bindTilt, burst, centerOf, farewell, loadTag, reducedMotion, themeWave, type Farewell, type Point } from "./effects";
 import { bindPeek, hidePeek } from "./peek";
 import { bindCategoryPanel, bindPluginControls, bindPluginPage, bindPluginTimers, bindTaskExtras, categoryBar, categoryPanel, describeSuggestion, groupIcon, pluginById, pluginNav, pluginOfType, pluginPage, pluginPageId, pluginsCard, pluginTimers, subtasksFor, taskExtra, tickPluginClocks, type PluginHost } from "./plugins";
-import { loadPrefs, savePrefs, type BoardLayout, type Prefs } from "./prefs";
+import { loadPrefs, savePrefs, type BoardLayout, type PrefKey, type Prefs } from "./prefs";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
@@ -895,7 +895,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       changeSubtasks(s, index, steps => [...steps, {text, done: false}], '#board-area form.subtask-form [name="subtaskText"]', centerOf(input));
     });
   }
-  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted, extras: pluginTimers(s, Date.now())});
+  const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted, week: state.prefs.weekTimers, extras: pluginTimers(s, Date.now())});
   const timerArea = (s: Snapshot) => `<div id="timer-strip" class="timer-strip">${timerStrip(timerOptions(s))}</div>`;
   /** Redraw only the timers, keeping the row where it was scrolled. */
   function redrawTimers(s: Snapshot) {
@@ -1522,21 +1522,23 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       root.querySelector<HTMLElement>(`[data-board-layout="${layout}"]`)?.focus({preventScroll: true});
     });
   }
-  function setPref(key: "workloadTheme" | "weighted", on: boolean, s: Snapshot) {
+  function setPref(key: PrefKey, on: boolean, s: Snapshot) {
     state.prefs[key] = on;
     savePrefs(state.prefs);
     // Weighing tasks by importance changes today's progress, which the theme follows too.
     applyLoad(s);
     state.notice = key === "workloadTheme"
       ? (on ? t("The theme follows your workload again.") : t("The theme stays the same whatever your workload."))
-      : (on ? t("Today’s progress now weighs each task by its importance.") : t("Today’s progress now counts every task the same."));
+      : key === "weekTimers"
+        ? (on ? t("The timers now show every timed task and deadline due this week.") : t("The timers now show only what is due today or within a day."))
+        : (on ? t("Today’s progress now weighs each task by its importance.") : t("Today’s progress now counts every task the same."));
     status();
   }
   /** The display settings' controls: the layout switches (on the board too), the toggles, and the numbers where
    *  the workload levels start. */
   function bindDisplay(scope: ParentNode, s: Snapshot) {
     scope.querySelectorAll<HTMLButtonElement>("[data-board-layout]").forEach(btn => btn.onclick = () => setBoardLayout(btn.dataset.boardLayout as BoardLayout));
-    scope.querySelectorAll<HTMLInputElement>("[data-pref]").forEach(box => box.onchange = () => setPref(box.dataset.pref as "workloadTheme" | "weighted", box.checked, s));
+    scope.querySelectorAll<HTMLInputElement>("[data-pref]").forEach(box => box.onchange = () => setPref(box.dataset.pref as PrefKey, box.checked, s));
     const fields = [...scope.querySelectorAll<HTMLInputElement>("[data-threshold]")];
     // Typing says at once what is wrong; a number takes effect once it is entered (Enter, the arrows, or leaving
     // the field), and only when all three can start the levels.
@@ -1762,11 +1764,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     return `<div class="page-heading"><div><p class="eyebrow">${t("LOOK HOW FAR YOU’VE COME")}</p><h1>${t("Little wins add up")}<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes, categoryBar: bar, categoryPanel: panel})}`;
   }
   /** Display choices for this browser: the board's layout, the workload theme (with what workload means, its
-   *  levels, and where each level starts), and how today's progress counts tasks. */
+   *  levels, and where each level starts), how today's progress counts tasks, and how far ahead the timers look. */
   function displayCard(s: Snapshot) {
     const load = workload(s.tasks, s.today.date);
     const {prefs} = state;
-    const toggle = (key: "workloadTheme" | "weighted", title: string, detail: string) => `<label class="setting-toggle"><input type="checkbox" data-pref="${key}" ${prefs[key] ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="setting-copy"><strong>${title}</strong><small>${detail}</small></span></label>`;
+    const toggle = (key: PrefKey, title: string, detail: string) => `<label class="setting-toggle"><input type="checkbox" data-pref="${key}" ${prefs[key] ? "checked" : ""}><span class="timed-switch" aria-hidden="true"></span><span class="setting-copy"><strong>${title}</strong><small>${detail}</small></span></label>`;
     return `<article class="card display-card"><h2>${icons.palette} ${t("Board, workload & progress")}</h2><p class="muted">${t("Saved in this browser.")}</p>
       <div class="setting-block"><div class="setting-copy"><strong>${t("Task board layout")}</strong><small>${t("Compact packs the groups in rows, those with more important work first. Spread places them by workload: the heaviest in the middle, lighter ones farther out.")}</small></div>${layoutSwitch(prefs.layout)}</div>
       ${toggle("workloadTheme", t("Theme follows your workload"), t("Colors and the background shift from cool and calm to warm as open work piles up, and ease back toward calm as you make progress: on today’s timed work, or on all open tasks when nothing timed is due."))}
@@ -1774,6 +1776,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       ${thresholdFields()}
       <p class="muted load-now">${loadNow(load)}</p>
       ${toggle("weighted", t("Weigh today’s progress by importance"), t("An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same."))}
+      ${toggle("weekTimers", t("Show this week’s timers"), t("Timers above the board also count down to timed tasks and deadlines due later this week, up to Sunday night. Off, they show timed tasks due by tonight and deadlines in their last 24 hours."))}
     </article>`;
   }
   /** The five levels with their ranges, the current one marked. */
