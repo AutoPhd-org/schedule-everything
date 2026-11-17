@@ -642,7 +642,7 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .subtask-submit svg, .subtask-close svg { width: 14px; height: 14px; }
 .content.enter .subtask, .task-group.reveal .subtask { animation: rise .45s var(--ease) both; animation-delay: calc(.25s + var(--s, 0) * 30ms); }
 
-/* Timers above the board: today's timed work on top, then a row of timers, soonest first. Task timers are
+/* Timers above the board: today's and this week's timed work on top, then a row of timers, soonest first. Task timers are
    solid cards in their type's color with a progress slider; deadline timers are striped tickets with a
    dashed edge and a close button. Overdue task timers turn red and count up. */
 .timer-strip { margin: 0 0 22px; }
@@ -669,6 +669,14 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .today-bar i.is-overdue { background: color-mix(in oklab, var(--critical) 16%, var(--surface-sunk)); box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--critical) 55%, transparent); }
 .today-bar i.is-overdue::after { background: var(--critical); }
 .content.enter .today-bar i::after { animation: grow-x .9s var(--spring) .15s both; transform-origin: left; }
+/* This week's timed work sits under today's: the same bar, a size quieter, so today still leads. */
+.today-progress.is-week { margin-top: -4px; }
+.today-progress.is-week .today-label { font-size: 12.5px; }
+.today-progress.is-week .today-label svg { width: 15px; height: 15px; }
+.today-progress.is-week .today-value { font-size: 20px; }
+.today-progress.is-week .today-value small { font-size: 12px; }
+.today-progress.is-week .today-bar { height: 8px; gap: 2px; }
+.today-progress.is-week .today-bar i { min-width: 4px; }
 .timer-row { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: 4px 2px 8px; margin: 0 -2px -6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .timer { position: relative; flex: 1 0 238px; max-width: 340px; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); scroll-snap-align: start; transition: transform .4s var(--spring), box-shadow .3s; }
 .timer:hover { transform: translateY(-2px); box-shadow: var(--shadow); }

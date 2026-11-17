@@ -81,7 +81,7 @@ export type PluginItem = {
   createdAt?: string | null;
 };
 
-/** A timed task completed today that was due by tonight; it counts as finished work in today's progress. */
+/** A timed task completed this week that was due by the end of it; it counts as finished work in this week's progress, and in today's when it was completed today and due by tonight. */
 export type TimedDone = {description: string; priority?: number; type: string | null; due: string; endedAt: string};
 
 export type DeadlineItem = {

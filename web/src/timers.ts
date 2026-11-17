@@ -4,8 +4,9 @@
 // an icon for how close it is (a running clock, an hourglass, an alarm clock in the last hour, a ringing bell
 // once overdue, a party popper when the work is all done). A task timer also offers the task's next subtask.
 // On top, today's timed work fills one bar with the progress of every timed task due today, finished ones
-// included; it can weigh each task by its importance. Rendering is pure (state in, HTML out); render.ts ticks
-// the clocks every second and binds the controls.
+// included, and this week's timed work does the same for every timed task due by the end of the week; both
+// can weigh each task by its importance. Rendering is pure (state in, HTML out); render.ts ticks the clocks
+// every second and binds the controls.
 import { deadlineSwatch } from "./calendar";
 import { msg, t, tn } from "./i18n";
 import type { DeadlineItem, Snapshot, TaskItem } from "./types";
@@ -27,6 +28,19 @@ export function deadlineEnd(deadline: DeadlineItem): number | null {
 export function tonight(now: number): number {
   const end = new Date(now);
   end.setHours(24, 0, 0, 0);
+  return end.getTime();
+}
+/** The Monday that starts the week `now` falls in, as `YYYY-MM-DD`. */
+export function weekStart(now: number): string {
+  const monday = new Date(now);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+  return isoDay(monday);
+}
+/** Midnight at the end of the week (Sunday night) `now` falls in. */
+export function weekEnd(now: number): number {
+  const end = parseLocal(`${weekStart(now)}T00:00`);
+  end.setDate(end.getDate() + 7);
   return end.getTime();
 }
 export const isOverdue = (task: TaskItem, now: number) => { const at = dueAt(task); return at !== null && at <= now; };
@@ -95,10 +109,17 @@ export type TodayProgress = {value: number; parts: TodayPart[]; done: number; ov
  *  so finishing one never lowers the bar. Weighted, each task counts by its importance (an importance-9 task
  *  three times as much as an importance-3 one); otherwise every task counts the same. */
 export function todayProgress(s: Snapshot, now: number, weighted = false): TodayProgress {
-  const end = tonight(now);
-  const today = isoDay(new Date(now));
+  return timedProgress(s, now, weighted, isoDay(new Date(now)), tonight(now));
+}
+/** This week's timed work, Monday to Sunday: every timed task due by the end of the week, open or finished
+ *  since Monday, counted the same way as today's. */
+export function weekProgress(s: Snapshot, now: number, weighted = false): TodayProgress {
+  return timedProgress(s, now, weighted, weekStart(now), weekEnd(now));
+}
+/** Timed tasks due before `end`: the open ones, and those finished on or after the day `from`. */
+function timedProgress(s: Snapshot, now: number, weighted: boolean, from: string, end: number): TodayProgress {
   const finished: TodayPart[] = (s.timedDone ?? [])
-    .filter(item => item.endedAt.slice(0, 10) === today && parseLocal(item.due).getTime() < end)
+    .filter(item => item.endedAt.slice(0, 10) >= from && parseLocal(item.due).getTime() < end)
     .map(item => ({description: item.description, progress: 100, priority: item.priority || 5, done: true, overdue: false}));
   const open: TodayPart[] = s.tasks
     .filter(task => { const at = dueAt(task); return at !== null && at < end; })
@@ -160,22 +181,28 @@ export function timerStrip({snapshot: s, now, closed, weighted = false, extras =
   const row = timers.length || extras.length
     ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}${extras.join("")}</div>`
     : `<p class="timer-empty"><span class="timer-empty-icon">${icons.coffee}</span><span>${t("No timers right now. Make a task timed from its card or with <b>New task</b>; deadlines show here in their last 24 hours.")}</span></p>`;
-  return `<section class="timers" aria-label="${t("Timers")}">${todayBar(todayProgress(s, now, weighted))}${row}</section>`;
+  const bars = `${timedBar(todayProgress(s, now, weighted), "today")}${timedBar(weekProgress(s, now, weighted), "week")}`;
+  return `<section class="timers" aria-label="${t("Timers")}">${bars}${row}</section>`;
 }
 
-function todayBar(today: TodayProgress): string {
+/** One bar of timed work: today's, or this week's (thinner, under it, without the weighting chip, which the
+ *  today bar already shows for both). */
+function timedBar(today: TodayProgress, range: "today" | "week"): string {
+  const week = range === "week";
+  const label = week ? t("This week’s timed work") : t("Today’s timed work");
+  const empty = week ? t("No timed tasks due this week") : t("No timed tasks due today");
   const percent = Math.round(today.value * 100);
   const total = today.parts.length;
   const meta = total
     ? [`<span class="today-done">${icons.check}${t("{done} of {total} done", {done: today.done, total})}</span>`, today.overdue ? `<span class="today-overdue">${icons.ringing}${t("{count} overdue", {count: today.overdue})}</span>` : ""].filter(Boolean).join(" · ")
-    : t("No timed tasks due today");
+    : empty;
   const segments = total
     ? today.parts.map(part => `<i class="${part.done ? "is-done" : ""} ${part.overdue ? "is-overdue" : ""}" style="--p:${(part.progress / 100).toFixed(2)}; flex-grow:${today.weighted ? partWeight(part) : 1}" title="${e(`${part.description} · ${part.done ? t("done") : `${part.progress}%`}${today.weighted ? ` · ${t("importance {n}", {n: part.priority})}` : ""}`)}"></i>`).join("")
     : `<i class="is-blank" style="--p:0"></i>`;
-  const weighting = today.weighted ? `<span class="today-weighted" data-tip="${t("Each task counts by its importance: an importance-9 task moves the bar three times as much as an importance-3 one. Change it in Settings.")}">${icons.scale}<span>${t("By importance")}</span></span>` : "";
-  return `<div class="today-progress ${total ? "" : "is-idle"} ${percent === 100 ? "is-complete" : ""}">
-      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : icons.target}<span>${t("Today’s timed work")}</span></span><span class="today-meta">${meta}</span>${weighting}<strong class="today-value">${percent}<small>%</small></strong></div>
-      <div class="today-bar" role="progressbar" aria-label="${t("Today’s timed work")}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${e(total ? `${t("{percent}% · {done} of {total} timed tasks done", {percent, done: today.done, total})}${today.weighted ? ` · ${t("weighted by importance")}` : ""}` : t("No timed tasks due today"))}">${segments}</div>
+  const weighting = today.weighted && !week ? `<span class="today-weighted" data-tip="${t("Each task counts by its importance: an importance-9 task moves the bar three times as much as an importance-3 one. Change it in Settings.")}">${icons.scale}<span>${t("By importance")}</span></span>` : "";
+  return `<div class="today-progress ${week ? "is-week" : ""} ${total ? "" : "is-idle"} ${percent === 100 ? "is-complete" : ""}">
+      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : week ? icons.week : icons.target}<span>${label}</span></span><span class="today-meta">${meta}</span>${weighting}<strong class="today-value">${percent}<small>%</small></strong></div>
+      <div class="today-bar" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${e(total ? `${t("{percent}% · {done} of {total} timed tasks done", {percent, done: today.done, total})}${today.weighted ? ` · ${t("weighted by importance")}` : ""}` : empty)}">${segments}</div>
     </div>`;
 }
 

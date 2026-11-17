@@ -786,16 +786,20 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "taskTypes": load_task_types(),
         "taskTypeColors": load_task_type_colors(),
         "history": history_rows(Some(5)),
-        "timedDone": timed_done_today(current),
+        "timedDone": timed_done_this_week(current),
         "suggestions": crate::web::suggestions::snapshot_rows(),
         "plugins": crate::plugins::snapshot_rows(&load_task_types()),
         "ai": crate::web::ai::snapshot_row(),
     }))
 }
 
-/// Timed tasks completed today that were due by tonight. They still count, as
-/// finished work, toward today's progress; a task that is open again is left out.
-fn timed_done_today(current: NaiveDate) -> Vec<Value> {
+/// Timed tasks completed this week (Monday up to today) that were due by the end
+/// of the week. They still count, as finished work, toward this week's progress,
+/// and those completed today and due by tonight toward today's (the browser picks
+/// them out); a task that is open again is left out.
+fn timed_done_this_week(current: NaiveDate) -> Vec<Value> {
+    let monday = current - Duration::days(i64::from(current.weekday().num_days_from_monday()));
+    let sunday = monday + Duration::days(6);
     let log_entries = load_task_log();
     let open: HashSet<String> =
         load_tasks().iter().filter_map(|task| obj(task)?.get("description")?.as_str().map(str::to_string)).collect();
@@ -814,7 +818,7 @@ fn timed_done_today(current: NaiveDate) -> Vec<Value> {
         if py_strip(description).is_empty() {
             continue;
         }
-        if ended.date() != current || due.date() > current || open.contains(description) {
+        if ended.date() < monday || ended.date() > current || due.date() > sunday || open.contains(description) {
             continue;
         }
         let priority = task.get("priority").and_then(py::py_int).unwrap_or(0);

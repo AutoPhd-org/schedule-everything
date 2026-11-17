@@ -421,8 +421,9 @@ fn subtasks_drive_a_tasks_progress() {
 }
 
 #[test]
-fn timed_tasks_completed_today_still_count_toward_today() {
+fn timed_tasks_completed_this_week_still_count_toward_the_week() {
     let mut env = task_env(json!([{"description": "Open again", "priority": 5}]), json!([]));
+    // Thursday; the week runs Monday 2 November to Sunday 8 November.
     env.set_now("2026-11-05T16:00:00");
     let at = |day: u32| {
         let local = NaiveDate::from_ymd_opt(2026, 11, day).unwrap().and_hms_opt(15, 0, 0).unwrap();
@@ -430,31 +431,33 @@ fn timed_tasks_completed_today_still_count_toward_today() {
     };
     let entry = |when: String, action: &str, task: Value| json!({"timestamp": when, "action": action, "task": task});
     let log = json!([
+        entry(at(2), "deleted", json!({"description": "Monday memo", "priority": 4, "due": "2026-11-02T12:00"})),
+        entry(at(4), "deleted", json!({"description": "Early Friday", "priority": 5, "due": "2026-11-06T09:00"})),
         entry(
             at(5),
             "deleted",
             json!({"description": "Ship slides", "priority": 7, "type": "2", "due": "2026-11-05T18:00"})
         ),
-        entry(at(5), "deleted", json!({"description": "Overdue essay", "priority": 6, "due": "2026-11-03T12:00"})),
-        // Not today's: due tomorrow, finished yesterday, cancelled, not timed, or open again.
-        entry(at(5), "deleted", json!({"description": "Tomorrow", "priority": 5, "due": "2026-11-06T09:00"})),
-        entry(at(4), "deleted", json!({"description": "Yesterday", "priority": 5, "due": "2026-11-04T09:00"})),
+        entry(at(5), "deleted", json!({"description": "Overdue essay", "priority": 6, "due": "2026-10-28T12:00"})),
+        // Not this week's: finished last week, due next week, cancelled, not timed, or open again.
+        entry(at(1), "deleted", json!({"description": "Last Sunday", "priority": 5, "due": "2026-11-01T09:00"})),
+        entry(at(5), "deleted", json!({"description": "Next week", "priority": 5, "due": "2026-11-09T09:00"})),
         entry(at(5), "cancelled", json!({"description": "Cancelled", "priority": 5, "due": "2026-11-05T09:00"})),
         entry(at(5), "deleted", json!({"description": "Untimed", "priority": 5})),
         entry(at(5), "deleted", json!({"description": "Open again", "priority": 5, "due": "2026-11-05T10:00"})),
     ]);
     env.write("tasks/tasks.log", &log.to_string());
 
-    let done = timed_done_today(NaiveDate::from_ymd_opt(2026, 11, 5).unwrap());
+    let done = timed_done_this_week(NaiveDate::from_ymd_opt(2026, 11, 5).unwrap());
     assert_eq!(
         done.iter().map(|d| d["description"].clone()).collect::<Vec<_>>(),
-        [json!("Ship slides"), json!("Overdue essay")]
+        [json!("Monday memo"), json!("Early Friday"), json!("Ship slides"), json!("Overdue essay")]
     );
     assert_eq!(
-        done[0],
+        done[2],
         json!({"description": "Ship slides", "priority": 7, "type": "2", "due": "2026-11-05T18:00", "endedAt": "2026-11-05T15:00:00"})
     );
-    assert_eq!(done[1]["type"], Value::Null);
+    assert_eq!(done[3]["type"], Value::Null);
 }
 
 fn deadline_env(deadlines: Value, task_types: &str) -> TestEnv {
