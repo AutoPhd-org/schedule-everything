@@ -8,7 +8,7 @@ import { delta, pctText, ring, seeded } from "./charts";
 import { openProgress } from "./daily";
 import { MUSCLES, type Muscle } from "./fitness";
 import { msg, t, tn } from "./i18n";
-import { progressOf, todayProgress } from "./timers";
+import { progressOf, todayProgress, weekProgress } from "./timers";
 import type { DailyOverview, PluginKind, Snapshot, WeeklyOverview } from "./types";
 import { e, formatHours, icons, sw, typeSwatch, type Swatch } from "./ui";
 import { levelInfo, levelRanges, loadLevels, loadScale, workload } from "./workload";
@@ -177,6 +177,14 @@ const TERMS: Term[] = [
     note: msg("Finished ones count as 100%. With “By importance” on in Settings, an importance-9 task moves the bar three times as much as an importance-3 one."),
     art: () => `${big("63", "%")}<div class="ga-timed">${[[1, 3], [1, 2], [0.5, 4], [0, 2]].map(([fill, size], i) => `<i style="--p:${fill}; flex-grow:${size}; --i:${i}"></i>`).join("")}</div>`,
     yours: c => { const today = todayProgress(c.snapshot, c.now, c.weighted); return today.parts.length ? percent(today.value) : null; }
+  },
+  {
+    id: "week-timed-work", section: "day", name: msg("This week’s timed work"), icon: icons.week, tone: "violet", where: ["day", "settings"],
+    gist: msg("The same bar for the whole week: everything you planned for a time from Monday to Sunday."),
+    formula: [fn(msg("Average of")), v(msg("Progress of each timed task due by Sunday night"))],
+    note: msg("Timed tasks you finished since Monday count as 100%; overdue ones still count until you finish them."),
+    art: () => `${big("48", "%")}<div class="ga-timed">${[[1, 2], [1, 3], [1, 1], [0.6, 3], [0.2, 2], [0, 2], [0, 1]].map(([fill, size], i) => `<i style="--p:${fill}; flex-grow:${size}; --i:${i}"></i>`).join("")}</div>`,
+    yours: c => { const week = weekProgress(c.snapshot, c.now, c.weighted); return week.parts.length ? percent(week.value) : null; }
   },
   {
     id: "open-progress", section: "day", name: msg("All open tasks"), icon: icons.target, tone: "aqua", where: ["day", "settings"],

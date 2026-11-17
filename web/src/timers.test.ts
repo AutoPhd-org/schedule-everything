@@ -1,7 +1,7 @@
-// Tests for the timers above the task board, today's timed-work bar, and task progress.
+// Tests for the timers above the task board, today's and this week's timed-work bars, and task progress.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "./render";
-import { clock, collectTimers, progressOf, pruneClosed, runway, span, timerKey, todayProgress, urgency } from "./timers";
+import { clock, collectTimers, progressOf, pruneClosed, runway, span, timerKey, todayProgress, urgency, weekEnd, weekProgress, weekStart } from "./timers";
 import type { BridgeClient, DeadlineItem, Snapshot, TaskItem } from "./types";
 
 const task = (description: string, extra: Partial<TaskItem> = {}): TaskItem =>
@@ -56,6 +56,27 @@ describe("which timers run", () => {
     expect(today).toMatchObject({done: 1, overdue: 1});
     // Finished work from another day does not count today.
     expect(todayProgress({...snapshot, timedDone: [{...snapshot.timedDone![0], endedAt: "2026-11-04T09:50:00"}]}, NOW).done).toBe(0);
+  });
+
+  it("measures this week's timed work, Monday to Sunday night", () => {
+    // Thursday 5 November falls in the week of Monday 2 November.
+    expect(weekStart(NOW)).toBe("2026-11-02");
+    expect(weekEnd(NOW)).toBe(new Date(2026, 10, 9).getTime());
+    expect(weekStart(new Date(2026, 10, 8, 23, 59).getTime())).toBe("2026-11-02");
+    expect(weekStart(new Date(2026, 10, 9, 0, 0).getTime())).toBe("2026-11-09");
+    const data = structuredClone(snapshot);
+    data.tasks.push(task("Next week", {due: "2026-11-09T09:00", progress: 0}));
+    data.timedDone!.push(
+      {description: "Monday memo", type: null, due: "2026-11-02T12:00", endedAt: "2026-11-02T11:00:00"},
+      {description: "Last week", type: null, due: "2026-11-01T12:00", endedAt: "2026-11-01T11:00:00"}
+    );
+    const week = weekProgress(data, NOW);
+    // Tomorrow's task counts this week; next Monday's and last week's finished work do not.
+    expect(week.parts.map(part => [part.description, part.progress])).toEqual([["Morning review", 100], ["Monday memo", 100], ["Fix flaky test", 20], ["Ship slides", 40], ["Plan trip", 10]]);
+    expect(Math.round(week.value * 100)).toBe(54);
+    expect(week).toMatchObject({done: 2, overdue: 1});
+    // Today's bar still keeps to today.
+    expect(todayProgress(data, NOW).done).toBe(1);
   });
 
   it("weighs today's timed work by importance when asked", () => {
@@ -160,6 +181,12 @@ describe("timer strip", () => {
     expect(bar.getAttribute("aria-valuenow")).toBe("53");
     expect(bar.querySelectorAll("i")).toHaveLength(3);
     expect(strip.querySelector(".today-meta")?.textContent).toBe("1 of 3 done · 1 overdue");
+    // This week's bar, under it: tomorrow's timed task joins today's three.
+    const week = strip.querySelector(".today-progress.is-week")!;
+    expect(week.querySelector(".today-label")?.textContent).toBe("This week’s timed work");
+    expect(week.querySelector(".today-bar")?.getAttribute("aria-valuenow")).toBe("43");
+    expect(week.querySelectorAll(".today-bar i")).toHaveLength(4);
+    expect(week.querySelector(".today-meta")?.textContent).toBe("1 of 4 done · 1 overdue");
     // The overdue task's card on the board looks different too.
     const card = [...root.querySelectorAll(".task-card")].find(el => el.textContent?.includes("Fix flaky test"))!;
     expect(card.classList.contains("is-overdue")).toBe(true);
@@ -285,6 +312,9 @@ describe("timer strip", () => {
     expect(bar.getAttribute("aria-valuetext")).toContain("weighted by importance");
     expect([...bar.querySelectorAll<HTMLElement>("i")].map(segment => segment.style.flexGrow)).toEqual(["6", "3", "9"]);
     expect(root.querySelector(".today-weighted")?.textContent).toBe("By importance");
+    // The week's bar weighs its tasks the same way, and leaves the chip to today's.
+    expect(root.querySelectorAll(".today-weighted")).toHaveLength(1);
+    expect(root.querySelector(".is-week .today-bar")?.getAttribute("aria-valuetext")).toContain("weighted by importance");
   });
 
   it("explains itself when nothing is timed", async () => {
@@ -294,5 +324,6 @@ describe("timer strip", () => {
     await renderApp(root, client);
     expect(root.querySelector(".timer-empty")?.textContent).toContain("No timers right now.");
     expect(root.querySelector(".today-meta")?.textContent).toBe("No timed tasks due today");
+    expect(root.querySelector(".is-week .today-meta")?.textContent).toBe("No timed tasks due this week");
   });
 });
