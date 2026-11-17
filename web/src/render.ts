@@ -897,14 +897,11 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   const timerOptions = (s: Snapshot) => ({snapshot: s, now: Date.now(), closed: state.closedTimers, weighted: state.prefs.weighted, week: state.prefs.weekTimers, extras: pluginTimers(s, Date.now())});
   const timerArea = (s: Snapshot) => `<div id="timer-strip" class="timer-strip">${timerStrip(timerOptions(s))}</div>`;
-  /** Redraw only the timers, keeping the row where it was scrolled. */
+  /** Redraw only the timers. */
   function redrawTimers(s: Snapshot) {
     const area = root.querySelector<HTMLElement>("#timer-strip");
     if (!area) return;
-    const scrolled = area.querySelector<HTMLElement>(".timer-row")?.scrollLeft ?? 0;
     area.innerHTML = timerStrip(timerOptions(s));
-    const row = area.querySelector<HTMLElement>(".timer-row");
-    if (row) row.scrollLeft = scrolled;
     bindTimers(area, s);
   }
   function bindTimers(scope: HTMLElement, s: Snapshot) {
@@ -912,6 +909,13 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindSubtasks(scope, s);
     bindTasks(scope, s);
     bindPluginTimers(scope, host);
+    // The Timers switch on the week's bar: the rest of the week's timers come and go at once, and the switch
+    // keeps the focus.
+    scope.querySelectorAll<HTMLInputElement>("[data-week-timers]").forEach(box => box.onchange = () => {
+      setPref("weekTimers", box.checked, s);
+      redrawTimers(s);
+      root.querySelector<HTMLInputElement>("#timer-strip [data-week-timers]")?.focus({preventScroll: true});
+    });
     scope.querySelectorAll<HTMLButtonElement>("[data-timer-close]").forEach(btn => btn.onclick = () => {
       const key = btn.dataset.timerClose!;
       const name = btn.closest(".timer")?.querySelector("h4")?.textContent ?? t("this deadline");
@@ -1764,7 +1768,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     return `<div class="page-heading"><div><p class="eyebrow">${t("LOOK HOW FAR YOU’VE COME")}</p><h1>${t("Little wins add up")}<span class="accent-dot">.</span></h1><p class="muted">${intro}</p></div></div>${galleryView({items: a.items, overview: a.summary, filter: a.filter, layout: a.layout, region: a.items ? historyRegion(s) : "", today: s.today.date, taskTypes: s.taskTypes, categoryBar: bar, categoryPanel: panel})}`;
   }
   /** Display choices for this browser: the board's layout, the workload theme (with what workload means, its
-   *  levels, and where each level starts), how today's progress counts tasks, and how far ahead the timers look. */
+   *  levels, and where each level starts), and how today's progress counts tasks. */
   function displayCard(s: Snapshot) {
     const load = workload(s.tasks, s.today.date);
     const {prefs} = state;
@@ -1776,7 +1780,6 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       ${thresholdFields()}
       <p class="muted load-now">${loadNow(load)}</p>
       ${toggle("weighted", t("Weigh today’s progress by importance"), t("An importance-9 task moves today’s progress three times as much as an importance-3 one. Off, every task counts the same."))}
-      ${toggle("weekTimers", t("Show this week’s timers"), t("Timers above the board also count down to timed tasks and deadlines due later this week, up to Sunday night. Off, they show timed tasks due by tonight and deadlines in their last 24 hours."))}
     </article>`;
   }
   /** The five levels with their ranges, the current one marked. */

@@ -1,11 +1,12 @@
-// Display preferences kept in this browser, set on the Settings page (the board's layout switch sets one too):
+// Display preferences kept in this browser, set on the Settings page (the board's layout switch and the week's
+// Timers switch set them too):
 // how the task board is laid out, whether the theme follows the workload, whether today's progress weighs tasks
 // by importance, whether the timers also cover the rest of the week, whether the daily overview is folded, and
 // where the workload levels start. Without storage the defaults apply.
 import { asThresholds, DEFAULT_THRESHOLDS, type LoadThresholds } from "./workload";
 
 export type BoardLayout = "compact" | "spread";
-/** The on/off display choices, each a switch on the Settings page. */
+/** The on/off display choices: switches on the Settings page, and the Timers switch on the week's bar. */
 export type PrefKey = "workloadTheme" | "weighted" | "weekTimers";
 export type Prefs = {layout: BoardLayout; workloadTheme: boolean; weighted: boolean; weekTimers: boolean; dayFolded: boolean; loadThresholds: LoadThresholds};
 
