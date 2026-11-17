@@ -1,7 +1,7 @@
 // Timers above the task board. Task timers count down to the finish-by time of timed tasks due by tonight
 // (overdue ones count up); deadline timers count down to deadlines ending within the next 24 hours, and can be
-// closed without touching the deadline. When Settings asks for this week's timers, both also cover what is due
-// by Sunday night. Each timer has a dial: a ring that drains as its time runs out, around
+// closed without touching the deadline. With the Timers switch on the week's bar, both also cover what is due
+// by Sunday night. The timers wrap into rows when there are more than one row holds. Each timer has a dial: a ring that drains as its time runs out, around
 // an icon for how close it is (a running clock, an hourglass, an alarm clock in the last hour, a ringing bell
 // once overdue, a party popper when the work is all done). A task timer also offers the task's next subtask.
 // On top, today's timed work fills one bar with the progress of every timed task due today, finished ones
@@ -174,7 +174,8 @@ export function dueLabel(due: string, now: number): string {
   return formatDate(due, {weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit"});
 }
 
-/** `week` adds timers for the timed tasks and deadlines due later this week; `extras` are cards plugins add to the row
+/** `week` adds timers for the timed tasks and deadlines due later this week (the switch on the week's bar);
+ *  `extras` are cards plugins add to the row
  *  (plugins.ts), after the timers. */
 export type TimerOptions = {snapshot: Snapshot; now: number; closed: ReadonlySet<string>; weighted?: boolean; week?: boolean; extras?: string[]};
 
@@ -184,13 +185,13 @@ export function timerStrip({snapshot: s, now, closed, weighted = false, week = f
   const row = timers.length || extras.length
     ? `<div class="timer-row" role="list" aria-label="${t("{taskTimers} and {deadlineTimers}", {taskTimers: tn("{count} task timer", "{count} task timers", tasks), deadlineTimers: tn("{count} deadline timer", "{count} deadline timers", timers.length - tasks)})}">${timers.map((timer, i) => timer.kind === "task" ? taskTimer(timer, s, now, i) : deadlineTimer(timer, s, now, i)).join("")}${extras.join("")}</div>`
     : `<p class="timer-empty"><span class="timer-empty-icon">${icons.coffee}</span><span>${t("No timers right now. Make a task timed from its card or with <b>New task</b>; deadlines show here in their last 24 hours.")}</span></p>`;
-  const bars = `${timedBar(todayProgress(s, now, weighted), "today")}${timedBar(weekProgress(s, now, weighted), "week")}`;
+  const bars = `${timedBar(todayProgress(s, now, weighted), "today")}${timedBar(weekProgress(s, now, weighted), "week", week)}`;
   return `<section class="timers" aria-label="${t("Timers")}">${bars}${row}</section>`;
 }
 
 /** One bar of timed work: today's, or this week's (thinner, under it, without the weighting chip, which the
- *  today bar already shows for both). */
-function timedBar(today: TodayProgress, range: "today" | "week"): string {
+ *  today bar already shows for both, and with the switch that adds the rest of the week's timers). */
+function timedBar(today: TodayProgress, range: "today" | "week", weekTimers = false): string {
   const week = range === "week";
   const label = week ? t("This week’s timed work") : t("Today’s timed work");
   const empty = week ? t("No timed tasks due this week") : t("No timed tasks due today");
@@ -202,9 +203,11 @@ function timedBar(today: TodayProgress, range: "today" | "week"): string {
   const segments = total
     ? today.parts.map(part => `<i class="${part.done ? "is-done" : ""} ${part.overdue ? "is-overdue" : ""}" style="--p:${(part.progress / 100).toFixed(2)}; flex-grow:${today.weighted ? partWeight(part) : 1}" title="${e(`${part.description} · ${part.done ? t("done") : `${part.progress}%`}${today.weighted ? ` · ${t("importance {n}", {n: part.priority})}` : ""}`)}"></i>`).join("")
     : `<i class="is-blank" style="--p:0"></i>`;
+  const tip = t("Also show timers for the timed tasks and deadlines due later this week, up to Sunday night.");
+  const toggle = week ? `<label class="week-timers" data-tip="${tip}"><input type="checkbox" data-week-timers ${weekTimers ? "checked" : ""} aria-label="${t("Show this week’s timers")}"><span class="timed-switch" aria-hidden="true"></span><span>${t("Timers")}</span></label>` : "";
   const weighting = today.weighted && !week ? `<span class="today-weighted" data-tip="${t("Each task counts by its importance: an importance-9 task moves the bar three times as much as an importance-3 one. Change it in Settings.")}">${icons.scale}<span>${t("By importance")}</span></span>` : "";
   return `<div class="today-progress ${week ? "is-week" : ""} ${total ? "" : "is-idle"} ${percent === 100 ? "is-complete" : ""}">
-      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : week ? icons.week : icons.target}<span>${label}</span></span><span class="today-meta">${meta}</span>${weighting}<strong class="today-value">${percent}<small>%</small></strong></div>
+      <div class="today-top"><span class="today-label">${percent === 100 ? icons.trophy : week ? icons.week : icons.target}<span>${label}</span></span><span class="today-meta">${meta}</span>${weighting}${toggle}<strong class="today-value">${percent}<small>%</small></strong></div>
       <div class="today-bar" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${e(total ? `${t("{percent}% · {done} of {total} timed tasks done", {percent, done: today.done, total})}${today.weighted ? ` · ${t("weighted by importance")}` : ""}` : empty)}">${segments}</div>
     </div>`;
 }

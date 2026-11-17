@@ -677,8 +677,17 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .today-progress.is-week .today-value small { font-size: 12px; }
 .today-progress.is-week .today-bar { height: 8px; gap: 2px; }
 .today-progress.is-week .today-bar i { min-width: 4px; }
-.timer-row { display: flex; gap: 12px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding: 4px 2px 8px; margin: 0 -2px -6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-.timer { position: relative; flex: 1 0 238px; max-width: 340px; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); scroll-snap-align: start; transition: transform .4s var(--spring), box-shadow .3s; }
+.week-timers { position: relative; display: inline-flex; flex-direction: row; align-items: center; gap: 7px; white-space: nowrap; align-self: center; margin: 0 0 0 auto; font-size: 11.5px; font-weight: 700; color: var(--muted); cursor: pointer; }
+.week-timers + .today-value { margin-left: 0; }
+.week-timers input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.week-timers .timed-switch { width: 30px; height: 18px; margin-top: 0; }
+.week-timers .timed-switch::after { width: 12px; height: 12px; }
+.week-timers input:checked + .timed-switch { background: var(--grad); border-color: transparent; }
+.week-timers input:checked + .timed-switch::after { transform: translateX(12px); }
+.week-timers input:checked ~ span:last-child { color: var(--accent-ink); }
+.week-timers input:focus-visible + .timed-switch { outline: 3px solid var(--accent); outline-offset: 3px; }
+.timer-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(238px, 100%), 1fr)); gap: 12px; padding: 4px 2px 8px; margin: 0 -2px -6px; }
+.timer { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 14px 13px 16px; border-radius: 22px; background: var(--surface-solid); border: 1px solid var(--line); transition: transform .4s var(--spring), box-shadow .3s; }
 .timer:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .content.enter .timer { animation: rise .5s var(--ease) both; animation-delay: calc(.15s + var(--i, 0) * 50ms); }
 .timer.is-leaving { animation: timer-leave .34s var(--ease) forwards; }

@@ -326,18 +326,26 @@ describe("timer strip", () => {
     expect(root.querySelector(".is-week .today-bar")?.getAttribute("aria-valuetext")).toContain("weighted by importance");
   });
 
-  it("shows timers for the rest of the week once that is turned on in Settings", async () => {
+  it("shows timers for the rest of the week with the switch on the week's bar", async () => {
     await renderApp(root, client);
     const names = () => [...root.querySelectorAll(".timer-task h4")].map(heading => heading.textContent);
+    const toggle = () => root.querySelector<HTMLInputElement>(".is-week [data-week-timers]")!;
     expect(names()).toEqual(["Fix flaky test", "Ship slides"]);
-    root.querySelector<HTMLButtonElement>('[data-page="settings"]')!.click();
-    const toggle = root.querySelector<HTMLInputElement>('[data-pref="weekTimers"]')!;
-    expect(toggle.checked).toBe(false);
-    toggle.checked = true; toggle.dispatchEvent(new Event("change"));
+    expect(root.querySelectorAll("[data-week-timers]")).toHaveLength(1);
+    expect(toggle().checked).toBe(false);
+    toggle().checked = true; toggle().dispatchEvent(new Event("change"));
+    expect(names()).toEqual(["Fix flaky test", "Ship slides", "Plan trip"]);
+    expect(toggle().checked).toBe(true);
+    expect(document.activeElement).toBe(toggle());
     expect(root.querySelector("#notice .notice-text")?.textContent).toBe("The timers now show every timed task and deadline due this week.");
     expect(JSON.parse(window.localStorage.getItem("schedule-everything-display")!).weekTimers).toBe(true);
+    // It is not on the Settings page, and it is remembered.
+    root.querySelector<HTMLButtonElement>('[data-page="settings"]')!.click();
+    expect(root.querySelector('[data-pref="weekTimers"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('[data-page="today"]')!.click();
     expect(names()).toEqual(["Fix flaky test", "Ship slides", "Plan trip"]);
+    toggle().checked = false; toggle().dispatchEvent(new Event("change"));
+    expect(names()).toEqual(["Fix flaky test", "Ship slides"]);
   });
 
   it("explains itself when nothing is timed", async () => {
