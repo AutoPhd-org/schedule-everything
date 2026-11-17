@@ -1708,6 +1708,10 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .ai-providers { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 14px; }
 .ai-provider-note { margin: 8px 0 0; font-size: 12px; }
 .ai-auth { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 12px; }
+.ai-codex { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.ai-codex.is-ready { color: var(--text); }
+.ai-codex svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
+.ai-codex code, .ai-privacy code { font-size: 11.5px; }
 .ai-provider-note code { font-size: 11.5px; }
 .ai-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .ai-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }

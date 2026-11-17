@@ -263,8 +263,12 @@ export type AiStatus = {ready: boolean; agent: string};
 export type AiProvider = "anthropic" | "openai";
 /** One provider's connection as the browser sees it: whether a key is saved and how it ends, never the key. */
 /** How Suggest signs in to Anthropic: an API key, or an auth token such as `claude setup-token` prints. */
-export type AiAuth = "apiKey" | "token";
-/** `auth`, `hasToken`, and `tokenHint` come only with Anthropic's connection. */
+/** How Suggest signs in: an API key; for Anthropic an auth token such as `claude setup-token` prints; for OpenAI the
+ *  Codex CLI with its own sign-in (`codex login`). */
+export type AiAuth = "apiKey" | "token" | "codex";
+/** Where the Codex CLI is, and whether it is signed in (`codex login status`). */
+export type CodexStatus = {path: string | null; signedIn: boolean; status: string | null};
+/** `hasToken` and `tokenHint` come only with Anthropic's connection. */
 export type AiConnection = {
   model: string; baseUrl: string; hasKey: boolean; keyHint: string | null; defaultModel: string | null; defaultBaseUrl: string;
   auth?: AiAuth; hasToken?: boolean; tokenHint?: string | null;
@@ -273,6 +277,8 @@ export type AiConnection = {
 export type AiSettings = {
   provider: AiProvider; count: number; instructions: string; ready: boolean; agent: string; model: string;
   providers: Record<AiProvider, AiConnection>; limits: {maxCount: number; instructions: number};
+  /** Present while OpenAI is set to go through the Codex CLI. */
+  codex?: CodexStatus | null;
 };
 /** What one press of Suggest did: suggestions added, ones already waiting that it refreshed, and ideas it skipped. */
 export type AiSuggestResult = {agent: string; added: string[]; updated: string[]; skipped: {description: string; reason: string}[]};

@@ -152,6 +152,14 @@ describe("AI suggestions", () => {
         return {id: "1", description: suggestion.description, feedback, previous: null, ...(feedback === "less" ? {undo: {id: "1", feedback: null}} : {})};
       }
       if (command === "suggestion_undo") { suggested = true; feedback = null; return {id: "1"}; }
+      if (command === "ai_settings_save" && payload.provider === "openai") {
+        // Codex signs in by itself; the server says whether it found and signed in the Codex CLI.
+        const codex = payload.auth === "codex";
+        saved = settings({provider: "openai", ready: codex, agent: codex ? "Codex" : String(payload.model), model: String(payload.model), count: Number(payload.count), instructions: String(payload.instructions)});
+        saved.providers.openai = {...saved.providers.openai, auth: payload.auth as "apiKey" | "codex", model: String(payload.model)};
+        saved.codex = codex ? {path: "/usr/local/bin/codex", signedIn: true, status: "Logged in using ChatGPT"} : null;
+        return structuredClone(saved);
+      }
       if (command === "ai_settings_save") {
         const before = saved.providers.anthropic;
         // Like the server, a pasted auth token is saved as one, whichever field it came in.
@@ -254,6 +262,28 @@ describe("AI suggestions", () => {
     expect(send).toHaveBeenCalledWith("ai_settings_save", expect.objectContaining({auth: "apiKey", apiKey: "sk-ant-oat01-secret"}));
     expect(root.querySelector('[data-ai-auth="token"]')?.getAttribute("aria-pressed")).toBe("true");
     expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. That was an auth token, so Suggest signs in with it.");
+  });
+
+  it("lets OpenAI go through the Codex CLI and its own sign-in", async () => {
+    connect(false, async () => ({}));
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    click('[data-ai-provider="openai"]');
+    click('[data-ai-auth="codex"]');
+    expect(root.querySelector('[data-ai-auth="codex"]')?.getAttribute("aria-pressed")).toBe("true");
+    // Codex keeps its own sign-in and address, so the card asks for neither.
+    expect(root.querySelector('#ai-card [name="aiKey"]')).toBeNull();
+    expect(root.querySelector('#ai-card [name="aiBaseUrl"]')).toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#ai-card [name="aiModel"]')?.placeholder).toBe("Codex’s default model");
+    expect(root.querySelector(".ai-provider-note")?.textContent).toContain("codex exec");
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("to OpenAI through the Codex CLI");
+
+    click("[data-ai-save]"); await flush(); await flush();
+    const [, sent] = send.mock.calls.find(([command]) => command === "ai_settings_save")!;
+    expect(sent).toEqual({provider: "openai", model: "", count: 5, instructions: "", auth: "codex"});
+    expect(root.querySelector(".ai-status")?.textContent).toBe("Suggest asks Codex.");
+    expect(root.querySelector(".ai-codex")?.textContent).toBe("Codex CLI at /usr/local/bin/codex. Logged in using ChatGPT.");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Saved. Press Suggest on the task board to get ideas from Codex.");
   });
 
   it("asks for more like a suggestion, and for fewer, which turns it down", async () => {

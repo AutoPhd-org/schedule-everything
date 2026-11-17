@@ -2,8 +2,9 @@
 //!
 //! The user pastes an API key for Anthropic (or an auth token, such as one
 //! from `claude setup-token`), or a key for any service that speaks the OpenAI
-//! chat-completions API (OpenAI, OpenRouter, a local Ollama, ...), and picks a
-//! few options. The board's Suggest button then sends the model
+//! chat-completions API (OpenAI, OpenRouter, a local Ollama, ...), or lets the
+//! Codex CLI on this computer ask OpenAI with the account it is signed in to
+//! (`codex login`), and picks a few options. The board's Suggest button then sends the model
 //! the current situation (open tasks, deadlines, today's schedule and habits,
 //! recent work, the profile, and what was suggested or turned down lately)
 //! and saves what comes back as suggestions (see `crate::suggestions`), so
@@ -17,7 +18,9 @@
 //! only while this reads and writes local files ([`suggest_with_lock`]), not
 //! while it waits for the answer.
 
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -52,6 +55,16 @@ const ANTHROPIC_VERSION: &str = "2026-10-21";
 /// OAuth auth token (`Authorization: Bearer`), such as `claude setup-token` prints.
 pub const AUTH_API_KEY: &str = "apiKey";
 pub const AUTH_TOKEN: &str = "token";
+/// How Suggest asks OpenAI through the Codex CLI and its own sign-in
+/// (`codex login`), instead of with a key.
+pub const AUTH_CODEX: &str = "codex";
+/// The address [`send`] takes for a request that runs `codex exec` instead of
+/// calling a service over HTTP.
+pub const CODEX_URL: &str = "codex:exec";
+/// Codex is an agent; Suggest needs only an answer from it.
+const CODEX_NOTE: &str = "Answer only from the text below. Do not run commands, read files, or use the web.";
+/// How long `codex login status` may take.
+const CODEX_STATUS_SECONDS: u64 = 10;
 /// The beta the Messages API needs to accept an OAuth auth token.
 const OAUTH_BETA: &str = "oauth-2025-04-20";
 /// How Anthropic credentials begin, so a pasted one lands where it belongs.
@@ -93,9 +106,17 @@ impl Connection {
         self.auth == AUTH_TOKEN
     }
 
-    /// `apiKey` or `token`, never empty.
+    pub fn uses_codex(&self) -> bool {
+        self.auth == AUTH_CODEX
+    }
+
+    /// `apiKey`, `token`, or `codex`; never empty.
     pub fn auth_kind(&self) -> &'static str {
-        if self.uses_token() { AUTH_TOKEN } else { AUTH_API_KEY }
+        match self.auth.as_str() {
+            AUTH_TOKEN => AUTH_TOKEN,
+            AUTH_CODEX => AUTH_CODEX,
+            _ => AUTH_API_KEY,
+        }
     }
 
     /// The secret Suggest signs in with.
@@ -155,6 +176,9 @@ impl AiSettings {
             } else {
                 "Add your Anthropic API key in Settings → AI suggestions first."
             }),
+            OPENAI if self.openai.uses_codex() => {
+                codex_binary().is_none().then_some("Install the Codex CLI, then sign in with codex login.")
+            }
             OPENAI if self.openai.model.trim().is_empty() => Some("Choose a model in Settings → AI suggestions first."),
             _ => None,
         }
@@ -165,7 +189,11 @@ impl AiSettings {
         if self.provider == ANTHROPIC {
             return "Claude".into();
         }
-        self.model().chars().take(suggestions::LABEL_LIMIT).collect()
+        let model = self.model();
+        if model.is_empty() && self.openai.uses_codex() {
+            return "Codex".into();
+        }
+        model.chars().take(suggestions::LABEL_LIMIT).collect()
     }
 }
 
@@ -177,12 +205,17 @@ fn text_field(object: Option<&Value>, key: &str) -> String {
     object.and_then(|o| o.get(key)).and_then(Value::as_str).unwrap_or_default().trim().to_string()
 }
 
-fn connection_from(value: Option<&Value>) -> Connection {
+/// The other way, besides a key, that `provider` can sign in.
+fn other_auth(provider: &str) -> &'static str {
+    if provider == OPENAI { AUTH_CODEX } else { AUTH_TOKEN }
+}
+
+fn connection_from(provider: &str, value: Option<&Value>) -> Connection {
     let auth = text_field(value, "auth");
     Connection {
         api_key: text_field(value, "apiKey"),
         auth_token: text_field(value, "authToken"),
-        auth: if auth == AUTH_TOKEN { auth } else { AUTH_API_KEY.into() },
+        auth: if auth == other_auth(provider) { auth } else { AUTH_API_KEY.into() },
         model: text_field(value, "model"),
         base_url: text_field(value, "baseUrl"),
     }
@@ -199,8 +232,8 @@ pub fn load_settings() -> AiSettings {
     let provider = text_field(Some(&saved), "provider");
     AiSettings {
         provider: if PROVIDERS.contains(&provider.as_str()) { provider } else { ANTHROPIC.into() },
-        anthropic: connection_from(providers.and_then(|p| p.get(ANTHROPIC))),
-        openai: connection_from(providers.and_then(|p| p.get(OPENAI))),
+        anthropic: connection_from(ANTHROPIC, providers.and_then(|p| p.get(ANTHROPIC))),
+        openai: connection_from(OPENAI, providers.and_then(|p| p.get(OPENAI))),
         count: saved.get("count").and_then(py::py_int).unwrap_or(DEFAULT_COUNT).clamp(1, MAX_COUNT),
         instructions: text_field(Some(&saved), "instructions"),
     }
@@ -212,11 +245,13 @@ pub fn save_settings(settings: &AiSettings) -> std::io::Result<()> {
     let mut anthropic_saved = connection(anthropic);
     anthropic_saved["auth"] = json!(anthropic.auth_kind());
     anthropic_saved["authToken"] = json!(anthropic.auth_token);
+    let mut openai_saved = connection(&settings.openai);
+    openai_saved["auth"] = json!(settings.openai.auth_kind());
     let saved = json!({
         "provider": settings.provider,
         "count": settings.count,
         "instructions": settings.instructions,
-        "providers": {ANTHROPIC: anthropic_saved, OPENAI: connection(&settings.openai)},
+        "providers": {ANTHROPIC: anthropic_saved, OPENAI: openai_saved},
     });
     let path = settings_path();
     if let Some(parent) = path.parent() {
@@ -236,6 +271,8 @@ fn key_hint(key: &str) -> Option<String> {
 }
 
 /// The settings as the browser sees them: everything but the keys and tokens.
+/// When OpenAI is set to go through Codex, `codex` says where the Codex CLI is
+/// and whether it is signed in (`codex login status`).
 pub fn public_view(settings: &AiSettings) -> Value {
     let connection = |provider: &str, default_model: Option<&str>, default_url: &str| {
         let c = settings.connection(provider);
@@ -247,13 +284,14 @@ pub fn public_view(settings: &AiSettings) -> Value {
             "defaultModel": default_model,
             "defaultBaseUrl": default_url,
         });
+        view["auth"] = json!(c.auth_kind());
         if provider == ANTHROPIC {
-            view["auth"] = json!(c.auth_kind());
             view["hasToken"] = json!(!c.auth_token.is_empty());
             view["tokenHint"] = json!(key_hint(&c.auth_token));
         }
         view
     };
+    let codex = if settings.openai.uses_codex() { codex_status() } else { Value::Null };
     json!({
         "provider": settings.provider,
         "count": settings.count,
@@ -266,8 +304,149 @@ pub fn public_view(settings: &AiSettings) -> Value {
             ANTHROPIC: connection(ANTHROPIC, Some(DEFAULT_ANTHROPIC_MODEL), DEFAULT_ANTHROPIC_URL),
             OPENAI: connection(OPENAI, None, DEFAULT_OPENAI_URL),
         },
+        "codex": codex,
         "limits": {"maxCount": MAX_COUNT, "instructions": INSTRUCTIONS_LIMIT},
     })
+}
+
+// =============================================================================
+// The Codex CLI
+// =============================================================================
+
+/// Where the Codex CLI is: on `PATH`, or where its installers put it (the web
+/// server may run without the shell's `PATH`).
+pub fn codex_binary() -> Option<PathBuf> {
+    let name = if cfg!(windows) { "codex.exe" } else { "codex" };
+    let mut dirs: Vec<PathBuf> =
+        std::env::var_os("PATH").map(|path| std::env::split_paths(&path).collect()).unwrap_or_default();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from).or_else(dirs::home_dir) {
+        dirs.extend(
+            [".local/bin", ".npm-global/bin", ".bun/bin", ".volta/bin", ".cargo/bin"].map(|sub| home.join(sub)),
+        );
+    }
+    // Tests see only what they put on PATH and HOME.
+    if !cfg!(test) {
+        dirs.extend(["/opt/homebrew/bin", "/usr/local/bin"].map(PathBuf::from));
+    }
+    dirs.into_iter().map(|dir| dir.join(name)).find(|path| path.is_file())
+}
+
+/// Run `command` until it exits, or kill it after `seconds`.
+fn wait_for(command: &mut Command, input: Option<&str>, seconds: u64) -> Result<ExitStatus, String> {
+    let mut child = command.spawn().map_err(|e| format!("could not start it: {e}"))?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        // The prompt fits Codex's stdin; a write error shows up as its exit status.
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("it took longer than {seconds} seconds"));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(100)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+/// The last line Codex wrote that says what went wrong.
+fn codex_complaint(log: &str) -> String {
+    let lines: Vec<&str> = log.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    let line = lines
+        .iter()
+        .rev()
+        .find(|line| line.to_lowercase().contains("error") || line.to_lowercase().contains("log in"))
+        .or(lines.last())
+        .copied()
+        .unwrap_or("it stopped without saying why");
+    let line = line.trim_end_matches('.');
+    if line.chars().count() > 300 { format!("{}…", line.chars().take(299).collect::<String>()) } else { line.into() }
+}
+
+/// Where the Codex CLI is, and whether it is signed in.
+fn codex_status() -> Value {
+    let Some(binary) = codex_binary() else {
+        return json!({"path": null, "signedIn": false, "status": null});
+    };
+    let dir = scratch_dir("codex-status");
+    let output = dir.as_ref().map_err(|e| e.to_string()).and_then(|dir| {
+        let out = std::fs::File::create(dir.join("out.txt")).map_err(|e| e.to_string())?;
+        let status = wait_for(
+            Command::new(&binary)
+                .args(["login", "status"])
+                .stdin(Stdio::null())
+                .stdout(out.try_clone().map_err(|e| e.to_string())?)
+                .stderr(out),
+            None,
+            CODEX_STATUS_SECONDS,
+        )?;
+        Ok((status.success(), std::fs::read_to_string(dir.join("out.txt")).unwrap_or_default()))
+    });
+    if let Ok(dir) = &dir {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    let (signed_in, status) = match output {
+        Ok((true, text)) => (true, text.lines().map(str::trim).rfind(|line| !line.is_empty()).map(str::to_string)),
+        Ok((false, text)) => (false, Some(codex_complaint(&text))),
+        Err(error) => (false, Some(error)),
+    };
+    json!({"path": binary.display().to_string(), "signedIn": signed_in, "status": status})
+}
+
+/// A fresh, private folder for one run of the Codex CLI.
+fn scratch_dir(purpose: &str) -> std::io::Result<PathBuf> {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("rmd-{purpose}-{}-{nanos}", std::process::id()));
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Ask the Codex CLI with what `request.body` holds (`prompt`, `schema`, and
+/// maybe `model`), and return its answer. Codex runs in an empty folder with a
+/// read-only sandbox, no approvals, none of the user's Codex settings or
+/// rules, and saves no session.
+fn run_codex(body: &Value) -> Result<String, String> {
+    let binary = codex_binary().ok_or("the Codex CLI was not found. Install it, then sign in with codex login")?;
+    let dir = scratch_dir("codex-suggest").map_err(|e| e.to_string())?;
+    let answer = ask_codex(&binary, &dir, body);
+    let _ = std::fs::remove_dir_all(&dir);
+    answer
+}
+
+fn ask_codex(binary: &Path, dir: &Path, body: &Value) -> Result<String, String> {
+    let work = dir.join("work");
+    let schema = dir.join("schema.json");
+    let out = dir.join("answer.json");
+    let log = dir.join("codex.log");
+    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
+    std::fs::write(&schema, body["schema"].to_string()).map_err(|e| e.to_string())?;
+    let mut command = Command::new(binary);
+    command
+        .args(["exec", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"])
+        .args(["--sandbox", "read-only", "-c", "approval_policy=\"never\"", "--color", "never", "-C"])
+        .arg(&work)
+        .arg("--output-schema")
+        .arg(&schema)
+        .arg("-o")
+        .arg(&out);
+    if let Some(model) = body["model"].as_str().filter(|model| !model.is_empty()) {
+        command.args(["-m", model]);
+    }
+    let log_file = std::fs::File::create(&log).map_err(|e| e.to_string())?;
+    command.arg("-").current_dir(&work).stdin(Stdio::piped()).stdout(Stdio::null()).stderr(log_file);
+    let status = wait_for(&mut command, body["prompt"].as_str(), REQUEST_TIMEOUT_SECONDS)?;
+    if !status.success() {
+        return Err(codex_complaint(&std::fs::read_to_string(&log).unwrap_or_default()));
+    }
+    let answer = std::fs::read_to_string(&out).unwrap_or_default();
+    if answer.trim().is_empty() {
+        return Err("it gave no answer".into());
+    }
+    Ok(answer)
 }
 
 /// Whether Suggest is ready, and who it asks, for the status snapshot.
@@ -326,10 +505,11 @@ pub fn ai_settings_save(payload: &Dict) -> WebResult {
     if auth_token.as_deref().is_some_and(|token| token.chars().any(char::is_whitespace)) {
         return Err(invalid("The auth token cannot contain spaces. Paste only the token."));
     }
+    let other = other_auth(&provider);
     let auth = match payload.get("auth") {
         None | Some(Value::Null) => None,
-        Some(Value::String(auth)) if auth == AUTH_API_KEY || auth == AUTH_TOKEN => Some(auth.clone()),
-        Some(_) => return Err(invalid(format!("auth must be {AUTH_API_KEY} or {AUTH_TOKEN}."))),
+        Some(Value::String(auth)) if auth == AUTH_API_KEY || auth == other => Some(auth.clone()),
+        Some(_) => return Err(invalid(format!("auth must be {AUTH_API_KEY} or {other}."))),
     };
 
     settings.provider = provider.clone();
@@ -371,8 +551,13 @@ pub fn ai_settings_save(payload: &Dict) -> WebResult {
                 connection.auth = AUTH_API_KEY.into();
             }
         }
-    } else if let Some(key) = api_key.filter(|key| !key.is_empty()) {
-        connection.api_key = key;
+    } else {
+        if let Some(auth) = auth {
+            connection.auth = auth;
+        }
+        if let Some(key) = api_key.filter(|key| !key.is_empty()) {
+            connection.api_key = key;
+        }
     }
     save_settings(&settings).map_err(|e| {
         WebError::new(
@@ -694,6 +879,22 @@ pub fn openai_request(settings: &AiSettings, system: &str, user: &str) -> ModelR
     }
 }
 
+/// A request for [`send`] to run `codex exec` with: the whole prompt (Codex
+/// takes no separate system prompt), the answer's JSON Schema, and the model
+/// when one is chosen (else Codex's default).
+pub fn codex_request(settings: &AiSettings, system: &str, user: &str) -> ModelRequest {
+    let model = settings.openai.model.trim();
+    ModelRequest {
+        url: CODEX_URL.into(),
+        headers: Vec::new(),
+        body: json!({
+            "prompt": format!("{system}\n\n{CODEX_NOTE}\n\n{user}"),
+            "schema": answer_schema(),
+            "model": (!model.is_empty()).then_some(model),
+        }),
+    }
+}
+
 /// The message in a provider's error body, if it has one.
 fn error_message(body: &str) -> Option<String> {
     let value: Value = serde_json::from_str(body).ok()?;
@@ -819,8 +1020,12 @@ pub fn parse_answer(answer: &Value, count: usize, task_types: &Dict, agent: &str
         .collect()
 }
 
-/// Send `request` over HTTPS and return the status and body.
+/// Send `request` over HTTPS and return the status and body. A request for
+/// [`CODEX_URL`] runs the Codex CLI instead, and its answer is the body.
 pub fn send(request: &ModelRequest) -> Result<(u16, String), String> {
+    if request.url == CODEX_URL {
+        return run_codex(&request.body).map(|answer| (200, answer));
+    }
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(REQUEST_TIMEOUT_SECONDS)))
         .user_agent("schedule-everything")
@@ -883,7 +1088,9 @@ fn prepare(payload: &Dict) -> WebResult<Prepared> {
     let count = (settings.count.clamp(1, MAX_COUNT) as usize).min(MAX_PENDING - pending);
     let focus = focus(payload)?;
     let user = user_message(count as i64, &settings.instructions, &situation()?, profile().as_deref(), focus.as_ref());
-    let request = if settings.provider == OPENAI {
+    let request = if settings.provider == OPENAI && settings.openai.uses_codex() {
+        codex_request(&settings, SYSTEM_PROMPT, &user)
+    } else if settings.provider == OPENAI {
         openai_request(&settings, SYSTEM_PROMPT, &user)
     } else {
         anthropic_request(&settings, SYSTEM_PROMPT, &user)
@@ -895,7 +1102,9 @@ fn prepare(payload: &Dict) -> WebResult<Prepared> {
 /// before, are skipped with the reason.
 fn save(prepared: &Prepared, status: u16, body: &str) -> WebResult {
     let agent = prepared.settings.agent();
-    let text = if prepared.settings.provider == OPENAI {
+    let text = if prepared.request.url == CODEX_URL {
+        body.to_string()
+    } else if prepared.settings.provider == OPENAI {
         openai_answer(&agent, status, body)?
     } else {
         anthropic_answer(&agent, status, body)?
@@ -949,10 +1158,12 @@ fn suggest_with(payload: &Dict, locked: &Locked, transport: &Transport) -> WebRe
     let prepared = prepared.expect("prepared under the lock");
     let agent = prepared.settings.agent();
     let (status, body) = transport(&prepared.request).map_err(|error| {
-        WebError::new(
-            "ai_error",
-            format!("Could not reach {agent}: {error}. Check your connection and the address in Settings."),
-        )
+        let message = if prepared.request.url == CODEX_URL {
+            format!("Codex could not make suggestions: {error}.")
+        } else {
+            format!("Could not reach {agent}: {error}. Check your connection and the address in Settings.")
+        };
+        WebError::new("ai_error", message)
     })?;
     let mut result = None;
     locked(&mut || {
@@ -1185,6 +1396,92 @@ mod tests {
         );
         let never = |_: &ModelRequest| -> Result<(u16, String), String> { panic!("must not call the model") };
         assert_eq!(suggest_with(&payload(json!({"like": "9"})), &no_lock, &never).unwrap_err().code, "not_found");
+    }
+
+    /// A stand-in for the Codex CLI in `env`'s `bin` folder, which is then all
+    /// of PATH but the system's own folders: it records its arguments and stdin, answers with `answer.json`,
+    /// and fails like a signed-out Codex while a `fail` file is there.
+    #[cfg(unix)]
+    fn fake_codex(env: &mut TestEnv) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = env.root().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let script = r#"#!/bin/sh
+here=$(dirname "$0")
+if [ "$1" = "login" ]; then
+  if [ -f "$here/fail" ]; then echo "Not logged in"; exit 1; fi
+  echo "Logged in using ChatGPT"; exit 0
+fi
+echo "$@" > "$here/args.txt"
+cat > "$here/stdin.txt"
+if [ -f "$here/fail" ]; then echo "codex" >&2; echo "Error: Not logged in. Run codex login." >&2; exit 1; fi
+out=""; prev=""
+for a in "$@"; do if [ "$prev" = "-o" ]; then out="$a"; fi; prev="$a"; done
+cp "$here/answer.json" "$out"
+"#;
+        std::fs::write(bin.join("codex"), script).unwrap();
+        std::fs::set_permissions(bin.join("codex"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        env.set_var("PATH", &format!("{}:/bin:/usr/bin", bin.display()));
+        bin
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn openai_can_go_through_the_codex_cli_and_its_sign_in() {
+        let mut env = env();
+        let home = env.root().join("home");
+        env.set_var("HOME", home.to_str().unwrap());
+        env.set_var("PATH", env.root().join("nowhere").to_str().unwrap());
+        let saved = ai_settings_save(&payload(json!({"provider": "openai", "auth": "codex"}))).unwrap();
+        assert_eq!(saved["providers"]["openai"]["auth"], "codex");
+        assert_eq!(saved["agent"], "Codex");
+        assert_eq!(saved["ready"], false);
+        assert_eq!(saved["missing"], "Install the Codex CLI, then sign in with codex login.");
+        assert_eq!(saved["codex"], json!({"path": null, "signedIn": false, "status": null}));
+        let message = ai_settings_save(&payload(json!({"provider": "openai", "auth": "token"}))).unwrap_err().message;
+        assert!(message.contains("apiKey or codex"));
+
+        let bin = fake_codex(&mut env);
+        let view = ai_settings_read(&Dict::new()).unwrap();
+        assert_eq!(view["ready"], true);
+        assert_eq!(view["codex"]["signedIn"], true);
+        assert_eq!(view["codex"]["status"], "Logged in using ChatGPT");
+        assert_eq!(view["codex"]["path"], bin.join("codex").display().to_string());
+        // The Anthropic connection is untouched, and a saved model names the agent.
+        assert_eq!(view["providers"]["anthropic"]["auth"], "apiKey");
+        ai_settings_save(&payload(json!({"provider": "openai", "model": "gpt-5.5"}))).unwrap();
+        assert_eq!(load_settings().openai.auth, AUTH_CODEX);
+        assert_eq!(load_settings().agent(), "gpt-5.5");
+
+        std::fs::write(
+            bin.join("answer.json"),
+            json!({"suggestions": [{"description": "Book the defense room", "importance": 6, "type": "1", "due": null, "reason": "Spring is close."}]}).to_string(),
+        )
+        .unwrap();
+        let result = suggest_with(&Dict::new(), &no_lock, &send).unwrap();
+        assert_eq!(result["agent"], "gpt-5.5");
+        assert_eq!(result["added"], json!(["Book the defense room"]));
+        let args = std::fs::read_to_string(bin.join("args.txt")).unwrap();
+        for expected in [
+            "exec --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules",
+            "--sandbox read-only",
+            "approval_policy=\"never\"",
+            "--output-schema",
+            "-m gpt-5.5",
+        ] {
+            assert!(args.contains(expected), "{expected} missing from {args}");
+        }
+        let prompt = std::fs::read_to_string(bin.join("stdin.txt")).unwrap();
+        assert!(prompt.starts_with("You help one person keep their personal task board."));
+        assert!(prompt.contains(CODEX_NOTE));
+        assert!(prompt.contains("Suggest at most 5 tasks for me."));
+
+        std::fs::write(bin.join("fail"), "").unwrap();
+        let error = suggest_with(&Dict::new(), &no_lock, &send).unwrap_err();
+        assert_eq!(error.message, "Codex could not make suggestions: Error: Not logged in. Run codex login.");
+        let view = ai_settings_read(&Dict::new()).unwrap();
+        assert_eq!(view["codex"]["signedIn"], false);
+        assert_eq!(view["codex"]["status"], "Not logged in");
     }
 
     #[test]

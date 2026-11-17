@@ -315,6 +315,17 @@ Connect a model once in **Settings → AI suggestions**:
   API, such as OpenAI, OpenRouter, or a local Ollama
   (`http://localhost:11434/v1`). Give the model name and, unless it is OpenAI
   itself, the address. A local server may need no key.
+  - **Codex sign-in** instead of **API key** asks OpenAI through the
+    [Codex CLI](https://github.com/openai/codex) on this computer, with the
+    account it is signed in to: run `codex login` once in a terminal (a
+    ChatGPT account or an API key both work). No key goes into Schedule
+    Everything, and Codex keeps and refreshes its own sign-in. Each press
+    runs `codex exec` in an empty temporary folder with a read-only sandbox,
+    no approvals, none of your Codex settings or rules, and no saved
+    session. The model is Codex's default unless you name one. The card
+    shows where it found Codex and whether it is signed in; it looks on
+    your `PATH` and where Codex's installers put it (such as
+    `~/.local/bin` and `/opt/homebrew/bin`).
 
 You can also set how many suggestions one press asks for (1 to 10, five by
 default) and, in your own words, what the model should keep in mind ("I'm
@@ -325,7 +336,8 @@ Each press sends the model your open tasks with their progress and steps,
 your deadlines, today's schedule and habits, your recent finished work, your
 profile, the suggestions waiting for review or turned down lately, so it
 does not repeat them, and what you asked for more and fewer of. Nothing else is sent, and nothing is sent until you
-press **Suggest** (or **More like this**). The settings, key and token
+press **Suggest** (or **More like this**). With Codex sign-in, it goes to
+OpenAI through the Codex CLI. The settings, key and token
 included, are saved in `.ai.json` in your config root, readable only by you.
 The page never shows the key or token again, only how it ends. Ideas already on your list or turned down before are skipped,
 and at most 20 suggestions wait at once.

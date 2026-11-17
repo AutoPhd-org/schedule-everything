@@ -43,7 +43,7 @@ type AgentTab = "claude" | "codex" | "antigravity";
 /** Suggestions from a model the user connects in Settings: its settings once loaded, the provider shown in the
  *  Settings card (saved or not), whether Suggest is waiting for an answer, whether to bring the card into view
  *  when it loads, and whether suggestions arrived while the page could not be redrawn. */
-type AiState = {settings: AiSettings | null; provider: AiProvider | null; auth: AiAuth | null; suggesting: boolean; focus: boolean; stale: boolean};
+type AiState = {settings: AiSettings | null; provider: AiProvider | null; auth: Partial<Record<AiProvider, AiAuth>>; suggesting: boolean; focus: boolean; stale: boolean};
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
@@ -151,7 +151,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     closedTimers: loadClosedTimers(),
     prefs: loadPrefs(),
     daily: null,
-    ai: {settings: null, provider: null, auth: null, suggesting: false, focus: false, stale: false}
+    ai: {settings: null, provider: null, auth: {}, suggesting: false, focus: false, stale: false}
   };
   setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
@@ -1094,37 +1094,49 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const connection = settings.providers[provider];
     const anthropic = provider === "anthropic";
     const savedAuth = connection.auth ?? "apiKey";
-    const token = anthropic && (state.ai.auth ?? savedAuth) === "token";
+    const auth = aiAuth();
+    const token = anthropic && auth === "token";
+    const codex = !anthropic && auth === "codex";
     const service = serviceOf(provider, connection.baseUrl || connection.defaultBaseUrl);
-    const unsaved = provider !== settings.provider ? t("Save to use this provider for Suggest.") : anthropic && (state.ai.auth ?? savedAuth) !== savedAuth ? t("Save to sign in this way.") : "";
+    const unsaved = provider !== settings.provider ? t("Save to use this provider for Suggest.") : auth !== savedAuth ? t("Save to sign in this way.") : "";
     const status = unsaved
       ? `<p class="ai-status">${unsaved}</p>`
       : settings.ready
-        ? `<p class="ai-status is-ready">${icons.check}<span>${settings.agent === settings.model ? t("Suggest asks {agent}.", {agent: e(settings.agent)}) : t("Suggest asks {agent} ({model}).", {agent: e(settings.agent), model: e(settings.model)})}</span></p>`
-        : `<p class="ai-status">${token ? t("Add an auth token to turn on Suggest.") : anthropic ? t("Add an API key to turn on Suggest.") : t("Choose a model to turn on Suggest.")}</p>`;
+        ? `<p class="ai-status is-ready">${icons.check}<span>${!settings.model || settings.agent === settings.model ? t("Suggest asks {agent}.", {agent: e(settings.agent)}) : t("Suggest asks {agent} ({model}).", {agent: e(settings.agent), model: e(settings.model)})}</span></p>`
+        : `<p class="ai-status">${token ? t("Add an auth token to turn on Suggest.") : anthropic ? t("Add an API key to turn on Suggest.") : codex ? t("Install the Codex CLI to turn on Suggest.") : t("Choose a model to turn on Suggest.")}</p>`;
+    // Where the Codex CLI is and whether it is signed in, once the card is saved to use it.
+    const codexState = codex && !unsaved ? settings.codex : null;
+    const codexLine = !codexState ? ""
+      : !codexState.path ? `<p class="ai-codex">${t("The Codex CLI was not found on this computer. Install it, then run <code>codex login</code> in a terminal.")}</p>`
+        : codexState.signedIn ? `<p class="ai-codex is-ready">${icons.check}<span>${t("Codex CLI at {path}. {status}.", {path: `<code>${e(codexState.path)}</code>`, status: e((codexState.status ?? "").replace(/\.$/, ""))})}</span></p>`
+          : `<p class="ai-codex">${t("Codex is not signed in. Run <code>codex login</code> in a terminal, then press Suggest.")}</p>`;
     const hasSecret = token ? !!connection.hasToken : connection.hasKey;
     const keyPlaceholder = token
       ? hasSecret ? t("Paste a new token to replace the saved one") : t("Paste the token from claude setup-token")
       : hasSecret ? t("Paste a new key to replace the saved one") : anthropic ? t("Paste your API key") : t("Paste your API key, if your service needs one");
     const secretSaved = token ? t("Token saved, ending in {hint}.", {hint: e(connection.tokenHint ?? "…")}) : t("Key saved, ending in {hint}.", {hint: e(connection.keyHint ?? "…")});
     const providers: [AiProvider, string][] = [["anthropic", t("Claude (Anthropic)")], ["openai", t("OpenAI-compatible")]];
-    const auths: [AiAuth, string][] = [["apiKey", t("API key")], ["token", t("Auth token")]];
-    const authSwitch = anthropic ? `<div class="layout-switch ai-auth" role="group" aria-label="${t("Sign in with")}">${auths.map(([id, label]) => `<button type="button" data-ai-auth="${id}" aria-pressed="${(id === "token") === token}">${label}</button>`).join("")}</div>` : "";
+    const auths: [AiAuth, string][] = anthropic ? [["apiKey", t("API key")], ["token", t("Auth token")]] : [["apiKey", t("API key")], ["codex", t("Codex sign-in")]];
+    const authSwitch = `<div class="layout-switch ai-auth" role="group" aria-label="${t("Sign in with")}">${auths.map(([id, label]) => `<button type="button" data-ai-auth="${id}" aria-pressed="${id === auth}">${label}</button>`).join("")}</div>`;
+    const privacy = codex
+      ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to OpenAI through the Codex CLI. Codex keeps its own sign-in; this workspace never reads it.")
+      : token ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The token stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`}) : t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`});
     return `<article class="card ai-card" id="ai-card">${heading}
       <p class="muted">${t("The Suggest button on the task board asks a model for tasks you may need, from your situation right now. Its ideas wait on the board as suggestions until you add or reject them.")}</p>
       <div class="layout-switch ai-providers" role="group" aria-label="${t("Provider")}">${providers.map(([id, label]) => `<button type="button" data-ai-provider="${id}" aria-pressed="${id === provider}">${label}</button>`).join("")}</div>
-      <p class="muted ai-provider-note">${token ? t("Signs in to the Anthropic API with an auth token, such as the one <code>claude setup-token</code> prints.") : anthropic ? t("Uses the Anthropic API with your own key.") : t("OpenAI, OpenRouter, a local Ollama, or any service with an OpenAI-style chat completions API.")}</p>
+      <p class="muted ai-provider-note">${token ? t("Signs in to the Anthropic API with an auth token, such as the one <code>claude setup-token</code> prints.") : anthropic ? t("Uses the Anthropic API with your own key.") : codex ? t("Asks OpenAI through the Codex CLI on this computer, with the account it is signed in to (<code>codex login</code>). Each press runs <code>codex exec</code> in an empty folder, with a read-only sandbox.") : t("OpenAI, OpenRouter, a local Ollama, or any service with an OpenAI-style chat completions API.")}</p>
       ${authSwitch}
       ${status}
-      <label>${token ? t("Auth token") : t("API key")}<input type="password" name="aiKey" autocomplete="off" spellcheck="false" placeholder="${e(keyPlaceholder)}"></label>
-      ${hasSecret ? `<p class="ai-key-saved">${icons.check}<span>${secretSaved}</span><button type="button" class="text-button" data-ai-clear-key>${t("Remove")}</button></p>` : ""}
+      ${codexLine}
+      ${codex ? "" : `<label>${token ? t("Auth token") : t("API key")}<input type="password" name="aiKey" autocomplete="off" spellcheck="false" placeholder="${e(keyPlaceholder)}"></label>
+      ${hasSecret ? `<p class="ai-key-saved">${icons.check}<span>${secretSaved}</span><button type="button" class="text-button" data-ai-clear-key>${t("Remove")}</button></p>` : ""}`}
       <div class="ai-pair">
-        <label>${t("Model")}<input name="aiModel" value="${e(connection.model)}" placeholder="${e(connection.defaultModel ?? t("Model name from your service"))}" autocomplete="off" spellcheck="false"></label>
-        <label>${t("Address (optional)")}<input name="aiBaseUrl" value="${e(connection.baseUrl)}" placeholder="${e(connection.defaultBaseUrl)}" autocomplete="off" spellcheck="false" inputmode="url"></label>
+        <label>${t("Model")}<input name="aiModel" value="${e(connection.model)}" placeholder="${e(codex ? t("Codex’s default model") : connection.defaultModel ?? t("Model name from your service"))}" autocomplete="off" spellcheck="false"></label>
+        ${codex ? "" : `<label>${t("Address (optional)")}<input name="aiBaseUrl" value="${e(connection.baseUrl)}" placeholder="${e(connection.defaultBaseUrl)}" autocomplete="off" spellcheck="false" inputmode="url"></label>`}
       </div>
       <label>${t("Suggestions per press")}<input type="number" name="aiCount" min="1" max="${settings.limits.maxCount}" step="1" inputmode="numeric" value="${settings.count}"></label>
       <label>${t("What to keep in mind (optional)")}<textarea name="aiInstructions" rows="3" maxlength="${settings.limits.instructions}" placeholder="${e(t("For example: I’m writing my thesis this month. Keep weekends light."))}">${e(settings.instructions)}</textarea></label>
-      <p class="muted ai-privacy">${token ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The token stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`}) : t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`})}</p>
+      <p class="muted ai-privacy">${privacy}</p>
       <div class="button-row"><button type="button" class="button primary" data-ai-save>${icons.check}<span>${t("Save")}</span></button></div>
     </article>`;
   }
@@ -1163,8 +1175,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
     card.querySelectorAll<HTMLButtonElement>("[data-ai-auth]").forEach(btn => btn.onclick = () => {
       const auth = btn.dataset.aiAuth as AiAuth;
-      if (auth === (state.ai.auth ?? settings.providers.anthropic.auth ?? "apiKey")) return;
-      state.ai.auth = auth;
+      if (auth === aiAuth()) return;
+      state.ai.auth = {...state.ai.auth, [state.ai.provider ?? settings.provider]: auth};
       redrawAiCard(aiShared(card));
       root.querySelector<HTMLButtonElement>(`#ai-card [data-ai-auth="${auth}"]`)?.focus();
     });
@@ -1172,7 +1184,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     card.querySelector<HTMLInputElement>('[name="aiBaseUrl"]')?.addEventListener("input", event => {
       const provider = state.ai.provider ?? settings.provider;
       const address = (event.target as HTMLInputElement).value.trim() || settings.providers[provider].defaultBaseUrl;
-      card.querySelector("[data-ai-service]")!.textContent = serviceOf(provider, address);
+      const service = card.querySelector("[data-ai-service]");
+      if (service) service.textContent = serviceOf(provider, address);
     });
     card.querySelector<HTMLButtonElement>("[data-ai-save]")!.onclick = () => void action(() => saveAi(card));
     card.querySelector<HTMLButtonElement>("[data-ai-clear-key]")?.addEventListener("click", () => {
@@ -1184,25 +1197,27 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); void action(() => saveAi(card)); }
     }));
   }
-  /** How the card signs in to Anthropic: as chosen on it, else as saved. Other providers use a key. */
+  /** How the card's provider signs in: as chosen on the card, else as saved. */
   function aiAuth(): AiAuth {
     const settings = state.ai.settings;
-    if (!settings || (state.ai.provider ?? settings.provider) !== "anthropic") return "apiKey";
-    return state.ai.auth ?? settings.providers.anthropic.auth ?? "apiKey";
+    if (!settings) return "apiKey";
+    const provider = state.ai.provider ?? settings.provider;
+    return state.ai.auth[provider] ?? settings.providers[provider].auth ?? "apiKey";
   }
   async function saveAi(card: HTMLElement, extra: Record<string, unknown> = {}) {
-    const value = (name: string) => card.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`)!.value;
-    const key = value("aiKey").trim();
+    // Fields the card leaves out, such as the key while Codex signs in, keep what is saved.
+    const value = (name: string) => card.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[name="${name}"]`)?.value;
+    const key = (value("aiKey") ?? "").trim();
     const provider = state.ai.provider ?? state.ai.settings!.provider;
     const auth = aiAuth();
     const saved = await request<AiSettings>("ai_settings_save", {
-      provider, model: value("aiModel"), baseUrl: value("aiBaseUrl"),
-      count: Number(value("aiCount")), instructions: value("aiInstructions"), ...(provider === "anthropic" ? {auth} : {}),
+      provider, model: value("aiModel") ?? "", ...(value("aiBaseUrl") === undefined ? {} : {baseUrl: value("aiBaseUrl")}),
+      count: Number(value("aiCount")), instructions: value("aiInstructions") ?? "", auth,
       ...(key ? {[auth === "token" ? "authToken" : "apiKey"]: key} : {}), ...extra
     });
     state.ai.settings = saved;
     state.ai.provider = saved.provider;
-    state.ai.auth = saved.providers.anthropic.auth ?? null;
+    state.ai.auth = {};
     if (state.snapshot) state.snapshot.ai = {ready: saved.ready, agent: saved.agent};
     redrawAiCard();
     // A pasted Anthropic secret is saved as what it is, which may not be what the card was set to.
@@ -1213,7 +1228,9 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
         ? t("The auth token was removed from this computer.")
         : recognized
           ? saved.providers.anthropic.auth === "token" ? t("Saved. That was an auth token, so Suggest signs in with it.") : t("Saved. That was an API key, so Suggest signs in with it.")
-          : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
+          : auth === "codex" && !saved.ready ? t("Saved. Install the Codex CLI and sign in with codex login, then press Suggest.")
+            : auth === "codex" && saved.codex && !saved.codex.signedIn ? t("Saved. Sign in with codex login in a terminal, then press Suggest.")
+              : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
   }
   /** Load the AI settings for the Settings page, and bring the card into view when Suggest sent the user here. */
   async function loadAi() {
@@ -1223,7 +1240,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       if (!settings?.providers?.anthropic || !settings.providers.openai) return;
       state.ai.settings = settings;
       state.ai.provider = settings.provider;
-      state.ai.auth = settings.providers.anthropic.auth ?? null;
+      state.ai.auth = {};
     } catch (error) {
       state.notice = error instanceof Error ? error.message : String(error);
       status();
