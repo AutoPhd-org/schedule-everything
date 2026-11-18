@@ -257,9 +257,23 @@ export type Snapshot = {
   plugins?: PluginItem[];
   /** Whether the Suggest button is connected to a model, and who it asks. */
   ai?: AiStatus;
+  /** What LaunchX lets this workspace do with the user's shared memory. */
+  memory?: MemoryStatus;
 };
 
 export type AiStatus = {ready: boolean; agent: string};
+export type MemoryAccess = "none" | "read" | "write";
+/** The shared memory LaunchX keeps for the user's apps (`memory` in the state document). `available` is false outside
+ *  LaunchX; `access` is null until LaunchX has answered. `change` is the command that grants what the app asks for. */
+export type MemoryStatus = {
+  available: boolean;
+  access: MemoryAccess | null;
+  wants: MemoryAccess;
+  reachable: boolean | null;
+  error: string | null;
+  change: string;
+  schedule: {page: string; rev: string | null; syncedAt: string | null; error: string | null} | null;
+};
 export type AiProvider = "anthropic" | "openai";
 /** One provider's connection as the browser sees it: whether a key is saved and how it ends, never the key. */
 /** How Suggest signs in to Anthropic: an API key, or an auth token such as `claude setup-token` prints. */

@@ -335,7 +335,10 @@ address, so switching between them loses nothing.
 Each press sends the model your open tasks with their progress and steps,
 your deadlines, today's schedule and habits, your recent finished work, your
 profile, the suggestions waiting for review or turned down lately, so it
-does not repeat them, and what you asked for more and fewer of. Nothing else is sent, and nothing is sent until you
+does not repeat them, and what you asked for more and fewer of. When the
+workspace runs under LaunchX and you let it read LaunchX's
+[shared memory](advanced/launchx.md#shared-memory), it also sends the memory's
+index and your `profile` and `preferences` pages from it, shortened. Nothing else is sent, and nothing is sent until you
 press **Suggest** (or **More like this**). With Codex sign-in, it goes to
 OpenAI through the Codex CLI. The settings, key and token
 included, are saved in `.ai.json` in your config root, readable only by you.

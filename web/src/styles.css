@@ -1719,8 +1719,8 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .content.enter .day-panel .highlight { animation: rise .6s var(--ease) both; animation-delay: calc(.2s + var(--i) * 90ms); }
 
 /* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
-.display-card h2, .language-card h2, .ai-card h2, .open-card h2 { display: flex; align-items: center; gap: 8px; }
-.display-card h2 svg, .language-card h2 svg, .ai-card h2 svg, .open-card h2 svg { color: var(--accent); }
+.display-card h2, .language-card h2, .ai-card h2, .open-card h2, .memory-card h2 { display: flex; align-items: center; gap: 8px; }
+.display-card h2 svg, .language-card h2 svg, .ai-card h2 svg, .open-card h2 svg, .memory-card h2 svg { color: var(--accent); }
 /* Settings → AI suggestions. */
 .ai-providers { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 14px; }
 .ai-provider-note { margin: 8px 0 0; font-size: 12px; }
@@ -1730,6 +1730,11 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .ai-codex svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--accent); }
 .ai-codex code, .ai-privacy code { font-size: 11.5px; }
 .ai-provider-note code { font-size: 11.5px; }
+.memory-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
+.memory-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }
+.memory-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
+.memory-card .memory-synced, .memory-card .memory-error, .memory-card .memory-change { margin: 10px 0 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.memory-card code { font-size: 11.5px; }
 .ai-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .ai-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }
 .ai-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }

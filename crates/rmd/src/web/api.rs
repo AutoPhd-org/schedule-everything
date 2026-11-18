@@ -104,8 +104,28 @@ pub fn dispatch_locked(request: &Value, lock: &Mutex<()>) -> Value {
         return run_handler(|payload| ai::suggest_with_lock(payload, lock), &payload);
     }
     let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    dispatch(request)
+    let response = dispatch(request);
+    if let Ok((command, _)) = parse_request(request)
+        && CHANGES_SCHEDULE.contains(&command)
+        && response.get("ok") == Some(&Value::Bool(true))
+    {
+        crate::memory::schedule_changed();
+    }
+    response
 }
+
+/// Commands that can change what rmd keeps in the shared memory's `schedule`
+/// page: the routine, the deadlines, the type names, the active schedule.
+const CHANGES_SCHEDULE: [&str; 8] = [
+    "config_save",
+    "service_action",
+    "deadline_add",
+    "deadline_update",
+    "deadline_delete",
+    "task_type_save",
+    "task_type_delete",
+    "settings_set_task_types",
+];
 
 /// A request's command and payload, or the error response for a malformed one.
 fn parse_request(request: &Value) -> Result<(&str, Dict), Value> {

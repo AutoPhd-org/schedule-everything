@@ -157,8 +157,11 @@ as well, see [On your phone, too](#on-your-phone-too).
 
 If you run your local services with [LaunchX](https://github.com/AutoPhd-org/launchx), register this repository with
 `lx add` and the workspace becomes one of them: `rmd web` then hands over to
-`lx open rmd`, and scripts and agents can read and change it over HTTP. See
-[LaunchX](https://autophd-org.github.io/schedule-everything/docs/advanced/launchx).
+`lx open rmd`, and scripts and agents can read and change it over HTTP. Allow
+it to use LaunchX's shared memory (`lx memory access rmd write`) and it keeps
+your routine and upcoming deadlines on the memory's `schedule` page for your
+other apps and agents, and Suggest reads your profile and preferences from it.
+See [LaunchX](https://autophd-org.github.io/schedule-everything/docs/advanced/launchx).
 
 ## The browser workspace
 
@@ -194,8 +197,9 @@ run `rmd mode j|p`.
   OpenAI-compatible service (OpenAI, OpenRouter, a local Ollama), in
   **Settings → AI suggestions**. **Suggest** on the board then asks that model
   for a few tasks you are likely to need, from your open tasks, deadlines,
-  today's schedule, habits, recent work, and profile. Its ideas wait on the
-  board as suggestions, like an agent's.
+  today's schedule, habits, recent work, and profile, and, under LaunchX with
+  your permission, the profile and preferences in its shared memory. Its ideas
+  wait on the board as suggestions, like an agent's.
 - **Timers.** Dials above the board count down to timed tasks due by tonight
   (overdue ones count up) and to deadlines in their last 24 hours. One bar
   shows the progress of today's timed work, optionally weighted by importance.
@@ -271,7 +275,8 @@ your fitness history and metrics stand on their own.
 ### Settings
 
 Plugins; board, workload, and progress preferences; reminder preferences; task and
-deadline types; and an editor for your configuration files that checks every
+deadline types; the model Suggest asks; under LaunchX, what the workspace may do
+with your shared memory; and an editor for your configuration files that checks every
 save with the same rules as `rmd check` and refuses to overwrite newer edits.
 
 ### On your phone, too

@@ -31,3 +31,10 @@ state  = "/api/state"
 # Everything is switched on for agents (lx agents on rmd).
 [service.rmd.agents]
 skills = "plugins/schedule-everything/skills"
+
+# What Schedule Everything asks to do with your shared memory in LaunchX. It
+# only asks: you decide, on its card in LaunchX or with
+# `lx memory access rmd write` (or `read`, or `none`).
+[service.rmd.memory]
+wants  = "write"
+reason = "Keeps the routine and deadlines on your schedule page current, and lets Suggest read your profile and preferences"
