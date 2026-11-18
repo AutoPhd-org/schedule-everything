@@ -3,7 +3,7 @@
 import {
   AlarmClock, AppWindow, ArrowDownRight, ArrowLeft, Ban, BicepsFlexed, Blocks, BookOpenText, CalendarClock, CalendarDays, CalendarRange, Check, ChevronDown,
   ChevronLeft, ChevronRight, ChevronsDownUp, BellRing, ChevronsUpDown, CircleCheck, Clock3, Coffee, Copy, CornerDownLeft, CornerDownRight, Crown,
-  Dumbbell, Ellipsis, Feather, Repeat, Flag, Flame, Gauge, GalleryHorizontalEnd, GripVertical, History, Hourglass, Languages, LayoutDashboard,
+  Dumbbell, Ellipsis, Feather, Repeat, Flag, Flame, Gauge, GalleryHorizontalEnd, GripVertical, History, Hourglass, Languages, LayoutDashboard, Library,
   LayoutGrid, Leaf, Lightbulb, ListChecks, ListPlus, ListTodo, MapPin, Medal, Monitor, Moon, Orbit, Palette, PartyPopper, Pencil, Percent, Plus,
   Puzzle, RefreshCw, Scale, Search, Settings2, Shuffle, Sigma, Sparkles, Sprout, Sun, Target, Trash2, TreeDeciduous, TrendingDown, TrendingUp,
   ThumbsDown, ThumbsUp, Trophy, Undo2, Waves, X, Zap
@@ -36,7 +36,7 @@ export const icons = {
   gauge: icon(Gauge), language: icon(Languages), orbit: icon(Orbit), grid: icon(LayoutGrid), leaf: icon(Leaf), waves: icon(Waves), scale: icon(Scale),
   glossary: icon(BookOpenText), blocks: icon(Blocks), week: icon(CalendarRange), history: icon(History), puzzle: icon(Puzzle), sigma: icon(Sigma),
   bulb: icon(Lightbulb), pin: icon(MapPin), crown: icon(Crown), percent: icon(Percent), dumbbell: icon(Dumbbell), medal: icon(Medal),
-  muscle: icon(BicepsFlexed), window: icon(AppWindow), thumbsUp: icon(ThumbsUp), thumbsDown: icon(ThumbsDown)
+  muscle: icon(BicepsFlexed), window: icon(AppWindow), thumbsUp: icon(ThumbsUp), thumbsDown: icon(ThumbsDown), memory: icon(Library)
 };
 
 /** A clock face whose hands sweep round (see .live-clock in styles.css): the icon of a running timer. */

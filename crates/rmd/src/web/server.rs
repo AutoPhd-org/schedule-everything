@@ -653,10 +653,17 @@ pub fn run(root: &Path, launch: Launch) -> i32 {
         Launch::Foreground { .. } => None,
         Launch::Managed(managed) => Some(managed.token.clone()),
     };
+    // The shared memory LaunchX gives this server, read before its token is
+    // removed for the same reason.
+    let memory = match &launch {
+        Launch::Managed(_) => crate::memory::Client::from_env(),
+        _ => None,
+    };
     // SAFETY: as above, no other thread exists yet.
     unsafe {
         std::env::remove_var(TOKEN_ENV);
         std::env::remove_var("LAUNCHX_TOKEN");
+        std::env::remove_var(crate::memory::TOKEN_ENV);
     }
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
@@ -718,6 +725,10 @@ pub fn run(root: &Path, launch: Launch) -> i32 {
                     root.display(),
                     managed.id
                 );
+                match memory {
+                    Some(memory) => crate::memory::start(&managed.id, memory),
+                    None => println!("LaunchX gave no shared memory; Schedule Everything runs without it."),
+                }
             }
         }
         use std::io::Write as _;

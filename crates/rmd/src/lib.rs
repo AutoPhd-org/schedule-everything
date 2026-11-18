@@ -31,6 +31,7 @@ pub mod commands;
 pub mod conferences;
 pub mod install_config_wizard;
 pub mod launchx;
+pub mod memory;
 pub mod opener;
 pub mod plugins;
 pub mod popups;

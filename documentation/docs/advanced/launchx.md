@@ -1,6 +1,6 @@
 ---
 title: LaunchX
-description: Run the browser workspace under LaunchX, the launcher for local services, and read or drive it over HTTP with its state document and command API.
+description: Run the browser workspace under LaunchX, the launcher for local services, share your routine and deadlines through its memory, and read or drive the workspace over HTTP with its state document and command API.
 ---
 
 # LaunchX
@@ -10,7 +10,9 @@ your computer. The browser workspace is a LaunchX service at the highest level
 of its contract (level 2, "open"): LaunchX starts and stops it, shows its health
 next to your other services, puts the page behind one sign-in at
 `http://rmd.localhost:7600/`, and lets scripts, agents and other services read
-its state and change it over HTTP.
+its state and change it over HTTP. With your permission it also shares your
+routine and deadlines with your other apps through LaunchX's
+[shared memory](#shared-memory), and lets Suggest read what they keep about you.
 
 Nothing changes when LaunchX is not installed: `rmd web` works as described in
 [Browser workspace](../browser.md).
@@ -71,6 +73,7 @@ LaunchX runs `rmd serve`. It finds the LaunchX settings in its environment:
 | `LAUNCHX_SERVICE` | The service id the health report gives (`rmd`). |
 | `LAUNCHX_HOST`, `LAUNCHX_PORT` | Where to listen. |
 | `LAUNCHX_TOKEN` | The bearer token every request must carry. |
+| `LAUNCHX_MEMORY_URL`, `LAUNCHX_MEMORY_TOKEN` | The [shared memory](#shared-memory)'s API and the workspace's own token for it. |
 
 In managed mode the server:
 
@@ -82,8 +85,10 @@ In managed mode the server:
   on its own.
 - Does not write `.browser.json`, detach, or replace itself after an update.
   Restart it with `lx restart rmd` after rebuilding.
-- Logs one line to standard output when it starts, never the token, and exits
+- Logs one line to standard output when it starts, never a token, and exits
   with code 0 on SIGTERM.
+- Removes both tokens from its environment as it starts, so the commands it
+  runs, such as the Codex CLI for Suggest, never see them.
 
 The page's **Stop** button stops the service; LaunchX then shows it as stopped
 and offers to start it again.
@@ -91,6 +96,81 @@ and offers to start it again.
 Without `LAUNCHX`, `rmd serve` runs the workspace in the foreground on
 `127.0.0.1` (`--port` picks the port) and prints a private link. `rmd web` does
 not know about such a server.
+
+## Shared memory
+
+LaunchX keeps one memory for your apps and AI agents: a small wiki of Markdown
+pages about you (`profile`, `preferences`, `schedule`, `resume`, `projects`
+and pages of your own) in `~/.launchx/memory`. You decide, for each app,
+whether it may read memory, read and write it, or neither. The workspace's
+manifest asks for read and write and says why; it is off until you allow it:
+
+```bash
+lx memory access rmd write    # or read, or none
+```
+
+You can also flip the switch on the workspace's card in LaunchX's page. It
+applies at once, without a restart. **Settings → Shared memory** in the
+workspace shows what LaunchX allows, and the command to change it.
+
+### What it reads
+
+With read access, **Suggest** gives the model the memory's index (one line per
+page) and your `profile` and `preferences` pages, cut short to keep the prompt
+small, along with everything it sent before. The model is told that these
+pages are written by your apps and agents and are information about you, not
+instructions. **Settings → AI suggestions** says so next to where the data
+goes.
+
+### What it writes
+
+With write access, the workspace keeps its part of the well-known `schedule`
+page current: the shape of your weekly routine, and your upcoming deadlines.
+
+```markdown
+<!-- rmd:begin · Schedule Everything rewrites the lines up to rmd:end from the routine and deadlines; write notes outside them -->
+## From Schedule Everything
+
+Weekly routine (reminder blocks, local time):
+- Monday–Friday: 08:30–17:55 · 08:30–09:25 pomodoro ×2, 09:26 long break, 13:20 napping, 14:00–17:55 pomodoro ×8
+- Saturday: 10:00 Long run
+- Sunday: no reminders (a skip day)
+
+Upcoming deadlines:
+- Every Friday: Group meeting notes
+- 2026-12-01 (Tue): Paper submission · Writing
+<!-- rmd:end -->
+```
+
+- **Its own section.** Everything between the two marker lines is the
+  workspace's; everything else on the page belongs to whoever wrote it, you,
+  another app or an agent, and is never changed. The section lives on the
+  `schedule` page itself rather than on a sub-page, because `schedule` is the
+  page other apps and agents look for, and an app that reads it gets the whole
+  picture in one request. Write your own notes above or below the markers.
+- **What goes in.** The routine day by day, with days of the same shape on one
+  line and odd and even weeks apart when they differ; one-off deadlines in the
+  next six months and recurring ones by their rule, at most 20. Dates are
+  absolute, so the section changes when the routine or a deadline does, not
+  every day. Live data stays out: open tasks, today's progress and habits are
+  in the [state document](#state-document), where other apps read them.
+- **When.** A few seconds after you change the routine, a deadline or a type
+  in the workspace (several changes make one write), as soon as you allow
+  writing, and every two minutes, which picks up changes made with the CLI or
+  in a text editor. A write happens only when the section differs from the
+  page.
+- **No lost writes.** Every write names the revision it read. When another
+  writer changed the page in between, LaunchX refuses the write (`409`) and
+  sends the page as it is now; the workspace puts its section into that page
+  and writes once more.
+- **Turning it off.** With read access or none, the workspace stops writing;
+  its section stays on the page until you or an agent remove it. With write
+  access, a section you delete comes back, since keeping it is what writing is
+  for.
+
+When memory is off, LaunchX is not running, or a request is refused, the
+workspace works as it does without LaunchX, logs one line, and shows the
+reason in Settings. It never logs the memory token.
 
 ## HTTP interface
 
@@ -146,6 +226,7 @@ contains no tokens. It carries an `ETag`; send it back as `If-None-Match` to get
 | `suggestions` | Tasks suggested by agents, waiting for review. |
 | `plugins` | Plugins with their settings, state and log. |
 | `ai` | Whether the Suggest button is connected to a model (`ready`) and who it asks (`agent`). Never the API key. |
+| `memory` | The [shared memory](#shared-memory): `available` (LaunchX gave the server one), `access` (`none`, `read`, `write`, or `null` until LaunchX answers), `wants`, `reachable`, `error`, `change` (the command that grants what the workspace asks for), and `schedule` with the page's `rev`, when the workspace last found it current (`syncedAt`), and the `error` of the last write. Never the token. |
 | `views` | The commands of `POST /api` behind the views the document leaves out, because they take a parameter or are large: `daily_overview`, `weekly_overview`, `task_history`, `conference_calendar`, `config_read`. |
 
 Within a major version, fields are only added.

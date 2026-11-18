@@ -167,7 +167,11 @@ impl ScheduleConfig {
 
     /// Whether `date` falls on one of the configured `skip_days`.
     pub fn should_skip_date(&self, date: chrono::NaiveDate) -> bool {
-        let weekday = py::weekday_name(date);
+        self.skips_weekday(py::weekday_name(date))
+    }
+
+    /// Whether `weekday` (`"monday"`, ...) is one of the configured `skip_days`.
+    pub fn skips_weekday(&self, weekday: &str) -> bool {
         match self.settings.get("skip_days") {
             Some(Value::Array(days)) => days.iter().any(|d| d.as_str() == Some(weekday)),
             Some(Value::String(days)) => !days.is_empty() && days.contains(weekday),

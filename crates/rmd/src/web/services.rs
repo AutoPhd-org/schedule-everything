@@ -790,6 +790,7 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "suggestions": crate::web::suggestions::snapshot_rows(),
         "plugins": crate::plugins::snapshot_rows(&load_task_types()),
         "ai": crate::web::ai::snapshot_row(),
+        "memory": crate::memory::status(),
     }))
 }
 

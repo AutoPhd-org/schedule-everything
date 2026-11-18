@@ -5,7 +5,7 @@ import { GLOSSARY_IDS } from "./glossary";
 import { axisTones, layoutTree, packLabels, treeLanes } from "./tree";
 import { deadlinesByDay, deadlineSwatch, monthCells, nextOccurrence } from "./calendar";
 import { renderApp } from "./render";
-import type { AiSettings, BridgeClient, ConferencePayload, DailyOverview, HistoryItem, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
+import type { AiSettings, BridgeClient, ConferencePayload, DailyOverview, HistoryItem, MemoryStatus, Snapshot, WeekDay, WeeklyOverview, WeekStats } from "./types";
 import { addDays } from "./ui";
 
 const snapshot: Snapshot = {
@@ -331,6 +331,62 @@ describe("AI suggestions", () => {
     const address = root.querySelector<HTMLInputElement>('#ai-card [name="aiBaseUrl"]')!;
     address.value = "http://localhost:11434/v1"; address.dispatchEvent(new Event("input"));
     expect(root.querySelector(".ai-privacy")?.textContent).toContain("to localhost:11434.");
+  });
+});
+
+describe("shared memory", () => {
+  const memory = (extra: Partial<MemoryStatus> = {}): MemoryStatus => ({
+    available: true, access: "write", wants: "write", reachable: true, error: null, change: "lx memory access rmd write",
+    schedule: {page: "schedule", rev: "a1b2c3d4e5f6", syncedAt: "2026-10-05T09:30:00", error: null}, ...extra
+  });
+  const aiSettings: AiSettings = {
+    provider: "anthropic", count: 5, instructions: "", ready: true, agent: "Claude", model: "claude-opus-5-5",
+    providers: {
+      anthropic: {model: "", baseUrl: "", hasKey: true, keyHint: "…abcd", defaultModel: "claude-opus-5-5", defaultBaseUrl: "https://api.anthropic.com"},
+      openai: {model: "", baseUrl: "", hasKey: false, keyHint: null, defaultModel: null, defaultBaseUrl: "https://api.openai.com/v1"}
+    },
+    limits: {maxCount: 10, instructions: 1000}
+  };
+  async function settingsWith(status: MemoryStatus | undefined) {
+    send.mockImplementation(async (command: string) => {
+      if (command === "status_snapshot") return {...structuredClone(snapshot), memory: status};
+      if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
+      if (command === "ai_settings_read") return aiSettings;
+      return {};
+    });
+    document.body.innerHTML = '<div id="app"></div>';
+    root = document.querySelector("#app")!;
+    await renderApp(root, client);
+    click('[data-page="settings"]'); await flush(); await flush();
+    return root.querySelector<HTMLElement>("#memory-card")!;
+  }
+
+  it("says what LaunchX lets the workspace do with memory, and where to change it", async () => {
+    let card = await settingsWith(memory());
+    expect(card.querySelector(".memory-status.is-ready")?.textContent).toContain("On: Suggest reads your profile and preferences");
+    expect(card.querySelector(".memory-synced")?.textContent).toMatch(/^Schedule page last checked Mon.*9:30/);
+    expect(card.querySelector(".memory-change")?.textContent).toBe("Change it on Schedule Everything’s card in LaunchX.");
+
+    card = await settingsWith(memory({access: "read"}));
+    expect(card.querySelector(".memory-status")?.textContent).toContain("Read only:");
+    expect(card.querySelector(".memory-synced")).toBeNull();
+    expect(card.querySelector(".memory-change code")?.textContent).toBe("lx memory access rmd write");
+    expect(root.querySelector(".ai-privacy")?.textContent).toContain("It also sends your shared memory’s index");
+
+    card = await settingsWith(memory({access: "none"}));
+    expect(card.querySelector(".memory-status")?.textContent).toBe("Off: this workspace neither reads nor writes your memory.");
+    expect(card.querySelector(".memory-status.is-ready")).toBeNull();
+    expect(root.querySelector(".ai-privacy")?.textContent).not.toContain("shared memory");
+
+    card = await settingsWith(memory({access: null, reachable: false, error: "LaunchX did not answer: Connection refused"}));
+    expect(card.querySelector(".memory-status")?.textContent).toBe("LaunchX’s memory did not answer, so Suggest goes without it for now.");
+    expect(card.querySelector(".memory-error")?.textContent).toBe("LaunchX did not answer: Connection refused");
+
+    card = await settingsWith(memory({schedule: {page: "schedule", rev: null, syncedAt: null, error: "LaunchX answered 507: <b>full</b>"}}));
+    expect(card.querySelector(".memory-error")?.innerHTML).toBe("LaunchX answered 507: &lt;b&gt;full&lt;/b&gt;");
+
+    card = await settingsWith(undefined);
+    expect(card.querySelector(".memory-status")?.textContent).toBe("Available when Schedule Everything runs under LaunchX, which shares it with your other apps.");
   });
 });
 

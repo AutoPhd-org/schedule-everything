@@ -1125,6 +1125,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     const privacy = codex
       ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to OpenAI through the Codex CLI. Codex keeps its own sign-in; this workspace never reads it.")
       : token ? t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The token stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`}) : t("Suggest sends your open tasks, deadlines, today’s schedule and habits, recent work, and profile to {service}. The key stays on this computer, readable only by you.", {service: `<span data-ai-service>${e(service)}</span>`});
+    const access = state.snapshot?.memory?.access;
+    const readsMemory = access === "read" || access === "write";
     return `<article class="card ai-card" id="ai-card">${heading}
       <p class="muted">${t("The Suggest button on the task board asks a model for tasks you may need, from your situation right now. Its ideas wait on the board as suggestions until you add or reject them.")}</p>
       <div class="layout-switch ai-providers" role="group" aria-label="${t("Provider")}">${providers.map(([id, label]) => `<button type="button" data-ai-provider="${id}" aria-pressed="${id === provider}">${label}</button>`).join("")}</div>
@@ -1140,9 +1142,35 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       </div>
       <label>${t("Suggestions per press")}<input type="number" name="aiCount" min="1" max="${settings.limits.maxCount}" step="1" inputmode="numeric" value="${settings.count}"></label>
       <label>${t("What to keep in mind (optional)")}<textarea name="aiInstructions" rows="3" maxlength="${settings.limits.instructions}" placeholder="${e(t("For example: I’m writing my thesis this month. Keep weekends light."))}">${e(settings.instructions)}</textarea></label>
-      <p class="muted ai-privacy">${privacy}</p>
+      <p class="muted ai-privacy">${privacy}${readsMemory ? ` ${t("It also sends your shared memory’s index and its profile and preferences pages.")}` : ""}</p>
       <div class="button-row"><button type="button" class="button primary" data-ai-save>${icons.check}<span>${t("Save")}</span></button></div>
     </article>`;
+  }
+  /** Settings → Shared memory: what LaunchX lets this workspace do with the memory it keeps for the user's apps
+   *  and agents, and where to change it. From the state document's `memory`; the token never reaches the page. */
+  function memoryCard(s: Snapshot) {
+    const memory = s.memory;
+    const heading = `<h2>${icons.memory} ${t("Shared memory")}</h2>
+      <p class="muted">${t("LaunchX keeps one memory for your apps and AI agents: pages about who you are, how you like to work, and your schedule.")}</p>`;
+    if (!memory?.available) {
+      return `<article class="card memory-card" id="memory-card">${heading}<p class="memory-status">${t("Available when Schedule Everything runs under LaunchX, which shares it with your other apps.")}</p></article>`;
+    }
+    const [ready, text] = memory.access === "write"
+      ? [true, t("On: Suggest reads your profile and preferences, and your routine and deadlines are kept current on the schedule page.")]
+      : memory.access === "read"
+        ? [true, t("Read only: Suggest reads your profile and preferences. Allow writing to keep your routine and deadlines on the schedule page.")]
+        : memory.access === "none"
+          ? [false, t("Off: this workspace neither reads nor writes your memory.")]
+          : [false, memory.reachable === false ? t("LaunchX’s memory did not answer, so Suggest goes without it for now.") : t("Checking with LaunchX…")];
+    const status = `<p class="memory-status${ready ? " is-ready" : ""}">${ready ? icons.check : ""}<span>${text}</span></p>`;
+    const syncedAt = memory.access === "write" ? memory.schedule?.syncedAt : null;
+    const synced = syncedAt ? `<p class="muted memory-synced">${t("Schedule page last checked {time}.", {time: e(formatDate(syncedAt, {weekday: "short", hour: "numeric", minute: "2-digit"}))})}</p>` : "";
+    const problem = memory.schedule?.error ?? (memory.reachable === false ? memory.error : null);
+    const error = problem ? `<p class="muted memory-error">${e(problem)}</p>` : "";
+    const change = memory.access === memory.wants
+      ? t("Change it on Schedule Everything’s card in LaunchX.")
+      : t("Turn it on in LaunchX, on Schedule Everything’s card, or run {command}.", {command: `<code>${e(memory.change)}</code>`});
+    return `<article class="card memory-card" id="memory-card">${heading}${status}${synced}${error}<p class="muted memory-change">${change}</p></article>`;
   }
   /** Who receives what Suggest sends: Anthropic, or the host at the address of an OpenAI-compatible service. */
   function serviceOf(provider: AiProvider, address: string) {
@@ -1835,7 +1863,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${memoryCard(s)}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
