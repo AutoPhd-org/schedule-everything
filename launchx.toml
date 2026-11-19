@@ -38,3 +38,14 @@ skills = "plugins/schedule-everything/skills"
 [service.rmd.memory]
 wants  = "write"
 reason = "Keeps the routine and deadlines on your schedule page current, and lets Suggest read your profile and preferences"
+
+[install]
+# How `lx install AutoPhd-org/schedule-everything` and `lx update` install
+# Schedule Everything from a checkout: the installer builds rmd, installs it in
+# ~/SCHEDULE_MANAGEMENT and registers its own copy of this manifest (without
+# this table). Your schedules, tasks and history live in `data`, which
+# installing, updating and uninstalling never touch.
+run       = ["./install.sh", "--yes"]
+uninstall = ["./uninstall.sh"]
+needs     = ["cargo"]
+data      = ["~/.schedule_management"]
