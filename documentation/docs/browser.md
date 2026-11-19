@@ -38,7 +38,7 @@ instead; see [LaunchX](advanced/launchx.md).
 | Routines & deadlines | Record today's habits; plan deadlines and repeating events on an interactive year calendar (click a day to add, repeat weekly, every two weeks, or monthly, choose a marker color, drag to reschedule, and optionally show AI conference dates); add, edit, and remove deadlines with shared task types and urgency labels |
 | Activity | Scroll a timeline tree of completed, cancelled, and dropped tasks, or switch to a gallery; filter, search, and use the daily rhythm grid; hover over any task for its story; open the weekly overview to compare a week with earlier weeks |
 | Glossary | Look up any number the workspace shows: what it measures, how it is counted, an example, your own current value, and where to find it |
-| Settings | Edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; pick the interface language (English, 中文, Español, 한국어); choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
+| Settings | Choose which reminders ring and when (each kind on or off, its times, which blocks and schedule messages stay quiet, how important a task or how close a deadline must be, and quiet days); edit settings, odd/even week schedules, habits, deadlines, and profile; switch schedule versions and modes; reload or stop reminders; pick the interface language (English, 中文, Español, 한국어); choose the board layout, whether the theme follows your workload, where each workload level starts, and whether today's progress weighs tasks by importance |
 
 ## J mode and P mode
 

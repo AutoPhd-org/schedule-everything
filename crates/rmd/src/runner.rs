@@ -19,7 +19,7 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use crate::commands::deadlines::refresh_deadlines;
-use crate::config::{ScheduleConfig, TomlLoadError, WeeklySchedule};
+use crate::config::{ReminderKind, ScheduleConfig, TomlLoadError, WeeklySchedule};
 use crate::i18n::{t, tf};
 use crate::py::{self, Dict};
 use crate::synced_schedule::apply_synced_schedule;
@@ -154,20 +154,24 @@ impl Drop for PromptGuard<'_> {
 }
 
 /// Ask about each urgent task unless a prompt is already open.
-fn prompt_urgent_tasks_once(effects: &dyn Effects, active: &AtomicBool, is_last_time: bool) {
+fn prompt_urgent_tasks_once(effects: &dyn Effects, active: &AtomicBool, is_last_time: bool, min_importance: i64) {
     if active.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
         return;
     }
     let _guard = PromptGuard(active);
-    if let Err(error) = prompt_urgent_tasks_unguarded(effects, is_last_time) {
+    if let Err(error) = prompt_urgent_tasks_unguarded(effects, is_last_time, min_importance) {
         effects.log(&format!("Urgent task prompt skipped: {error}"));
     }
 }
 
-/// Ask about high-priority (> 7) and procrastinated tasks one by one: Yes
-/// completes the task, No at the day's last check marks it procrastinated,
-/// Stop ends the prompt.
-fn prompt_urgent_tasks_unguarded(effects: &dyn Effects, is_last_time: bool) -> std::io::Result<()> {
+/// Ask about important (at least `min_importance`, 8 by default) and
+/// procrastinated tasks one by one: Yes completes the task, No at the day's
+/// last check marks it procrastinated, Stop ends the prompt.
+fn prompt_urgent_tasks_unguarded(
+    effects: &dyn Effects,
+    is_last_time: bool,
+    min_importance: i64,
+) -> std::io::Result<()> {
     let mut tasks = data::load_tasks();
     let today = clock::today();
     let procrastinate_records = data::load_procrastinate_records();
@@ -178,7 +182,7 @@ fn prompt_urgent_tasks_unguarded(effects: &dyn Effects, is_last_time: bool) -> s
         if !task.is_object() || ScheduleRunner::is_task_postponed(task, Some(today)) {
             continue;
         }
-        let is_urgent = ScheduleRunner::task_priority(task) > 7;
+        let is_urgent = ScheduleRunner::task_priority(task) >= min_importance;
         let is_overdue =
             task.get("description").and_then(Value::as_str).is_some_and(|d| procrastinate_list.contains(d));
         if is_urgent || is_overdue {
@@ -335,8 +339,12 @@ impl ScheduleRunner {
                     self.start_time_block(time_str, name, name);
                 } else {
                     let message = self.config.time_points.get(name).map_or_else(|| name.clone(), py::py_str);
-                    self.log(&format!("Time point triggered at {time_str}: {message}"));
-                    self.trigger_alarm(&t("Reminder"), &message, None);
+                    if !self.config.reminder_on(ReminderKind::TimePoints) || !self.config.point_rings(name, &message) {
+                        self.log(&format!("Time point at {time_str} is turned off: {message}"));
+                    } else {
+                        self.log(&format!("Time point triggered at {time_str}: {message}"));
+                        self.trigger_alarm(&t("Reminder"), &message, None);
+                    }
                     self.notified_today.insert(time_str.to_string());
                 }
             }
@@ -354,7 +362,8 @@ impl ScheduleRunner {
         }
     }
 
-    /// Announce a time block and queue its end alarm.
+    /// Announce a time block and queue its end alarm, as far as `[reminders]`
+    /// lets them ring.
     pub fn start_time_block(&mut self, start_time: &str, block_type: &str, title: &str) {
         let duration = self.config.time_blocks.get(block_type).cloned().unwrap_or(Value::Null);
         let Some(end_time_str) = end_time(start_time, &duration) else {
@@ -365,14 +374,35 @@ impl ScheduleRunner {
             return;
         };
         let duration = py::py_str(&duration);
-
-        let start_message = tf("{title} ⏱️ ({duration}min)", &[("title", &title), ("duration", &duration)]);
-        self.trigger_alarm(&t("Start"), &start_message, None);
         self.notified_today.insert(start_time.to_string());
 
-        let end_message = tf("{title} finished! Take a break 🎉", &[("title", &title)]);
-        self.pending_end_alarms.insert(end_time_str.clone(), end_message);
-        self.log(&format!("Time block started at {start_time}: {title} ({duration}min), ends at {end_time_str}"));
+        let rings = self.config.block_rings(block_type);
+        let (start_on, end_on) = (
+            rings && self.config.reminder_on(ReminderKind::BlockStart),
+            rings && self.config.reminder_on(ReminderKind::BlockEnd),
+        );
+        if !start_on && !end_on {
+            self.log(&format!("Time block at {start_time} is turned off: {title} ({duration}min)"));
+            return;
+        }
+        if start_on {
+            let start_message = tf("{title} ⏱️ ({duration}min)", &[("title", &title), ("duration", &duration)]);
+            self.trigger_alarm(&t("Start"), &start_message, None);
+        }
+        if end_on {
+            let end_message = tf("{title} finished! Take a break 🎉", &[("title", &title)]);
+            self.pending_end_alarms.insert(end_time_str.clone(), end_message);
+        }
+        let quiet = if !start_on {
+            " (start alarm off)"
+        } else if !end_on {
+            " (end alarm off)"
+        } else {
+            ""
+        };
+        self.log(&format!(
+            "Time block started at {start_time}: {title} ({duration}min), ends at {end_time_str}{quiet}"
+        ));
     }
 
     // =========================================================================
@@ -395,13 +425,17 @@ impl ScheduleRunner {
         today.unwrap_or_else(clock::today) < alarm_from_date
     }
 
-    /// Pending tasks with priority above 7 whose reminders are not postponed.
+    /// Pending tasks at least as important as `[reminders] urgent_importance`
+    /// (8 by default) whose reminders are not postponed.
     pub fn get_unfinished_urgent_tasks(&self) -> Vec<Value> {
         let today = clock::today();
+        let min_importance = self.config.urgent_importance();
         data::load_tasks()
             .into_iter()
             .filter(|task| {
-                task.is_object() && Self::task_priority(task) > 7 && !Self::is_task_postponed(task, Some(today))
+                task.is_object()
+                    && Self::task_priority(task) >= min_importance
+                    && !Self::is_task_postponed(task, Some(today))
             })
             .collect()
     }
@@ -418,10 +452,12 @@ impl ScheduleRunner {
     /// Ask about each urgent task now, on this thread (no-op while another
     /// urgent-task prompt is open).
     pub fn prompt_urgent_tasks(&self, is_last_time: bool) {
-        prompt_urgent_tasks_once(self.effects.as_ref(), &self.urgent_task_prompt_active, is_last_time);
+        let min_importance = self.config.urgent_importance();
+        prompt_urgent_tasks_once(self.effects.as_ref(), &self.urgent_task_prompt_active, is_last_time, min_importance);
     }
 
-    /// Deadlines due within three days or overdue, most urgent first. Long
+    /// Deadlines due within `[reminders] deadline_days` (three by default) or
+    /// overdue, most urgent first. Long
     /// overdue one-off deadlines are removed from `ddl.json` and recurring ones
     /// rolled forward on the way.
     pub fn get_urgent_deadlines(&self) -> Vec<UrgentDeadline> {
@@ -433,6 +469,7 @@ impl ScheduleRunner {
         };
 
         let today = clock::today();
+        let lead_days = self.config.deadline_days();
         let refreshed = refresh_deadlines(&deadlines, Some(today));
         if refreshed.changed
             && let Err(error) = py::write_json_pretty(&ddl_path, &refreshed.kept)
@@ -458,7 +495,7 @@ impl ScheduleRunner {
                 continue;
             };
             let days_left = (deadline_date - today).num_days();
-            if days_left <= 3 {
+            if days_left <= lead_days {
                 urgent.push(UrgentDeadline { event: py::py_str(event), deadline: deadline_str.to_string(), days_left });
             }
         }
@@ -475,7 +512,9 @@ impl ScheduleRunner {
         self.log("Urgent task check triggered");
         let effects = Arc::clone(&self.effects);
         let active = Arc::clone(&self.urgent_task_prompt_active);
-        self.effects.spawn(Box::new(move || prompt_urgent_tasks_once(effects.as_ref(), &active, is_last_time)));
+        let min_importance = self.config.urgent_importance();
+        self.effects
+            .spawn(Box::new(move || prompt_urgent_tasks_once(effects.as_ref(), &active, is_last_time, min_importance)));
     }
 
     /// Ring the deadline alarm when deadlines are close.
@@ -563,6 +602,7 @@ impl ScheduleRunner {
         if now_str == self.config.daily_summary_time()
             && !self.notified_today.contains(&daily_summary_key)
             && !skip_today
+            && self.config.reminder_on(ReminderKind::DailySummary)
         {
             self.log("Daily summary popup triggered");
             let effects = Arc::clone(&self.effects);
@@ -579,6 +619,7 @@ impl ScheduleRunner {
             && now_str == habit_prompt_time
             && !self.notified_today.contains(&habit_prompt_key)
             && !skip_today
+            && self.config.reminder_on(ReminderKind::HabitPrompt)
         {
             self.log("Habit tracking popup triggered");
             let effects = Arc::clone(&self.effects);
@@ -589,7 +630,7 @@ impl ScheduleRunner {
         // ---------------------------------------------------------------------
         // Urgent Tasks & Deadlines
         // ---------------------------------------------------------------------
-        if !skip_today {
+        if !skip_today && self.config.reminder_on(ReminderKind::UrgentTasks) {
             let daily_urgent_times = self.config.daily_urgent_times();
             let last_urgent_time = daily_urgent_times.iter().max().cloned();
             for urgent_time in &daily_urgent_times {
@@ -601,7 +642,8 @@ impl ScheduleRunner {
                     self.notified_today.insert(urgent_tasks_key);
                 }
             }
-
+        }
+        if !skip_today && self.config.reminder_on(ReminderKind::Deadlines) {
             for urgent_time in self.config.ddl_urgent_times() {
                 let urgent_ddls_key = format!("urgent_ddls_{urgent_time}");
                 if now_str == urgent_time && !self.notified_today.contains(&urgent_ddls_key) {
@@ -617,6 +659,7 @@ impl ScheduleRunner {
         // ---------------------------------------------------------------------
         let weekly_review_setting = self.config.weekly_review_time();
         if let [day_of_week, review_time] = weekly_review_setting.split_whitespace().collect::<Vec<_>>()[..]
+            && self.config.reminder_on(ReminderKind::WeeklyReport)
             && py::weekday_name(today) == day_of_week.to_lowercase()
             && now_str == review_time
         {
@@ -632,6 +675,7 @@ impl ScheduleRunner {
         // ---------------------------------------------------------------------
         let monthly_review_setting = self.config.monthly_review_time();
         if let [day_of_month, review_time] = monthly_review_setting.split_whitespace().collect::<Vec<_>>()[..]
+            && self.config.reminder_on(ReminderKind::MonthlyReport)
             && py::parse_int_str(day_of_month) == Some(i64::from(now.day()))
             && now_str == review_time
         {
@@ -666,8 +710,13 @@ impl ScheduleRunner {
             && !self.notified_today.contains(&now_str)
             && let Some(message) = self.pending_end_alarms.get(&now_str).cloned()
         {
-            self.log(&format!("End alarm triggered at {now_str}: {message}"));
-            self.trigger_alarm(&t("End Reminder"), &message, None);
+            // End alarms may have been turned off since the block started.
+            if self.config.reminder_on(ReminderKind::BlockEnd) {
+                self.log(&format!("End alarm triggered at {now_str}: {message}"));
+                self.trigger_alarm(&t("End Reminder"), &message, None);
+            } else {
+                self.log(&format!("End alarm at {now_str} is turned off: {message}"));
+            }
             self.notified_today.insert(now_str.clone());
             self.pending_end_alarms.shift_remove(&now_str);
         }
@@ -682,12 +731,80 @@ impl ScheduleRunner {
         }
     }
 
-    /// Check the clock every 20 seconds, forever.
-    pub fn run(&mut self) -> ! {
+    /// Load the settings and week schedules again when they changed on disk,
+    /// so edits from the Settings page, `rmd settings` or an agent apply
+    /// without a restart (which would forget today's pending end alarms).
+    /// Files that no longer load leave the current configuration in place.
+    /// Returns whether it reloaded.
+    pub fn reload_if_changed(&mut self, watch: &mut ConfigWatch) -> bool {
+        if !watch.changed() {
+            return false;
+        }
+        let loaded = ScheduleConfig::load(&watch.settings_path)
+            .and_then(|config| WeeklySchedule::load(&watch.odd_path, &watch.even_path).map(|weekly| (config, weekly)));
+        match loaded {
+            Ok((config, weekly)) => {
+                self.config = config;
+                self.weekly_schedule = weekly;
+                self.log("Configuration changed; reminders reloaded");
+                true
+            }
+            Err(error) => {
+                self.log(&format!("Configuration changed but could not be loaded, so the previous one stays: {error}"));
+                false
+            }
+        }
+    }
+
+    /// Check the clock every 20 seconds, forever, picking up configuration
+    /// changes on the way.
+    pub fn run(&mut self, mut watch: ConfigWatch) -> ! {
         loop {
+            self.reload_if_changed(&mut watch);
             self.tick(clock::now());
             std::thread::sleep(POLL_INTERVAL);
         }
+    }
+}
+
+/// The files the reminder service loads its configuration from, and when each
+/// last changed.
+#[derive(Clone, Debug)]
+pub struct ConfigWatch {
+    settings_path: PathBuf,
+    odd_path: PathBuf,
+    even_path: PathBuf,
+    stamp: Vec<Option<std::time::SystemTime>>,
+}
+
+impl ConfigWatch {
+    /// Watch the three files, starting from how they are now.
+    pub fn new(settings_path: &Path, odd_path: &Path, even_path: &Path) -> Self {
+        let mut watch = Self {
+            settings_path: settings_path.to_path_buf(),
+            odd_path: odd_path.to_path_buf(),
+            even_path: even_path.to_path_buf(),
+            stamp: Vec::new(),
+        };
+        watch.stamp = watch.read_stamp();
+        watch
+    }
+
+    fn read_stamp(&self) -> Vec<Option<std::time::SystemTime>> {
+        [&self.settings_path, &self.odd_path, &self.even_path]
+            .into_iter()
+            .map(|path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok())
+            .collect()
+    }
+
+    /// Whether any of the files changed since the last call.
+    pub fn changed(&mut self) -> bool {
+        let stamp = self.read_stamp();
+        if stamp == self.stamp {
+            return false;
+        }
+        self.stamp = stamp;
+        true
     }
 }
 
@@ -752,7 +869,8 @@ pub fn main() -> i32 {
             log_runtime_event(&message);
         }
     });
-    ScheduleRunner::new(config, weekly).run()
+    let watch = ConfigWatch::new(&runtime_paths.settings_path, &runtime_paths.odd_path, &runtime_paths.even_path);
+    ScheduleRunner::new(config, weekly).run(watch)
 }
 
 #[cfg(test)]
@@ -1736,6 +1854,215 @@ summary = "今天的工作结束 🎉, 总结一下"
         assert!(!ScheduleRunner::is_task_postponed(&json!({"alarm_from": "tomorrow"}), today));
         assert!(!ScheduleRunner::is_task_postponed(&json!({"alarm_from": 20260409}), today));
         assert!(!ScheduleRunner::is_task_postponed(&json!({"alarm_from": ""}), today));
+    }
+
+    // --- [reminders]: which reminders ring ----------------------------------
+
+    #[test]
+    fn switched_off_block_alarms_stay_quiet() {
+        let mut env = TestEnv::new();
+        let effects = Recorder::new();
+        let schedule = json!({"09:00": {"block": "pomodoro", "title": "Write"}, "10:00": "break"});
+        let settings = format!("{SETTINGS}\n[reminders]\nblock_end = false\nmuted_blocks = [\"break\"]\n");
+        let mut runner = runner(&settings, every_day(schedule), &effects);
+
+        for minute in ["09:00", "09:25", "10:00", "10:05"] {
+            poll_minute(&mut runner, &mut env, &format!("2026-04-08T{minute}"));
+        }
+
+        assert_eq!(effects.alarms(), ["alarm: Start | Write ⏱️ (25min) | /mock/sound.aiff | 5 | 300"]);
+        assert_eq!(
+            effects.logs(),
+            [
+                "Time block started at 09:00: Write (25min), ends at 09:25 (end alarm off)",
+                "Time block at 10:00 is turned off: break (5min)",
+            ]
+        );
+        assert!(runner.pending_end_alarms.is_empty());
+        assert!(runner.notified_today.contains("10:00"));
+    }
+
+    #[test]
+    fn a_block_can_ring_only_at_its_end() {
+        let mut env = TestEnv::new();
+        let effects = Recorder::new();
+        let settings = format!("{SETTINGS}\n[reminders]\nblock_start = false\n");
+        let mut runner = runner(&settings, every_day(json!({"09:00": "pomodoro"})), &effects);
+
+        poll_minute(&mut runner, &mut env, "2026-04-08T09:00");
+        poll_minute(&mut runner, &mut env, "2026-04-08T09:25");
+
+        assert_eq!(
+            effects.alarms(),
+            ["alarm: End Reminder | pomodoro finished! Take a break 🎉 | /mock/sound.aiff | 5 | 300"]
+        );
+    }
+
+    #[test]
+    fn end_alarms_switched_off_after_the_block_started_stay_quiet() {
+        let mut env = TestEnv::new();
+        let effects = Recorder::new();
+        let mut runner = runner(SETTINGS, every_day(json!({"09:00": "pomodoro"})), &effects);
+        poll_minute(&mut runner, &mut env, "2026-04-08T09:00");
+        effects.take();
+
+        runner.config = config(&format!("{SETTINGS}\n[reminders]\nblock_end = false\n"));
+        poll_minute(&mut runner, &mut env, "2026-04-08T09:25");
+
+        assert!(effects.alarms().is_empty());
+        assert_eq!(effects.logs(), ["End alarm at 09:25 is turned off: pomodoro finished! Take a break 🎉"]);
+        assert!(runner.pending_end_alarms.is_empty());
+    }
+
+    #[test]
+    fn muted_time_points_and_messages_stay_quiet() {
+        let mut env = TestEnv::new();
+        let effects = Recorder::new();
+        let schedule = json!({"21:00": "summary", "22:00": "go_to_bed", "15:00": "Drink water", "16:00": "Stretch"});
+        let settings = format!("{SETTINGS}\n[reminders]\nmuted_points = [\"go_to_bed\", \"Drink water\"]\n");
+        let mut runner = runner(&settings, every_day(schedule.clone()), &effects);
+
+        for minute in ["15:00", "16:00", "21:00", "22:00"] {
+            poll_minute(&mut runner, &mut env, &format!("2026-04-08T{minute}"));
+        }
+        let messages: Vec<String> = effects
+            .take()
+            .iter()
+            .filter_map(|c| c.strip_prefix("alarm: Reminder | "))
+            .map(|c| c.split(" | ").next().unwrap().to_string())
+            .collect();
+        assert_eq!(messages, ["Stretch", "今天的工作结束 🎉, 总结一下"]);
+        assert!(runner.notified_today.contains("22:00"));
+
+        // Switching time points off quiets them all.
+        let settings = format!("{SETTINGS}\n[reminders]\ntime_points = false\n");
+        let mut runner = self::runner(&settings, every_day(schedule), &effects);
+        for minute in ["15:00", "16:00", "21:00", "22:00"] {
+            poll_minute(&mut runner, &mut env, &format!("2026-04-09T{minute}"));
+        }
+        assert!(effects.alarms().is_empty());
+    }
+
+    #[test]
+    fn switched_off_prompts_and_reports_do_not_open() {
+        let mut env = TestEnv::new();
+        write_json(&env, "tasks/tasks.json", json!([{"description": "Task A", "priority": 9}]));
+        write_json(&env, "user_config_0/ddl.json", json!([{"event": "due", "deadline": "2026-04-08"}]));
+        let effects = Recorder::new();
+        let settings = "[tasks]\ndaily_urgent = [\"10:00\"]\nddl_urgent = [\"10:00\"]\ndaily_summary = \"22:00\"\nhabit_prompt = \"21:30\"\nweekly_review = \"wednesday 20:00\"\nmonthly_review = \"8 20:00\"\n[reminders]\nurgent_tasks = false\ndeadlines = false\ndaily_summary = false\nhabit_prompt = false\nweekly_report = false\nmonthly_report = false\n";
+        let mut runner = runner(settings, WeeklySchedule::default(), &effects);
+
+        for minute in ["10:00", "20:00", "21:30", "22:00"] {
+            poll_minute(&mut runner, &mut env, &format!("2026-04-08T{minute}"));
+        }
+        assert!(effects.calls().is_empty(), "{:?}", effects.calls());
+    }
+
+    #[test]
+    fn urgent_importance_sets_which_tasks_are_asked_about() {
+        let mut env = TestEnv::new();
+        env.set_now("2026-04-08T09:00:00");
+        write_json(
+            &env,
+            "tasks/tasks.json",
+            json!([{"description": "Six", "priority": 6}, {"description": "Five", "priority": 5}, {"description": "Nine", "priority": 9}]),
+        );
+        let effects = Recorder::answering(&[Some(false), Some(false)]);
+        let runner = runner("[reminders]\nurgent_importance = 6\n", WeeklySchedule::default(), &effects);
+
+        let urgent: Vec<String> = runner
+            .get_unfinished_urgent_tasks()
+            .iter()
+            .map(|t| t["description"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(urgent, ["Six", "Nine"]);
+        runner.prompt_urgent_tasks(false);
+        let titles: Vec<String> =
+            effects.questions().iter().map(|(q, _)| q.lines().nth(2).unwrap().to_string()).collect();
+        assert_eq!(titles, ["Nine", "Six"]);
+    }
+
+    #[test]
+    fn deadline_days_sets_how_early_deadlines_ring() {
+        let mut env = TestEnv::new();
+        env.set_now("2026-04-08T09:00:00");
+        write_json(
+            &env,
+            "user_config_0/ddl.json",
+            json!([{"event": "in2", "deadline": "2026-04-10"}, {"event": "in6", "deadline": "2026-04-14"}, {"event": "today", "deadline": "2026-04-08"}]),
+        );
+        let effects = Recorder::new();
+        let events = |settings: &str| -> Vec<String> {
+            runner(settings, WeeklySchedule::default(), &effects)
+                .get_urgent_deadlines()
+                .into_iter()
+                .map(|d| d.event)
+                .collect()
+        };
+        assert_eq!(events(""), ["today", "in2"]);
+        assert_eq!(events("[reminders]\ndeadline_days = 7\n"), ["today", "in2", "in6"]);
+        assert_eq!(events("[reminders]\ndeadline_days = 0\n"), ["today"]);
+    }
+
+    #[test]
+    fn reminder_settings_read_with_defaults_and_bounds() {
+        let defaults = config("");
+        assert!(ReminderKind::ALL.iter().all(|kind| defaults.reminder_on(*kind)));
+        assert_eq!((defaults.urgent_importance(), defaults.deadline_days()), (8, 3));
+        let set = config(
+            "[reminders]\nblock_start = false\nblock_end = \"no\"\nurgent_importance = 40\ndeadline_days = -2\nmuted_blocks = \"nap\"\n",
+        );
+        // Only `false` switches a reminder off.
+        assert!(!set.reminder_on(ReminderKind::BlockStart) && set.reminder_on(ReminderKind::BlockEnd));
+        assert_eq!((set.urgent_importance(), set.deadline_days()), (10, 0));
+        assert!(!set.block_rings("nap") && set.block_rings("pomodoro"));
+        assert_eq!(ReminderKind::from_key("habit_prompt"), Some(ReminderKind::HabitPrompt));
+        assert_eq!(ReminderKind::from_key("nope"), None);
+    }
+
+    #[test]
+    fn the_service_picks_up_configuration_changes() {
+        let env = TestEnv::new();
+        let settings_path = env.write("user_config_0/settings.toml", SETTINGS);
+        let odd_path = env.write("user_config_0/odd_weeks.toml", "[common]\n\"09:00\" = \"pomodoro\"\n");
+        let even_path = env.write("user_config_0/even_weeks.toml", "[common]\n\"09:00\" = \"pomodoro\"\n");
+        let mut watch = ConfigWatch::new(&settings_path, &odd_path, &even_path);
+        let effects = Recorder::new();
+        let mut runner = runner(SETTINGS, WeeklySchedule::load(&odd_path, &even_path).unwrap(), &effects);
+        runner.notified_today.insert("08:00".into());
+        runner.pending_end_alarms.insert("09:25".into(), "earlier block".into());
+        assert!(!runner.reload_if_changed(&mut watch));
+
+        // A newer modification time, as a save a moment later would give.
+        let later = |path: &Path| {
+            let file = std::fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(std::time::SystemTime::now() + Duration::from_secs(5)).unwrap();
+        };
+        std::fs::write(&settings_path, format!("{SETTINGS}\n[reminders]\nblock_start = false\n")).unwrap();
+        later(&settings_path);
+        assert!(runner.reload_if_changed(&mut watch));
+        assert!(!runner.config.reminder_on(ReminderKind::BlockStart));
+        // The day's state survives the reload.
+        assert!(runner.notified_today.contains("08:00"));
+        assert_eq!(runner.pending_end_alarms.len(), 1);
+        assert!(!runner.reload_if_changed(&mut watch));
+
+        // A file that no longer loads keeps the configuration in place.
+        std::fs::write(&odd_path, "not [ toml").unwrap();
+        later(&odd_path);
+        assert!(!runner.reload_if_changed(&mut watch));
+        assert!(!runner.config.reminder_on(ReminderKind::BlockStart));
+        assert_eq!(runner.weekly_schedule.odd_data.len(), 1);
+        assert_eq!(
+            effects.logs(),
+            [
+                "Configuration changed; reminders reloaded".to_string(),
+                format!(
+                    "Configuration changed but could not be loaded, so the previous one stays: {}",
+                    WeeklySchedule::load(&odd_path, &even_path).unwrap_err()
+                ),
+            ]
+        );
     }
 
     #[test]

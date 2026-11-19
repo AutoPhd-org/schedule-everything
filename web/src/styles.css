@@ -1721,6 +1721,49 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 /* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
 .display-card h2, .language-card h2, .ai-card h2, .open-card h2, .memory-card h2 { display: flex; align-items: center; gap: 8px; }
 .display-card h2 svg, .language-card h2 svg, .ai-card h2 svg, .open-card h2 svg, .memory-card h2 svg { color: var(--accent); }
+/* Settings → Reminders: a switch per kind with its times beside it, the schedule's blocks and messages one by one,
+   and quiet days. The groups flow in columns, so the long schedule group sits beside the shorter ones. */
+.reminders-card { margin-bottom: 22px; }
+.reminders-head h2 { display: flex; align-items: center; gap: 8px; }
+.reminders-head h2 svg { color: var(--accent); }
+.reminders-head .muted { margin: 6px 0 0; max-width: 72ch; }
+.reminder-groups { columns: 2 380px; column-gap: 28px; margin-top: 6px; }
+.reminder-group { break-inside: avoid; padding: 16px 0 6px; border-top: 1px solid var(--line); margin-top: 14px; }
+.reminder-group header h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.reminder-group header h3 svg { width: 17px; height: 17px; color: var(--accent); }
+.reminder-group header .muted { margin: 4px 0 0; font-size: 12px; line-height: 1.55; }
+.reminder-group header .muted b { color: var(--text); font-weight: 650; }
+.reminder-group header .text-button { padding: 2px 4px; }
+.reminder-row { display: grid; gap: 4px 16px; margin: 4px 0; }
+.reminder-toggle { margin: 12px 0 2px; }
+.reminder-when { display: grid; justify-items: start; gap: 8px; padding-left: 50px; transition: opacity .2s; }
+.reminder-row.is-off .reminder-when, .reminder-picks.is-off { opacity: .55; }
+.reminder-when input, .reminder-when select { width: auto; padding: 6px 10px; border-radius: 12px; font-size: 12.5px; line-height: 1.4; }
+.reminder-pair { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.reminder-note { font-size: 11.5px; }
+.reminder-extra { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; font-size: 12px; color: var(--muted); }
+.reminder-extra input[type="number"] { width: 4.6em; }
+.time-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.time-chip { display: inline-flex; align-items: center; gap: 2px; padding: 3px 3px 3px 11px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-solid); font: 650 12px/1.4 var(--display); font-variant-numeric: tabular-nums; }
+.time-chip button { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+.time-chip button:hover { background: var(--surface-alt); color: var(--text); }
+.time-chip button svg { width: 13px; height: 13px; }
+.time-none { font-size: 12px; }
+.time-add { display: inline-flex; align-items: center; gap: 4px; }
+.time-add .icon-button { width: 30px; height: 30px; }
+.reminder-picks { display: grid; gap: 7px; margin: 8px 0 10px; padding-left: 50px; transition: opacity .2s; }
+.picks-label { font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.reminder-pick, .quiet-day { --c: var(--accent); padding: 5px 11px; font-size: 11.5px; }
+.reminder-pick svg { width: 13px; height: 13px; }
+.reminder-pick[aria-pressed="false"] { color: var(--muted); border-style: dashed; background: transparent; }
+.reminder-pick[aria-pressed="false"] span { text-decoration: line-through; text-decoration-color: color-mix(in oklab, var(--muted) 60%, transparent); }
+.reminder-pick span { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quiet-days { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+.quiet-day { min-width: 3.4em; justify-content: center; }
+@media (max-width: 600px) {
+  .reminder-when, .reminder-picks { padding-left: 0; }
+}
 /* Settings → AI suggestions. */
 .ai-providers { width: fit-content; max-width: 100%; flex-wrap: wrap; margin-top: 14px; }
 .ai-provider-note { margin: 8px 0 0; font-size: 12px; }

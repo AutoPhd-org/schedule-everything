@@ -38,6 +38,13 @@ habit_prompt = "23:50"                                 # daily habit check-in
 weekly_review = "sunday 20:00"
 monthly_review = "1 20:00"                             # day-of-month HH:MM
 
+[reminders]                 # optional: which reminders ring; every one is on unless false
+block_end = false           # e.g. no alarm when a block ends
+muted_blocks = ["meeting"]  # [time_blocks] names that never ring
+muted_points = ["napping"]  # [time_points] names (or plain schedule messages) that never ring
+urgent_importance = 8       # check-in asks about tasks of at least this importance
+deadline_days = 3           # deadline alarm lists deadlines this many days away or closer
+
 [paths]
 config_dir = "config"
 reports_path = "~/Desktop/reports"
@@ -49,8 +56,11 @@ reports_path = "~/Desktop/reports"
 4 = "Other"
 ```
 
-Keep the user's existing `[settings]`, `[tasks]`, `[paths]`, and
-`[task_types]` values unless they ask to change them.
+Keep the user's existing `[settings]`, `[tasks]`, `[reminders]`, `[paths]`, and
+`[task_types]` values unless they ask to change them. The other switches in
+`[reminders]` are `block_start`, `time_points`, `urgent_tasks`, `deadlines`,
+`daily_summary`, `habit_prompt`, `weekly_report`, and `monthly_report`; the
+user can also set all of this in the browser under Settings → Reminders.
 
 ## odd_weeks.toml and even_weeks.toml
 
