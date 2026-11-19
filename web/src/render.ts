@@ -12,6 +12,7 @@ import { bindTilt, burst, centerOf, farewell, loadTag, reducedMotion, themeWave,
 import { bindPeek, hidePeek } from "./peek";
 import { bindCategoryPanel, bindPluginControls, bindPluginPage, bindPluginTimers, bindTaskExtras, categoryBar, categoryPanel, describeSuggestion, groupIcon, pluginById, pluginNav, pluginOfType, pluginPage, pluginPageId, pluginsCard, pluginTimers, subtasksFor, taskExtra, tickPluginClocks, type PluginHost } from "./plugins";
 import { loadPrefs, savePrefs, type BoardLayout, type PrefKey, type Prefs } from "./prefs";
+import { bindReminders, isReminders, remindersCard, type RemindersData, type RemindersPatch } from "./reminders";
 import { applyTheme, setThemePreference, themePreference, type ThemePreference } from "./theme";
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
@@ -44,11 +45,13 @@ type AgentTab = "claude" | "codex" | "antigravity";
  *  Settings card (saved or not), whether Suggest is waiting for an answer, whether to bring the card into view
  *  when it loads, and whether suggestions arrived while the page could not be redrawn. */
 type AiState = {settings: AiSettings | null; provider: AiProvider | null; auth: Partial<Record<AiProvider, AiAuth>>; suggesting: boolean; focus: boolean; stale: boolean};
+/** Settings → Reminders, once loaded (or why it could not be). */
+type RemindersState = {data: RemindersData | null; error: string | null};
 /** A way to take back what a notice reports. It belongs to that notice: once the notice is replaced or put
  *  away, or anything else is done, the chance to undo is gone. */
 type Undo = {notice: string; run: () => Promise<void>};
 /** Deadline timers the user closed, by deadline name and date (see timerKey). */
-type State = {page: Page; glossary: string | null; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null; ai: AiState};
+type State = {page: Page; glossary: string | null; snapshot: Snapshot | null; workspace: Workspace | null; agentTab: AgentTab; search: string; busy: boolean; notice: string; undo: Undo | null; config: ConfigFile | null; activity: ActivityState; calendar: CalendarState; conferences: ConferenceView; board: BoardState; closedTimers: Set<string>; prefs: Prefs; daily: DailyOverview | null; ai: AiState; reminders: RemindersState};
 
 const CONFERENCE_PREFS = "schedule-everything-conferences";
 /** Which AI conferences to show is a per-browser preference. */
@@ -151,7 +154,8 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     closedTimers: loadClosedTimers(),
     prefs: loadPrefs(),
     daily: null,
-    ai: {settings: null, provider: null, auth: {}, suggesting: false, focus: false, stale: false}
+    ai: {settings: null, provider: null, auth: {}, suggesting: false, focus: false, stale: false},
+    reminders: {data: null, error: null}
   };
   setLoadThresholds(state.prefs.loadThresholds);
   bindTooltips(signal);
@@ -323,7 +327,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     if (page === "activity") void refreshActivity();
     if (page === "today") void refreshDaily();
     if (page === "glossary") void refreshGlossary();
-    if (page === "settings") void loadAi();
+    if (page === "settings") { void loadAi(); void loadReminders(); }
     // Suggestions that arrived while the page was busy show up now.
     if (state.ai.stale) void reload().catch(() => {});
   }
@@ -563,6 +567,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindPluginControls(root, host);
     root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach(btn => btn.onclick = () => void suggestTasks());
     bindAi(root);
+    bindReminders(root, state.reminders.data, saveReminders);
   }
 
   async function runAction(id: string) {
@@ -1264,6 +1269,44 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
             : auth === "codex" && saved.codex && !saved.codex.signedIn ? t("Saved. Sign in with codex login in a terminal, then press Suggest.")
               : saved.ready ? t("Saved. Press Suggest on the task board to get ideas from {agent}.", {agent: saved.agent}) : t("Saved. Suggest needs a key and a model before it can ask for ideas.");
   }
+  /** Load Settings → Reminders. */
+  async function loadReminders() {
+    try {
+      const data = await request<RemindersData>("reminders_read");
+      // An answer the card cannot show leaves it as it was.
+      if (isReminders(data)) state.reminders = {data, error: null};
+    } catch (error) { state.reminders = {data: null, error: error instanceof Error ? error.message : String(error)}; }
+    if (state.page === "settings") redrawRemindersCard();
+  }
+  /** Draw the Reminders card again in place, putting focus back on `focus` (a selector) when it is still there. */
+  function redrawRemindersCard(focus: string | null = null) {
+    const card = root.querySelector<HTMLElement>("#reminders-card");
+    if (!card) return;
+    card.outerHTML = remindersCard(state.reminders.data, {paused: modeOf() === "p", error: state.reminders.error});
+    bindReminders(root, state.reminders.data, saveReminders);
+    root.querySelectorAll<HTMLElement>("#reminders-card [data-page]").forEach(btn => btn.onclick = () => navigate(btn.dataset.page as Page));
+    if (focus) root.querySelector<HTMLElement>(`#reminders-card ${focus}`)?.focus({preventScroll: true});
+  }
+  /** The control a change came from, as a selector that finds it after the card is drawn again: a removed time's
+   *  chip is gone, so focus goes to its list's new-time field. */
+  function reminderFocus(el: Element | null): string | null {
+    if (!el?.closest("#reminders-card")) return null;
+    const attr = [...el.attributes].find(item => item.name.startsWith("data-reminder") || item.name === "data-quiet-day");
+    if (!attr) return null;
+    const value = attr.value.replace(/["\\]/g, "\\$&");
+    return attr.name === "data-reminder-remove" || attr.name === "data-reminder-add" ? `[data-reminder-new="${value}"]` : `[${attr.name}="${value}"]`;
+  }
+  /** Save one change from the Reminders card; whatever happens, the card then shows what is saved. */
+  function saveReminders(patch: RemindersPatch, notice: string) {
+    const focus = reminderFocus(document.activeElement);
+    void action(async () => {
+      try {
+        const data = await request<RemindersData>("reminders_save", patch);
+        if (isReminders(data)) state.reminders = {data, error: null};
+        state.notice = notice;
+      } finally { redrawRemindersCard(focus); }
+    });
+  }
   /** Load the AI settings for the Settings page, and bring the card into view when Suggest sent the user here. */
   async function loadAi() {
     try {
@@ -1863,7 +1906,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div><section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${memoryCard(s)}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div>${remindersCard(state.reminders.data, {paused: modeOf() === "p", error: state.reminders.error})}<section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${memoryCard(s)}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------

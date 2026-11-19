@@ -11,11 +11,12 @@ use crate::toml_writer::{dump_toml, load_toml_raw};
 pub const WEEKDAYS: [&str; 7] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 /// Section headings shown in the settings editor.
-pub const SECTION_LABELS: [(&str, &str); 7] = [
+pub const SECTION_LABELS: [(&str, &str); 8] = [
     ("settings", "⚙️  General Settings"),
     ("time_blocks", "⏱️  Time Blocks"),
     ("time_points", "🔔  Notifications"),
     ("tasks", "📋  Task Scheduling"),
+    ("reminders", "🔕  Reminders On/Off"),
     ("paths", "📁  File Paths"),
     ("task_types", "🏷️  Task Types"),
     ("task_type_colors", "🎨  Task Type Colors"),
@@ -95,7 +96,7 @@ impl FieldMeta {
 }
 
 /// Explicit metadata for known setting keys.
-pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 13] = [
+pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 24] = [
     (("settings", "sound_file"), FieldMeta::new(EditorType::Text, "Path to notification sound file")),
     (("settings", "alarm_interval"), FieldMeta::range(EditorType::Number, "Seconds between alarm repeats", 1, 120)),
     (
@@ -115,6 +116,23 @@ pub const FIELD_REGISTRY: [((&str, &str), FieldMeta); 13] = [
     (("tasks", "habit_prompt"), FieldMeta::new(EditorType::Time, "Time for habit tracking prompt (HH:MM)")),
     (("tasks", "weekly_review"), FieldMeta::new(EditorType::WeekdayTime, "Weekday and time for weekly review")),
     (("tasks", "monthly_review"), FieldMeta::new(EditorType::DayTime, "Day-of-month and time for monthly review")),
+    (("reminders", "block_start"), FieldMeta::new(EditorType::Toggle, "Ring when a time block starts")),
+    (("reminders", "block_end"), FieldMeta::new(EditorType::Toggle, "Ring when a time block ends")),
+    (("reminders", "time_points"), FieldMeta::new(EditorType::Toggle, "Ring the fixed messages in the week schedule")),
+    (("reminders", "urgent_tasks"), FieldMeta::new(EditorType::Toggle, "Ask about important tasks at daily_urgent")),
+    (("reminders", "deadlines"), FieldMeta::new(EditorType::Toggle, "Ring for close deadlines at ddl_urgent")),
+    (("reminders", "daily_summary"), FieldMeta::new(EditorType::Toggle, "Show the daily summary at daily_summary")),
+    (("reminders", "habit_prompt"), FieldMeta::new(EditorType::Toggle, "Ask about habits at habit_prompt")),
+    (("reminders", "weekly_report"), FieldMeta::new(EditorType::Toggle, "Make the weekly report at weekly_review")),
+    (("reminders", "monthly_report"), FieldMeta::new(EditorType::Toggle, "Make the monthly report at monthly_review")),
+    (
+        ("reminders", "urgent_importance"),
+        FieldMeta::range(EditorType::Number, "Ask about tasks of at least this importance", 1, 10),
+    ),
+    (
+        ("reminders", "deadline_days"),
+        FieldMeta::range(EditorType::Number, "Ring for deadlines this many days away or closer", 0, 60),
+    ),
 ];
 
 /// Fallback metadata for sections with user-defined keys.

@@ -106,6 +106,85 @@ fn string_list(value: Option<&Value>) -> Vec<String> {
     }
 }
 
+/// Each kind of reminder the service gives, by its switch in `[reminders]`.
+/// Every kind is on unless its switch is `false`; when the timed ones ring is
+/// set in `[tasks]` (see [`ReminderKind::time_key`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReminderKind {
+    /// A time block from the week schedule starts.
+    BlockStart,
+    /// A time block from the week schedule ends.
+    BlockEnd,
+    /// A fixed message from the week schedule (a `[time_points]` name or plain text).
+    TimePoints,
+    /// The Yes/No prompt about important and procrastinated tasks.
+    UrgentTasks,
+    /// The alarm for deadlines that are close.
+    Deadlines,
+    /// The daily summary popup.
+    DailySummary,
+    /// The habit check-in popup.
+    HabitPrompt,
+    /// The weekly report.
+    WeeklyReport,
+    /// The monthly report.
+    MonthlyReport,
+}
+
+impl ReminderKind {
+    pub const ALL: [ReminderKind; 9] = [
+        Self::BlockStart,
+        Self::BlockEnd,
+        Self::TimePoints,
+        Self::UrgentTasks,
+        Self::Deadlines,
+        Self::DailySummary,
+        Self::HabitPrompt,
+        Self::WeeklyReport,
+        Self::MonthlyReport,
+    ];
+
+    /// Its switch in `[reminders]`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::BlockStart => "block_start",
+            Self::BlockEnd => "block_end",
+            Self::TimePoints => "time_points",
+            Self::UrgentTasks => "urgent_tasks",
+            Self::Deadlines => "deadlines",
+            Self::DailySummary => "daily_summary",
+            Self::HabitPrompt => "habit_prompt",
+            Self::WeeklyReport => "weekly_report",
+            Self::MonthlyReport => "monthly_report",
+        }
+    }
+
+    /// The `[tasks]` key holding when it rings (`None` for the kinds the week
+    /// schedule times).
+    pub fn time_key(self) -> Option<&'static str> {
+        match self {
+            Self::BlockStart | Self::BlockEnd | Self::TimePoints => None,
+            Self::UrgentTasks => Some("daily_urgent"),
+            Self::Deadlines => Some("ddl_urgent"),
+            Self::DailySummary => Some("daily_summary"),
+            Self::HabitPrompt => Some("habit_prompt"),
+            Self::WeeklyReport => Some("weekly_review"),
+            Self::MonthlyReport => Some("monthly_review"),
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.key() == key)
+    }
+}
+
+/// `[reminders] urgent_importance` when unset: tasks of importance 8 or more.
+pub const DEFAULT_URGENT_IMPORTANCE: i64 = 8;
+/// `[reminders] deadline_days` when unset: deadlines three days away or closer.
+pub const DEFAULT_DEADLINE_DAYS: i64 = 3;
+/// The longest `[reminders] deadline_days` the service honors.
+pub const MAX_DEADLINE_DAYS: i64 = 60;
+
 /// Main configuration from `settings.toml`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScheduleConfig {
@@ -115,6 +194,8 @@ pub struct ScheduleConfig {
     pub tasks: Dict,
     pub paths: Dict,
     pub task_types: Dict,
+    /// Which reminders ring (`[reminders]`).
+    pub reminders: Dict,
 }
 
 impl ScheduleConfig {
@@ -137,7 +218,53 @@ impl ScheduleConfig {
             tasks: section(config, "tasks"),
             paths: section(config, "paths"),
             task_types: section(config, "task_types"),
+            reminders: section(config, "reminders"),
         }
+    }
+
+    /// Whether reminders of `kind` are switched on (anything but `false` is on).
+    pub fn reminder_on(&self, kind: ReminderKind) -> bool {
+        !matches!(self.reminders.get(kind.key()), Some(Value::Bool(false)))
+    }
+
+    /// Time block names that ring no alarm (`[reminders] muted_blocks`).
+    pub fn muted_blocks(&self) -> Vec<String> {
+        string_list(self.reminders.get("muted_blocks"))
+    }
+
+    /// Time point names, or plain schedule messages, that ring no alarm
+    /// (`[reminders] muted_points`).
+    pub fn muted_points(&self) -> Vec<String> {
+        string_list(self.reminders.get("muted_points"))
+    }
+
+    /// Whether a time block of type `block` rings.
+    pub fn block_rings(&self, block: &str) -> bool {
+        !self.muted_blocks().iter().any(|name| name == block)
+    }
+
+    /// Whether the schedule label `label` (a time point name or plain message)
+    /// rings; `message` is what it says.
+    pub fn point_rings(&self, label: &str, message: &str) -> bool {
+        !self.muted_points().iter().any(|name| name == label || name == message)
+    }
+
+    /// The least importance (1-10) a task needs for the urgent-task prompt to
+    /// ask about it (`[reminders] urgent_importance`, default 8).
+    pub fn urgent_importance(&self) -> i64 {
+        self.reminders
+            .get("urgent_importance")
+            .and_then(py::py_int)
+            .map_or(DEFAULT_URGENT_IMPORTANCE, |n| n.clamp(1, 10))
+    }
+
+    /// How many days ahead a deadline starts ringing (`[reminders]
+    /// deadline_days`, default 3; 0 is the day it is due).
+    pub fn deadline_days(&self) -> i64 {
+        self.reminders
+            .get("deadline_days")
+            .and_then(py::py_int)
+            .map_or(DEFAULT_DEADLINE_DAYS, |n| n.clamp(0, MAX_DEADLINE_DAYS))
     }
 
     /// Notification sound, falling back to a platform default.

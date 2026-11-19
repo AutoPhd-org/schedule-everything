@@ -194,7 +194,48 @@ fn check_settings(text: &str, name: &str, errors: &mut Vec<Value>, warnings: &mu
             warnings.push(issue(name, format!("no [{table}] table; built-in defaults apply")));
         }
     }
+    warnings.extend(reminder_problems(&data).into_iter().map(|message| issue(name, message)));
     if required.is_empty() { Some(data) } else { None }
+}
+
+/// What the reminder service would ignore or read differently in
+/// `[reminders]`: unknown keys, switches that are not `true`/`false`, numbers
+/// out of range, and muted names that are not lists of text.
+fn reminder_problems(settings: &Dict) -> Vec<String> {
+    use crate::config::{MAX_DEADLINE_DAYS, ReminderKind};
+    let Some(reminders) = settings.get("reminders") else { return Vec::new() };
+    let Value::Object(reminders) = reminders else { return vec!["[reminders] must be a table".to_string()] };
+    let mut problems = Vec::new();
+    for (key, value) in reminders {
+        let place = format!("[reminders] {key}");
+        if ReminderKind::from_key(key).is_some() {
+            if !value.is_boolean() {
+                problems.push(format!("{place}: use true or false; anything else leaves it on"));
+            }
+            continue;
+        }
+        let range = match key.as_str() {
+            "urgent_importance" => Some((1, 10)),
+            "deadline_days" => Some((0, MAX_DEADLINE_DAYS)),
+            "muted_blocks" | "muted_points" => {
+                let names = matches!(value, Value::Array(items) if items.iter().all(Value::is_string));
+                if !names {
+                    problems.push(format!("{place}: use a list of names, such as [\"meeting\"]"));
+                }
+                None
+            }
+            _ => {
+                problems.push(format!("{place}: unknown setting, so it is ignored"));
+                None
+            }
+        };
+        if let Some((low, high)) = range
+            && !py::py_int(value).is_some_and(|n| (low..=high).contains(&n))
+        {
+            problems.push(format!("{place}: use a whole number from {low} to {high}"));
+        }
+    }
+    problems
 }
 
 fn key_names(settings: &Dict, table: &str) -> BTreeSet<String> {
@@ -488,5 +529,23 @@ mod tests {
         );
         assert!(validate_content("deadlines", "{}").is_err());
         assert!(validate_content("habits", "[habits]\n1 = \"Read\"\n").is_ok());
+    }
+
+    #[test]
+    fn reminder_settings_the_service_would_misread_are_warnings() {
+        let settings = parse_toml_str(
+            "[reminders]\nblock_end = false\nhabit_prompt = \"off\"\nurgent_importance = 12\ndeadline_days = 5\nmuted_blocks = \"nap\"\nmuted_points = [\"lunch\"]\nbedtime = true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            reminder_problems(&settings),
+            [
+                "[reminders] habit_prompt: use true or false; anything else leaves it on",
+                "[reminders] urgent_importance: use a whole number from 1 to 10",
+                "[reminders] muted_blocks: use a list of names, such as [\"meeting\"]",
+                "[reminders] bedtime: unknown setting, so it is ignored",
+            ]
+        );
+        assert!(reminder_problems(&parse_toml_str("[settings]\n").unwrap()).is_empty());
     }
 }

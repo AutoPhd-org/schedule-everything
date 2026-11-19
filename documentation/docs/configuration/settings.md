@@ -134,6 +134,53 @@ auto_cleanup_days = 30          # Auto-cleanup completed tasks after N days
 show_completed = false          # Show completed tasks in list
 ```
 
+## Reminders Section
+
+The reminder service rings for nine kinds of things. `[tasks]` says when the
+timed ones ring, and `[reminders]` says which ones ring at all. You can set both
+in the browser under **Settings → Reminders**, which edits only the lines it
+changes; the running reminder service picks up any change to `settings.toml` or
+the week schedules within a minute, without a restart.
+
+```toml
+[tasks]
+daily_urgent = ["08:31", "14:01", "17:31", "21:31"]  # important tasks check-in
+ddl_urgent = ["08:32", "14:02", "17:32", "22:32"]    # deadline alarm
+daily_summary = "23:35"
+habit_prompt = "23:50"
+weekly_review = "sunday 20:00"                        # weekday HH:MM
+monthly_review = "1 20:00"                            # day of month HH:MM
+
+[reminders]
+# Every reminder is on unless set to false here.
+block_start = true        # a time block from the week schedule starts
+block_end = false         # ...and when it ends
+time_points = true        # fixed messages in the week schedule (lunch, bedtime…)
+urgent_tasks = true       # Yes/No check-in on important and put-off tasks
+deadlines = true          # alarm listing close deadlines
+daily_summary = true
+habit_prompt = true
+weekly_report = true
+monthly_report = true
+muted_blocks = ["meeting"]            # time blocks that ring no alarm
+muted_points = ["napping", "Drink water"]  # time points, or plain schedule messages, that stay quiet
+urgent_importance = 8     # ask about open tasks of at least this importance (1-10)
+deadline_days = 3         # ring for deadlines this many days away or closer (0-60)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `block_start`, `block_end`, `time_points`, `urgent_tasks`, `deadlines`, `daily_summary`, `habit_prompt`, `weekly_report`, `monthly_report` | boolean | `true` | Whether that kind of reminder rings. Only `false` turns one off. A timed kind also needs a time in `[tasks]`. |
+| `muted_blocks` | list of names | `[]` | `[time_blocks]` names that ring neither a start nor an end alarm. |
+| `muted_points` | list of names | `[]` | `[time_points]` names, or the text of a plain message in a week schedule, that ring no alarm. |
+| `urgent_importance` | integer | `8` | The importance a task needs for the check-in to ask about it. Tasks you put off are asked about whatever their importance. |
+| `deadline_days` | integer | `3` | How many days before a deadline the alarm starts listing it. `0` lists it only on the day it is due. Overdue deadlines are always listed. |
+
+`[settings] skip_days` are quiet days: no reminders ring on them at all. P mode
+pauses the schedule's alarms (`block_start`, `block_end`, `time_points`) but
+not the others. `rmd check` warns about `[reminders]` values the service would
+ignore.
+
 ## Task Types Section
 
 Task types are shared by tasks and deadlines. Each key is a type ID and each
@@ -154,7 +201,8 @@ without a saved color takes the palette color of its place in the list.
 
 ## Browser Settings
 
-Launch `rmd web`, then open **Settings** to edit reminders, settings, odd/even
+Launch `rmd web`, then open **Settings** to choose which reminders ring and
+when (**Reminders**, see above), or to edit settings, odd/even
 week schedules, habits, deadlines, or your profile. Task types are added,
 renamed, and deleted on the task board in the overview. The configuration editor
 validates TOML and refuses to overwrite a file that changed since it was loaded.

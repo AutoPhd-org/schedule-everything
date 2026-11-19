@@ -29,6 +29,23 @@ habit_prompt = "23:50"
 weekly_review = "sunday 20:00"
 monthly_review = "1 20:00"
 
+[reminders]
+# Which reminders ring; each is on unless set to false. Settings → Reminders in
+# rmd web sets these, and the times in [tasks] above.
+# block_start = true        # a time block starts
+# block_end = true          # a time block ends
+# time_points = true        # fixed messages in the week schedule
+# urgent_tasks = true       # check-in on important tasks at daily_urgent
+# deadlines = true          # deadline alarm at ddl_urgent
+# daily_summary = true
+# habit_prompt = true
+# weekly_report = true
+# monthly_report = true
+# muted_blocks = []         # time block names that ring no alarm
+# muted_points = []         # time point names (or schedule messages) that stay quiet
+# urgent_importance = 8     # ask about tasks of at least this importance (1-10)
+# deadline_days = 3         # list deadlines this many days away or closer
+
 [paths]
 # Directory containing configuration files
 config_dir = "config"

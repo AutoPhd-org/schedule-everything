@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::py::{self, Dict};
 use crate::web::services::{self, WebError, WebResult};
-use crate::web::{ai, insights, plugins, pyjson, suggestions, workspace};
+use crate::web::{ai, insights, plugins, pyjson, reminders, suggestions, workspace};
 
 /// A browser API command.
 pub type Handler = fn(&Dict) -> WebResult;
@@ -25,12 +25,14 @@ fn sync_clear(_payload: &Dict) -> WebResult {
 
 /// Every command the browser can send (except `server_shutdown`, which only
 /// the HTTP server handles).
-pub const COMMANDS: [(&str, Handler); 40] = [
+pub const COMMANDS: [(&str, Handler); 42] = [
     ("config_read", workspace::config_read),
     ("config_save", workspace::config_save),
     ("workspace_info", workspace::workspace_info),
     ("language_set", workspace::language_set),
     ("open_in_set", workspace::open_in_set),
+    ("reminders_read", reminders::reminders_read),
+    ("reminders_save", reminders::reminders_save),
     ("service_action", workspace::service_action),
     ("export_pdf", workspace::export_pdf),
     ("status_snapshot", services::status_snapshot),

@@ -7,6 +7,7 @@ pub mod insights;
 pub mod phone;
 pub mod plugins;
 pub mod pyjson;
+pub mod reminders;
 pub mod server;
 pub mod services;
 pub mod state;
