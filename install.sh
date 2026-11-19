@@ -378,8 +378,9 @@ refresh_browser_workspace() {
 }
 
 # A LaunchX manifest that runs the browser workspace from this installation:
-# the repository's launchx.toml without its header, with `run` and `cli`
-# pointing at the installed binary instead of a development build.
+# the repository's launchx.toml without its header or its [install] table,
+# with `run` and `cli` pointing at the installed binary instead of a
+# development build.
 write_launchx_manifest() {
     local target="$1"
     local binary
@@ -388,7 +389,7 @@ write_launchx_manifest() {
         echo "# LaunchX manifest for the installed Schedule Everything: LaunchX runs the"
         echo "# browser workspace from this installation. The installer writes it on"
         echo "# every install and registers it with LaunchX (lx add $INSTALL_DIR)."
-        sed -n '/^launchx[[:space:]]*=/,$p' "$SCRIPT_DIR/launchx.toml" \
+        awk '/^launchx[[:space:]]*=/ { on = 1 } /^\[install\]/ { exit } on' "$SCRIPT_DIR/launchx.toml" \
             | sed -e "s|^run[[:space:]]*=.*|run           = [\"$binary\", \"serve\"]|" \
                   -e "s|^cli[[:space:]]*=.*|cli           = \"$binary\"|"
     } > "$target"
