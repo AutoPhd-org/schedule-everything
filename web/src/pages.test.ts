@@ -140,8 +140,22 @@ describe("AI suggestions", () => {
     let suggested = options.suggested ?? false;
     let feedback: string | null = null;
     let saved = settings({ready});
+    // Feedback written on suggestions, as the server keeps it.
+    let notes: {id: string; text: string; at: string; about: string | null; aboutType: string | null}[] = [];
     send.mockImplementation(async (command: string, payload: Record<string, unknown> = {}) => {
-      if (command === "status_snapshot") return {...structuredClone(snapshot), ai: {ready: saved.ready, agent: "Claude"}, suggestions: suggested ? [{...suggestion, feedback}] : []};
+      if (command === "status_snapshot") return {...structuredClone(snapshot), ai: {ready: saved.ready, agent: "Claude"}, suggestions: suggested ? [{...suggestion, feedback}] : [], suggestionNotes: structuredClone(notes)};
+      if (command === "suggestion_note_add") {
+        const note = {id: String(notes.length + 1), text: String(payload.text), at: "2026-11-23T18:00:00+00:00", about: payload.id ? suggestion.description : null, aboutType: payload.id ? suggestion.typeName : null};
+        notes.push(note);
+        if (payload.reject) suggested = false;
+        return {note, created: true, rejected: !!payload.reject, undo: payload.reject ? {id: "1", note: note.id} : {id: note.id}};
+      }
+      if (command === "suggestion_note_remove") {
+        const note = notes.find(item => item.id === payload.id)!;
+        notes = notes.filter(item => item !== note);
+        return {note, undo: {note}};
+      }
+      if (command === "suggestion_note_restore") { notes.push((payload as {note: typeof notes[number]}).note); return {note: payload.note}; }
       if (command === "workspace_info") return {configIds: [0], activeId: 0, mode, rootDir: "/local/config"};
       if (command === "daily_overview") return structuredClone(daily);
       if (command === "ai_suggest") { const result = await answer(); suggested = true; return result; }
@@ -151,7 +165,7 @@ describe("AI suggestions", () => {
         if (feedback === "less") suggested = false;
         return {id: "1", description: suggestion.description, feedback, previous: null, ...(feedback === "less" ? {undo: {id: "1", feedback: null}} : {})};
       }
-      if (command === "suggestion_undo") { suggested = true; feedback = null; return {id: "1"}; }
+      if (command === "suggestion_undo") { suggested = true; feedback = null; notes = notes.filter(note => note.id !== payload.note); return {id: "1"}; }
       if (command === "ai_settings_save" && payload.provider === "openai") {
         // Codex signs in by itself; the server says whether it found and signed in the Codex CLI.
         const codex = payload.auth === "codex";
@@ -306,6 +320,78 @@ describe("AI suggestions", () => {
     click("[data-notice-undo]"); await flush(); await flush(); await flush();
     expect(send).toHaveBeenCalledWith("suggestion_undo", {id: "1", feedback: null});
     expect(card()).not.toBeNull();
+  });
+
+  it("writes feedback on a suggestion and turns it down, and Undo takes back both", async () => {
+    vi.stubGlobal("matchMedia", vi.fn((query: string) => ({matches: query.includes("reduced-motion"), addEventListener: vi.fn()})));
+    connect(false, async () => ({}), {suggested: true});
+    await renderApp(root, client);
+    const card = () => root.querySelector('[data-suggestion="1"]');
+    const form = () => root.querySelector<HTMLFormElement>('form[data-suggestion-feedback="1"]');
+    expect(form()).toBeNull();
+    click('[data-suggestion-write="1"]');
+    expect(root.querySelector('[data-suggestion-write="1"]')?.getAttribute("aria-expanded")).toBe("true");
+    const field = form()!.querySelector<HTMLTextAreaElement>("textarea")!;
+    expect(document.activeElement).toBe(field);
+    expect(form()!.querySelector<HTMLInputElement>('[name="suggestionFeedbackReject"]')?.checked).toBe(true);
+
+    // Nothing is saved without words; Escape closes the form and returns to its button.
+    form()!.requestSubmit();
+    expect(form()!.classList.contains("shake")).toBe(true);
+    expect(send).not.toHaveBeenCalledWith("suggestion_note_add", expect.anything());
+    field.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", bubbles: true}));
+    expect(form()).toBeNull();
+    expect(document.activeElement).toBe(root.querySelector('[data-suggestion-write="1"]'));
+
+    click('[data-suggestion-write="1"]');
+    const text = "Never suggest CSE201 work, I'm not taking it";
+    const typed = form()!.querySelector<HTMLTextAreaElement>("textarea")!;
+    typed.value = text;
+    typed.dispatchEvent(new Event("input", {bubbles: true}));
+    typed.dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true}));
+    await flush(); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_note_add", {id: "1", text, reject: true});
+    expect(card()).toBeNull();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Rejected “Draft the methods section” and saved your feedback. Suggestions follow it from now on.");
+
+    click("[data-notice-undo]"); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_undo", {id: "1", note: "1"});
+    expect(card()).not.toBeNull();
+    expect(form()).toBeNull();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("“Draft the methods section” is waiting for your review again, and your feedback is gone.");
+  });
+
+  it("keeps the suggestion when asked, and lists the feedback in Settings to remove", async () => {
+    connect(false, async () => ({}), {suggested: true});
+    await renderApp(root, client);
+    click('[data-suggestion-write="1"]');
+    const form = root.querySelector<HTMLFormElement>('form[data-suggestion-feedback="1"]')!;
+    const reject = form.querySelector<HTMLInputElement>('[name="suggestionFeedbackReject"]')!;
+    reject.checked = false;
+    reject.dispatchEvent(new Event("change", {bubbles: true}));
+    const field = form.querySelector<HTMLTextAreaElement>("textarea")!;
+    field.value = "Writing comes before errands";
+    field.dispatchEvent(new Event("input", {bubbles: true}));
+    form.querySelector<HTMLButtonElement>(".suggestion-feedback-save")!.click();
+    await flush(); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_note_add", {id: "1", text: "Writing comes before errands", reject: false});
+    expect(root.querySelector('[data-suggestion="1"]')).not.toBeNull();
+    expect(root.querySelector('form[data-suggestion-feedback="1"]')).toBeNull();
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Saved your feedback. Suggestions follow it from now on.");
+
+    click('[data-page="settings"]'); await flush(); await flush();
+    const notes = () => root.querySelector("#notes-card");
+    expect(notes()?.querySelector(".note-text")?.textContent).toBe("Writing comes before errands");
+    expect(notes()?.querySelector(".note-meta")?.textContent).toContain("On “Draft the methods section” · Writing · Nov");
+    click('#notes-card [data-note-remove="1"]'); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_note_remove", {id: "1"});
+    expect(notes()?.querySelector(".note-text")).toBeNull();
+    expect(notes()?.querySelector(".note-empty")?.textContent).toBe("No feedback yet. Press Write feedback on a suggested task to add some.");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("Removed the feedback “Writing comes before errands”.");
+    click("[data-notice-undo]"); await flush(); await flush(); await flush();
+    expect(send).toHaveBeenCalledWith("suggestion_note_restore", expect.objectContaining({note: expect.objectContaining({id: "1"})}));
+    expect(notes()?.querySelector(".note-text")?.textContent).toBe("Writing comes before errands");
+    expect(root.querySelector(".notice-text")?.textContent).toBe("The feedback “Writing comes before errands” is back.");
   });
 
   it("only notes more-like-this when no model is connected", async () => {

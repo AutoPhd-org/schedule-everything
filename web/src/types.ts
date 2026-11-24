@@ -59,6 +59,9 @@ export type SuggestionItem = {
   /** Data for the plugin that owns its type, such as a workout the agent planned. */
   plugin?: Record<string, unknown> | null;
 };
+/** Feedback the user wrote for whoever suggests tasks; agents and Suggest follow it until it is removed. `about` and
+ *  `aboutType` are the suggestion it was written on, and its type's name, when there was one. */
+export type SuggestionNote = {id: string; text: string; at: string | null; about: string | null; aboutType: string | null};
 
 /** A plugin: a task category with its own page, data, and log (see plugins.ts). It owns one task type, so its
  *  tasks are ordinary tasks of that type. */
@@ -254,6 +257,8 @@ export type Snapshot = {
   timedDone?: TimedDone[];
   /** Tasks suggested by AI agents, waiting for review. */
   suggestions?: SuggestionItem[];
+  /** The feedback the user wrote on suggestions. */
+  suggestionNotes?: SuggestionNote[];
   plugins?: PluginItem[];
   /** Whether the Suggest button is connected to a model, and who it asks. */
   ai?: AiStatus;

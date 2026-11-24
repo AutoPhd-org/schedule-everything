@@ -26,6 +26,10 @@ export type Composer = {type: string; priority: number; draft: string};
 /** The subtask field open on a task (by description), with any unsent text: a new subtask, or with `edit`, new
  *  wording for the subtask at `edit.step`, whose text was `edit.text` when the field opened. */
 export type SubtaskComposer = {task: string; draft: string; edit?: {step: number; text: string}};
+/** The feedback form open on a suggestion (by ID): the unsent text, and whether saving also rejects the suggestion. */
+export type SuggestionFeedback = {id: string; draft: string; reject: boolean};
+/** The longest feedback note the server keeps. */
+export const NOTE_LIMIT = 300;
 
 /** Where the subtask being reworded is now: at its place if it is still there, else wherever its text moved;
  *  -1 once it is gone. */
@@ -62,6 +66,8 @@ export type BoardOptions = {
   layout?: BoardLayout;
   /** The new-subtask field, when open. */
   subtaskComposer?: SubtaskComposer | null;
+  /** The feedback form on a suggestion, when open. */
+  suggestionFeedback?: SuggestionFeedback | null;
 };
 
 /** What plugins (plugins.ts) add to the board: a group's icon, controls on a task's card, a line about a
@@ -193,7 +199,7 @@ function groupCard(group: TaskGroup, order: number, options: BoardOptions, folde
     : folded ? groupSummary(group, s.tasks.length)
     : `<div class="task-cards">${group.tasks.map((task, position) => taskCard(task, s.tasks.indexOf(task), position, now, task.description === options.added, writing?.task === task.description ? writing : null)).join("")}</div>`;
   // Suggestions wait below the tasks; a folded group only says how many there are, and opens to show them.
-  const review = deleting || !offers.length ? "" : folded && count ? suggestionNote(group) : suggestionList(group, count, now);
+  const review = deleting || !offers.length ? "" : folded && count ? suggestionNote(group) : suggestionList(group, count, now, options.suggestionFeedback ?? null);
   // In the spread layout each group wears its workload, which is what places it.
   const badge = options.layout === "spread" ? `<span class="group-load load-${load.level}" data-tip="${e(describeLoad(load))}">${icons.gauge}<b>${load.points.toFixed(1)}</b></span>` : "";
   const classes = ["task-group", sw(typeSwatch(s.taskTypes, group.id)), folded && count ? "is-folded" : "", count || offers.length ? "" : "is-cleared", offers.length ? "has-suggestions" : "", greeted && folded ? "just-added" : "", options.greet === group.id ? "greet" : "", deleting ? "is-deleting" : "", options.menu === group.id && !searching ? "menu-open" : ""].filter(Boolean).join(" ");
@@ -301,15 +307,16 @@ function suggestionNote(group: TaskGroup): string {
 }
 
 /** The suggestions in a group, under a label that says they are not tasks yet. */
-function suggestionList(group: TaskGroup, tasks: number, now: number): string {
+function suggestionList(group: TaskGroup, tasks: number, now: number, writing: SuggestionFeedback | null): string {
   const count = group.suggestions.length;
   const label = `<p class="suggestion-label">${icons.spark}<span>${tn("Suggested for you", "{count} suggested for you", count)}</span><span class="suggestion-hint">${tn("Not on your list until you add it", "Not on your list until you add them", count)}</span></p>`;
-  return `<section class="suggestion-list ${tasks ? "" : "is-alone"}" aria-label="${e(t("Suggested tasks in {type}", {type: group.name}))}">${label}${group.suggestions.map((item, position) => suggestionCard(item, position, now)).join("")}</section>`;
+  return `<section class="suggestion-list ${tasks ? "" : "is-alone"}" aria-label="${e(t("Suggested tasks in {type}", {type: group.name}))}">${label}${group.suggestions.map((item, position) => suggestionCard(item, position, now, writing?.id === item.id ? writing : null)).join("")}</section>`;
 }
 
 /** A suggested task: who suggested it and where they found it, what it would be, why, and the choice to add it to
- *  the user's tasks (as it is, or adjusted first) or reject it, and to ask for more or fewer tasks like it. */
-export function suggestionCard(item: SuggestionItem, position: number, now = Date.now()): string {
+ *  the user's tasks (as it is, or adjusted first) or reject it, to ask for more or fewer tasks like it, and to write
+ *  feedback that every later suggestion follows (`writing` is that form, when open). */
+export function suggestionCard(item: SuggestionItem, position: number, now = Date.now(), writing: SuggestionFeedback | null = null): string {
   const name = e(item.description);
   const level = item.priority >= 8 ? "high" : item.priority >= 5 ? "medium" : "low";
   const due = item.due ? `<span class="suggestion-fact">${icons.clock}${t("Finish by {time}", {time: e(dueLabel(item.due, now))})}</span>` : "";
@@ -330,8 +337,25 @@ export function suggestionCard(item: SuggestionItem, position: number, now = Dat
       <div class="suggestion-tune">
         <button type="button" class="suggestion-more" data-suggestion-more="${e(item.id)}" aria-pressed="${item.feedback === "more"}" aria-label="${e(t("More tasks like {task}", {task: item.description}))}" title="${t("Ask for more ideas like this one")}">${icons.thumbsUp}<span>${t("More like this")}</span></button>
         <button type="button" class="suggestion-less" data-suggestion-less="${e(item.id)}" aria-label="${e(t("Fewer tasks like {task}", {task: item.description}))}" title="${t("Turn it down, and get fewer ideas like it")}">${icons.thumbsDown}<span>${t("Fewer like this")}</span></button>
+        <button type="button" class="suggestion-write" data-suggestion-write="${e(item.id)}" aria-expanded="${!!writing}" aria-label="${e(t("Write feedback on {task}", {task: item.description}))}" title="${t("Tell suggestions what to keep in mind, such as a class you won’t take")}">${icons.feedback}<span>${t("Write feedback")}</span></button>
       </div>
+      ${writing ? feedbackForm(item, writing) : ""}
     </article>`;
+}
+
+/** The feedback form on a suggestion: what later suggestions should know, and whether to reject this one too. */
+function feedbackForm(item: SuggestionItem, writing: SuggestionFeedback): string {
+  const id = e(item.id);
+  return `<form class="suggestion-feedback" data-suggestion-feedback="${id}" autocomplete="off">
+        <label class="suggestion-feedback-label" for="suggestion-feedback-${id}">${icons.feedback}<span>${t("What should suggestions keep in mind?")}</span></label>
+        <textarea id="suggestion-feedback-${id}" name="suggestionFeedback" rows="2" maxlength="${NOTE_LIMIT}" placeholder="${e(t("For example: I dropped this class, so skip anything about it."))}" enterkeyhint="done">${e(writing.draft)}</textarea>
+        <label class="suggestion-feedback-reject"><input type="checkbox" name="suggestionFeedbackReject" ${writing.reject ? "checked" : ""}><span>${t("Reject this suggestion too")}</span></label>
+        <div class="suggestion-feedback-actions">
+          <button type="submit" class="suggestion-feedback-save">${icons.check}<span>${t("Save feedback")}</span></button>
+          <button type="button" class="suggestion-feedback-close" data-suggestion-feedback-close title="${t("Cancel (Esc)")}">${t("Cancel")}</button>
+        </div>
+        <p class="suggestion-feedback-hint">${t("Suggest and your AI agents follow it from now on. Remove it any time in Settings.")}</p>
+      </form>`;
 }
 
 /** A folded group: average importance as a ring, every task as a dot on a 1–10 strip, how far along its tasks

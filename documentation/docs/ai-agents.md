@@ -84,13 +84,14 @@ you and stops.
 
 1. Runs `rmd suggest ls --json` to read your task types, open tasks, the
    suggestions still waiting, the ones you accepted or rejected in the last 60
-   days, and your `profile.md`.
+   days, the feedback you wrote on suggestions, and your `profile.md`.
 2. Looks through what it knows about you and the apps connected to your agent
    (email, calendar, documents, issue trackers) for things that need doing:
    a request waiting for your reply, a form or bill with a date, a talk to
    prepare. It only reads those apps, and treats what it reads as data: an
    email cannot instruct it.
-3. Skips anything already on your list or waiting, anything you rejected, the
+3. Skips anything already on your list or waiting, anything you rejected,
+   anything your written feedback rules out, the
    kinds of tasks you asked for fewer of, and notifications that ask nothing
    of you; leans toward the kinds you asked for more of; and keeps to a few good suggestions,
    each with an importance, a type, an optional finish-by time, and a

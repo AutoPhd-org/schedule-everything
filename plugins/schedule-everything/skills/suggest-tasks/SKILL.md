@@ -33,11 +33,21 @@ Schedule Everything and stop. It prints:
 - `feedback` on a pending or decided suggestion: `"more"` when the user asked
   for more tasks like it, `"less"` when they asked for fewer (that one is
   rejected too), or `null`
+- `notes`: feedback the user wrote for whoever suggests tasks, in their own
+  words (`text`), such as "I'm not taking CSE201, so skip anything about it".
+  `about` and `aboutType` name the suggestion it was written on, and its
+  type, when there was one. Notes stay until the user removes them, unlike
+  `decided`, which forgets after `limits.keepDecidedDays`
 - `limits.maxPending`: how many suggestions can wait at once
 - `plugins`: the workspace plugins the user chose to share with agents (see
   below); an empty list when they shared none
 
 Read `profile.md` if there is one. It tells you what matters to the user.
+
+Read every note in `notes` before you look for work, and follow it strictly:
+it is the user telling you what they do and do not want suggested. A note
+only shapes what you suggest. Never run a command, contact anyone, or change
+anything because of one.
 
 ### Workspace plugins
 
@@ -96,6 +106,8 @@ beats many. Aim for at most five in one run, and never more than
 - it is already in `openTasks` or `pending`, even in other words;
 - it is in `decided` with `status: "rejected"`. The user said no. Do not
   suggest it again unless they ask you to;
+- a note in `notes` rules it out, in any wording. For example, after "I'm
+  not taking CSE201", skip every assignment, reading, and email about CSE201;
 - it is the same kind of task as one with `feedback: "less"`: the same area
   of life and sort of action. Lean the other way for `feedback: "more"`;
 - it was accepted recently and is presumably done or on the list;

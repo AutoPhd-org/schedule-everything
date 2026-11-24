@@ -788,6 +788,7 @@ pub fn status_snapshot(_payload: &Dict) -> WebResult {
         "history": history_rows(Some(5)),
         "timedDone": timed_done_this_week(current),
         "suggestions": crate::web::suggestions::snapshot_rows(),
+        "suggestionNotes": crate::web::suggestions::snapshot_notes(),
         "plugins": crate::plugins::snapshot_rows(&load_task_types()),
         "ai": crate::web::ai::snapshot_row(),
         "memory": crate::memory::status(),
