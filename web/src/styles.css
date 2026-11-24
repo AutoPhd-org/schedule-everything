@@ -293,7 +293,7 @@ h4 { font-size: 14px; font-weight: 560; line-height: 1.5; overflow-wrap: anywher
 .empty { padding: 30px 15px; color: var(--muted); text-align: center; font-size: 13px; line-height: 1.7; width: 100%; grid-column: 1 / -1; }
 .empty-blob { display: inline-grid; place-items: center; width: 54px; height: 54px; margin-bottom: 10px; color: var(--accent); background: var(--grad-soft); border-radius: 44% 56% 50% 50% / 55% 45% 55% 45%; animation: morph 10s ease-in-out infinite; }
 .empty-blob svg { width: 24px; height: 24px; }
-.notice { display: none; position: sticky; top: 90px; z-index: 15; align-items: flex-start; gap: 12px; font-size: 13px; font-weight: 550; padding: 10px 10px 10px 20px; background: var(--surface-solid); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 18px 18px 18px 6px; margin-bottom: 20px; color: var(--text); box-shadow: var(--shadow-lg); }
+.notice { display: none; position: sticky; top: 90px; z-index: 15; align-items: flex-start; gap: 12px; font-size: 13px; font-weight: 550; padding: 10px 10px 10px 16px; background: var(--surface-solid); border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--line)); border-radius: 18px; margin-bottom: 20px; color: var(--text); box-shadow: var(--shadow-lg); }
 .notice.visible { display: flex; animation: slide-in .5s var(--spring); }
 /* Leaving, the notice fades and then folds its space away, so the page below slides up instead of jumping. */
 .notice.leaving { overflow: hidden; animation: notice-out .44s var(--ease) forwards; pointer-events: none; }
