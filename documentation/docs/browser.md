@@ -282,12 +282,22 @@ Each suggestion has three buttons, and two smaller ones under them:
   the same vein.
 - **Fewer like this** rejects the suggestion and says you want fewer of its
   kind.
+- **Write feedback** opens a field on the card where you tell whoever
+  suggests tasks what to keep in mind, in your own words: "I'm not taking
+  CSE201, so skip anything about it". **Reject this suggestion too** is
+  ticked, so saving also turns this suggestion down; untick it to keep the
+  suggestion for review. **Enter** saves and **Esc** closes the field.
 
 The connected model and agents (`rmd suggest ls --json`) see what you asked
-for more and fewer of, and lean that way the next time they suggest.
+for more and fewer of, and lean that way the next time they suggest. They
+follow your written feedback every time, until you remove it in **Settings →
+Feedback on suggestions**, which lists each note with the suggestion it was
+written on. Feedback is kept in `tasks/suggestion_notes.json`, next to your
+tasks, and unlike turned-down suggestions it is never forgotten on its own.
 
 The notice after adding or rejecting a suggestion has an **Undo** button that
-puts the suggestion back for review. A type whose only content is a suggestion
+puts the suggestion back for review (and, after **Write feedback**, removes
+the feedback too). A type whose only content is a suggestion
 comes up from the shelf to show it. A folded group shows a **suggested by**
 line that opens the group. Search finds suggestions as well as tasks. New
 suggestions appear within 30 seconds while the page is open, or at once with
@@ -335,7 +345,8 @@ address, so switching between them loses nothing.
 Each press sends the model your open tasks with their progress and steps,
 your deadlines, today's schedule and habits, your recent finished work, your
 profile, the suggestions waiting for review or turned down lately, so it
-does not repeat them, and what you asked for more and fewer of. When the
+does not repeat them, what you asked for more and fewer of, and the feedback
+you wrote. When the
 workspace runs under LaunchX and you let it read LaunchX's
 [shared memory](advanced/launchx.md#shared-memory), it also sends the memory's
 index and your `profile` and `preferences` pages from it, shortened. Nothing else is sent, and nothing is sent until you

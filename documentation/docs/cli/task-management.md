@@ -318,7 +318,7 @@ rmd suggest rm SUGGESTION [SUGGESTION ...]
 ### Subcommands
 | Subcommand | Description |
 |------------|-------------|
-| `ls` (or no subcommand) | Show the suggestions waiting for review. `--json` also prints your task types, open tasks, the suggestions you accepted or rejected in the last 60 days, and the path of `profile.md`, for agents |
+| `ls` (or no subcommand) | Show the suggestions waiting for review. `--json` also prints your task types, open tasks, the suggestions you accepted or rejected in the last 60 days, the feedback you wrote on suggestions (`notes`, from `tasks/suggestion_notes.json`), and the path of `profile.md`, for agents |
 | `add` | Suggest a task. Suggesting the same description again updates the waiting suggestion instead of adding another |
 | `rm` | Withdraw waiting suggestions by ID or description |
 

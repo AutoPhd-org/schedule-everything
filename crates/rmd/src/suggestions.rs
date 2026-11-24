@@ -11,6 +11,11 @@
 //!
 //! Decided suggestions stay in the file for [`KEEP_DECIDED_DAYS`] days, so an
 //! agent can see what was turned down and not suggest it again.
+//!
+//! The user can also write feedback for whoever suggests tasks, such as "I'm
+//! not taking CSE201, so skip anything about it" (`tasks/suggestion_notes.json`).
+//! Notes stay until the user removes them; agents and the board's Suggest
+//! button read them every time.
 
 use std::path::PathBuf;
 
@@ -41,6 +46,10 @@ pub const REASON_LIMIT: usize = 300;
 pub const LABEL_LIMIT: usize = 40;
 /// Who made a suggestion that does not say.
 pub const DEFAULT_AGENT: &str = "AI agent";
+/// The longest note, and the most notes kept, so what agents and the model
+/// read stays short.
+pub const NOTE_LIMIT: usize = 300;
+pub const MAX_NOTES: usize = 50;
 const DUE_FORMATS: [&str; 3] = ["%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"];
 
 /// Why a suggestion could not be saved or changed.
@@ -397,8 +406,159 @@ pub fn pending_rows(items: &[Dict], task_types: &Dict) -> Vec<Value> {
     pending.into_iter().map(|item| suggestion_row(item, task_types)).collect()
 }
 
+// =============================================================================
+// Notes: feedback the user wrote for whoever suggests tasks
+// =============================================================================
+
+/// `tasks/suggestion_notes.json`, next to the suggestions.
+pub fn notes_path() -> PathBuf {
+    crate::paths::runtime().tasks_path.with_file_name("suggestion_notes.json")
+}
+
+/// Every note, oldest first. A missing or unreadable file gives none; entries
+/// without an ID or text are skipped.
+pub fn load_notes() -> Vec<Dict> {
+    let Ok(text) = std::fs::read_to_string(notes_path()) else {
+        return Vec::new();
+    };
+    let Ok(Value::Array(notes)) = serde_json::from_str::<Value>(&text) else {
+        return Vec::new();
+    };
+    notes
+        .into_iter()
+        .filter_map(|note| match note {
+            Value::Object(note) if !id_of(&note).is_empty() && !note_text(&note).is_empty() => Some(note),
+            _ => None,
+        })
+        .collect()
+}
+
+fn save_notes(notes: &[Dict]) -> SuggestionResult<()> {
+    let path = notes_path();
+    let notes: Vec<Value> = notes.iter().cloned().map(Value::Object).collect();
+    py::write_json_pretty(&path, &notes)
+        .map_err(|e| SuggestionError::Storage(format!("failed to save notes to {}: {e}", path.display())))
+}
+
+fn note_text(note: &Dict) -> String {
+    note.get("text").and_then(Value::as_str).map(|t| t.trim().to_string()).unwrap_or_default()
+}
+
+/// A note as the browser and agents see it: what the user wrote, when, and the
+/// suggestion it was about (its description and type name, kept with the note
+/// since the suggestion itself is forgotten after a while).
+pub fn note_row(note: &Dict) -> Value {
+    let text = |key: &str| note.get(key).and_then(Value::as_str).map(str::to_string);
+    json!({
+        "id": id_of(note),
+        "text": note_text(note),
+        "at": text("at"),
+        "about": text("about"),
+        "aboutType": text("about_type"),
+    })
+}
+
+pub fn note_rows() -> Vec<Value> {
+    load_notes().iter().map(note_row).collect()
+}
+
+/// A note as one line for the model: what the user wrote, and what it was about.
+pub fn note_line(note: &Dict) -> String {
+    let text = note_text(note);
+    let about = note.get("about").and_then(Value::as_str).filter(|a| !a.trim().is_empty());
+    let kind = note.get("about_type").and_then(Value::as_str).filter(|t| !t.trim().is_empty());
+    match (about, kind) {
+        (Some(about), Some(kind)) => format!("{text} (written about the suggestion “{about}” in {kind})"),
+        (Some(about), None) => format!("{text} (written about the suggestion “{about}”)"),
+        _ => text,
+    }
+}
+
+/// Save a note, optionally about a suggestion. Text the user already wrote
+/// (ignoring case and spacing) is not saved twice. Returns the note and
+/// whether it is new.
+pub fn add_note(text: &str, about: Option<&Dict>, task_types: &Dict) -> SuggestionResult<(Dict, bool)> {
+    let Some(text) = one_line(Some(text), NOTE_LIMIT, "A note")? else {
+        return Err(SuggestionError::Invalid("Write what suggestions should keep in mind.".into()));
+    };
+    let mut notes = load_notes();
+    if let Some(existing) = notes.iter().find(|note| note_text(note).to_lowercase() == text.to_lowercase()) {
+        return Ok((existing.clone(), false));
+    }
+    if notes.len() >= MAX_NOTES {
+        return Err(SuggestionError::Conflict(format!(
+            "You have {MAX_NOTES} notes for suggestions. Remove one in Settings to add another."
+        )));
+    }
+    let mut note = Dict::new();
+    note.insert("id".into(), json!(next_id(&notes)));
+    note.insert("text".into(), json!(text));
+    note.insert("at".into(), json!(py::utc_now_isoformat()));
+    if let Some(item) = about {
+        note.insert("about".into(), json!(description_of(item)));
+        let type_id = item.get("type").filter(|t| !t.is_null()).map(py::py_str);
+        if let Some(name) = type_id.and_then(|id| task_types.get(&id)).map(py::py_str) {
+            note.insert("about_type".into(), json!(name));
+        }
+    }
+    notes.push(note.clone());
+    save_notes(&notes)?;
+    Ok((note, true))
+}
+
+/// Remove a note; returns it as it was on file, so it can be put back.
+pub fn remove_note(id: &str) -> SuggestionResult<Dict> {
+    let mut notes = load_notes();
+    let index = notes
+        .iter()
+        .position(|note| id_of(note) == id.trim())
+        .ok_or_else(|| SuggestionError::NotFound("This note is no longer on file.".into()))?;
+    let note = notes.remove(index);
+    save_notes(&notes)?;
+    Ok(note)
+}
+
+/// Put back a note [`remove_note`] returned, in order of when it was written.
+/// It keeps its ID unless another note took it since.
+pub fn restore_note(note: &Dict) -> SuggestionResult<Dict> {
+    let Some(text) = one_line(note.get("text").and_then(Value::as_str), NOTE_LIMIT, "A note")? else {
+        return Err(SuggestionError::Invalid("A note needs its text.".into()));
+    };
+    let mut notes = load_notes();
+    if let Some(existing) = notes.iter().find(|saved| note_text(saved).to_lowercase() == text.to_lowercase()) {
+        return Ok(existing.clone());
+    }
+    if notes.len() >= MAX_NOTES {
+        return Err(SuggestionError::Conflict(format!(
+            "You have {MAX_NOTES} notes for suggestions. Remove one in Settings to add another."
+        )));
+    }
+    let mut restored = Dict::new();
+    let id = id_of(note);
+    let taken = id.is_empty() || notes.iter().any(|saved| id_of(saved) == id);
+    restored.insert("id".into(), json!(if taken { next_id(&notes) } else { id }));
+    restored.insert("text".into(), json!(text));
+    let at = note.get("at").and_then(Value::as_str).map(str::to_string).unwrap_or_else(py::utc_now_isoformat);
+    restored.insert("at".into(), json!(at));
+    for key in ["about", "about_type"] {
+        if let Some(value) = note.get(key).and_then(Value::as_str).filter(|v| !v.trim().is_empty()) {
+            restored.insert(key.into(), json!(value));
+        }
+    }
+    // Notes written in the same second keep the order of their IDs.
+    let order = |note: &Dict| {
+        let at = note.get("at").and_then(Value::as_str).unwrap_or_default().to_string();
+        (at, id_of(note).parse::<u64>().unwrap_or(u64::MAX))
+    };
+    let place = notes.iter().position(|saved| order(saved) > order(&restored));
+    notes.insert(place.unwrap_or(notes.len()), restored.clone());
+    save_notes(&notes)?;
+    Ok(restored)
+}
+
 /// Everything an agent needs before suggesting: the user's profile, the task
-/// types, the open tasks, what waits for review, and what the user decided lately.
+/// types, the open tasks, what waits for review, what the user decided lately,
+/// and the notes they wrote for whoever suggests tasks.
 pub fn suggest_context() -> Value {
     let task_types = load_task_types();
     let items = load_suggestions();
@@ -426,6 +586,7 @@ pub fn suggest_context() -> Value {
         "openTasks": open_tasks,
         "pending": pending_rows(&items, &task_types),
         "decided": decided.into_iter().map(|item| suggestion_row(item, &task_types)).collect::<Vec<_>>(),
+        "notes": note_rows(),
         "plugins": crate::plugins::agent_rows(&task_types),
         "limits": {"maxPending": MAX_PENDING, "keepDecidedDays": KEEP_DECIDED_DAYS},
     })
@@ -613,6 +774,71 @@ mod tests {
         assert_eq!(context["pending"][0]["agent"], DEFAULT_AGENT);
         assert_eq!(context["pending"][1]["typeName"], "Errands");
         assert_eq!(context["decided"][0]["status"], "accepted");
+        assert_eq!(context["notes"], json!([]));
         assert_eq!(context["limits"]["maxPending"], MAX_PENDING);
+    }
+
+    #[test]
+    fn notes_are_kept_until_removed_and_reach_agents() {
+        let mut env = env();
+        let task_types = load_task_types();
+        let mut about = Dict::new();
+        about.insert("id".into(), json!("4"));
+        about.insert("description".into(), json!("Submit CSE201 P3"));
+        about.insert("type".into(), json!("2"));
+        let (note, created) =
+            add_note("  Never suggest CSE201 work:\nI'm not taking it. ", Some(&about), &task_types).unwrap();
+        assert!(created);
+        assert_eq!(note["id"], "1");
+        assert_eq!(note["text"], "Never suggest CSE201 work: I'm not taking it.");
+        assert_eq!(note["about"], "Submit CSE201 P3");
+        assert_eq!(note["about_type"], "Errands");
+        assert_eq!(
+            note_line(&note),
+            "Never suggest CSE201 work: I'm not taking it. (written about the suggestion “Submit CSE201 P3” in Errands)"
+        );
+
+        // The same words again are not saved twice; a note without a suggestion stands alone.
+        let (again, created) = add_note("never suggest CSE201 work: i'm not taking it.", None, &task_types).unwrap();
+        assert!(!created);
+        assert_eq!(again["id"], "1");
+        let (plain, _) = add_note("Keep weekends light", None, &task_types).unwrap();
+        assert_eq!(plain["id"], "2");
+        assert_eq!(note_line(&plain), "Keep weekends light");
+        assert!(plain.get("about").is_none());
+
+        let context = suggest_context();
+        assert_eq!(context["notes"][0]["text"], "Never suggest CSE201 work: I'm not taking it.");
+        assert_eq!(context["notes"][0]["aboutType"], "Errands");
+        assert_eq!(context["notes"][1]["about"], Value::Null);
+
+        // Removing one and putting it back keeps its ID and its place.
+        let removed = remove_note("1").unwrap();
+        assert_eq!(note_rows().len(), 1);
+        assert!(matches!(remove_note("1"), Err(SuggestionError::NotFound(_))));
+        let restored = restore_note(&removed).unwrap();
+        assert_eq!(restored["id"], "1");
+        let ids: Vec<String> = load_notes().iter().map(id_of).collect();
+        assert_eq!(ids, ["1", "2"]);
+        // Notes are not decisions, so they are never forgotten with them.
+        env.set_now("2027-06-01T08:00:00");
+        save_suggestions(&[]).unwrap();
+        assert_eq!(note_rows().len(), 2);
+    }
+
+    #[test]
+    fn notes_refuse_blank_long_and_too_many() {
+        let _env = env();
+        let task_types = load_task_types();
+        let invalid = |text: &str| match add_note(text, None, &task_types) {
+            Err(SuggestionError::Invalid(message)) => message,
+            other => panic!("expected invalid, got {other:?}"),
+        };
+        assert_eq!(invalid(" \n "), "Write what suggestions should keep in mind.");
+        assert_eq!(invalid(&"x".repeat(NOTE_LIMIT + 1)), format!("A note can be at most {NOTE_LIMIT} characters."));
+        for n in 0..MAX_NOTES {
+            add_note(&format!("Note {n}"), None, &task_types).unwrap();
+        }
+        assert!(matches!(add_note("One more", None, &task_types), Err(SuggestionError::Conflict(_))));
     }
 }

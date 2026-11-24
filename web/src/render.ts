@@ -3,7 +3,7 @@
 // today's timed tasks and for deadlines in their last 24 hours run above the board, and the daily overview
 // sums up the day. The theme follows the workload (workload.ts) unless that is turned off in Settings.
 import { defaultGalleryFilter, filterHistory, galleryGroups, galleryView, lightbox, peekCard, weeklyView, type GalleryFilter, type HistoryLayout, type HistoryStatus, type HistorySort } from "./activity";
-import { boardGroups, boardOrder, boardTaskCard, editedStep, foldSwitch, groupTasks, layoutSwitch, masonry, setBoardHooks, spreadOut, taskBoard, typeShelf, type BoardView, type Composer, type SubtaskComposer } from "./board";
+import { boardGroups, boardOrder, boardTaskCard, editedStep, foldSwitch, groupTasks, layoutSwitch, masonry, setBoardHooks, spreadOut, taskBoard, typeShelf, type BoardView, type Composer, type SubtaskComposer, type SuggestionFeedback } from "./board";
 import { conferenceSwatch, deadlineSwatch, repeatBadge, repeatOptions, yearCalendar, type CalendarState, type ConferenceView } from "./calendar";
 import { ring } from "./charts";
 import { dayPanel, dayProgress } from "./daily";
@@ -17,7 +17,7 @@ import { applyTheme, setThemePreference, themePreference, type ThemePreference }
 import { clockText, dialDash, progressOf, pruneClosed, runway, timerStrip, urgency } from "./timers";
 import { bindTooltips } from "./tooltip";
 import { bindTree, scrollTreeTo, treeView } from "./tree";
-import type { AiAuth, AiProvider, AiSettings, AiSuggestResult, BridgeClient, OpenIn, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, TaskItem, WeeklyOverview, Workspace } from "./types";
+import type { AiAuth, AiProvider, AiSettings, AiSuggestResult, BridgeClient, OpenIn, ConferencePayload, DailyOverview, DeadlineItem, HistoryItem, Snapshot, Subtask, SuggestionItem, SuggestionNote, TaskItem, WeeklyOverview, Workspace } from "./types";
 import { addDays, button, e, empty, escapeHtml, field, formatDate, icons, isoDay, isSwatch, setTypeColors, sw, swatchPicker, typeSwatch } from "./ui";
 import { LANGUAGES, language, msg, setLanguage, t, tn } from "./i18n";
 import { DEFAULT_THRESHOLDS, describeLoad, exactLoad, levelInfo, loadBlend, levelRanges, loadLevels, loadNumber, loadThresholds, MAX_THRESHOLD, roundLoad, setLoadThresholds, thresholdProblem, WORKLOAD_DEFINITION, workload, type LoadThresholds, type Workload } from "./workload";
@@ -33,12 +33,13 @@ type ActivityState = {view: "gallery" | "week"; layout: HistoryLayout; items: Hi
  *  to greet after it was added, and whether to put the cursor back in the form after the next draw. Types are
  *  managed here too: the open type menu, the type being renamed or deleted, the new-type form, and the group
  *  to greet after its type was added or renamed. `order` holds the groups in the places they keep while the
- *  page stays open (null places them afresh at the next draw, and `fresh` lays them out anew), and
- *  `subtaskComposer` is the open subtask field: a new subtask, or new wording for one. */
+ *  page stays open (null places them afresh at the next draw, and `fresh` lays them out anew),
+ *  `subtaskComposer` is the open subtask field: a new subtask, or new wording for one, and `suggestionFeedback` is
+ *  the feedback form open on a suggestion. */
 type BoardState = {
   view: BoardView; flipped: Set<string>; composer: Composer | null; added: string | null; focus: boolean;
   menu: string | null; renaming: string | null; deleting: {id: string; moveTo: string} | null; newType: {draft: string} | null; greet: string | null;
-  order: string[] | null; fresh: boolean; subtaskComposer: SubtaskComposer | null;
+  order: string[] | null; fresh: boolean; subtaskComposer: SubtaskComposer | null; suggestionFeedback: SuggestionFeedback | null;
 };
 type AgentTab = "claude" | "codex" | "antigravity";
 /** Suggestions from a model the user connects in Settings: its settings once loaded, the provider shown in the
@@ -150,7 +151,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     activity: {view: "gallery", layout: loadHistoryLayout(), items: null, summary: null, week: null, filter: defaultGalleryFilter(), limit: GALLERY_PAGE, treeLimit: TREE_PAGE, loading: false},
     calendar: {year: new Date().getFullYear(), day: null, filter: null, flash: null},
     conferences: {...loadConferencePrefs(), menuOpen: false, data: null, loading: false},
-    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null, order: null, fresh: true, subtaskComposer: null},
+    board: {view: loadBoardView(), flipped: new Set(), composer: null, added: null, focus: false, menu: null, renaming: null, deleting: null, newType: null, greet: null, order: null, fresh: true, subtaskComposer: null, suggestionFeedback: null},
     closedTimers: loadClosedTimers(),
     prefs: loadPrefs(),
     daily: null,
@@ -314,7 +315,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   /** Open a page. `week` opens Activity on the weekly overview. */
   function navigate(page: Page, options: {week?: boolean} = {}) {
     state.page = page;
-    Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null, subtaskComposer: null});
+    Object.assign(state.board, {composer: null, menu: null, renaming: null, deleting: null, newType: null, subtaskComposer: null, suggestionFeedback: null});
     // Opening a page, even the one already open, places the task board afresh.
     freshBoard();
     state.calendar.day = null;
@@ -567,6 +568,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     bindPluginControls(root, host);
     root.querySelectorAll<HTMLButtonElement>("[data-suggest]").forEach(btn => btn.onclick = () => void suggestTasks());
     bindAi(root);
+    bindNotes(root);
     bindReminders(root, state.reminders.data, saveReminders);
   }
 
@@ -981,7 +983,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
 
   const boardOptions = (s: Snapshot, opening: string | null = null) => {
     const board = state.board;
-    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet, now: Date.now(), order: board.order, layout: state.prefs.layout, subtaskComposer: board.subtaskComposer};
+    return {snapshot: s, query: state.search, isFolded: (id: string) => (board.view === "folded") !== board.flipped.has(id), composer: board.composer, added: board.added, opening, menu: board.menu, renaming: board.renaming, deleting: board.deleting, newType: board.newType, greet: board.greet, now: Date.now(), order: board.order, layout: state.prefs.layout, subtaskComposer: board.subtaskComposer, suggestionFeedback: board.suggestionFeedback};
   };
   const spread = () => state.prefs.layout === "spread";
   /** The board, and below it the shelf of types without tasks, in one area that redraws and binds together. */
@@ -1177,6 +1179,46 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
       : t("Turn it on in LaunchX, on Schedule Everything’s card, or run {command}.", {command: `<code>${e(memory.change)}</code>`});
     return `<article class="card memory-card" id="memory-card">${heading}${status}${synced}${error}<p class="muted memory-change">${change}</p></article>`;
   }
+  /** Settings → Feedback on suggestions: every note the user wrote with Write feedback, what it was about, and a way
+   *  to remove each. Suggest and agents follow them all. */
+  function notesCard(s: Snapshot) {
+    const notes = s.suggestionNotes ?? [];
+    const items = notes.map(note => {
+      const about = note.about ? t("On “{task}”", {task: e(note.about)}) + (note.aboutType ? ` · ${e(note.aboutType)}` : "") : "";
+      const when = note.at ? e(formatDate(isoDay(new Date(note.at)), {month: "short", day: "numeric"})) : "";
+      const meta = [about, when].filter(Boolean).join(" · ");
+      return `<li class="note-item"><div class="note-body"><p class="note-text">${e(note.text)}</p>${meta ? `<p class="note-meta">${meta}</p>` : ""}</div><button type="button" class="icon-button note-remove" data-note-remove="${e(note.id)}" aria-label="${e(t("Remove the feedback “{note}”", {note: note.text}))}" title="${t("Remove")}">${icons.trash}</button></li>`;
+    }).join("");
+    return `<article class="card notes-card" id="notes-card"><h2 tabindex="-1">${icons.feedback} ${t("Feedback on suggestions")}</h2>
+      <p class="muted">${t("What you wrote with Write feedback on a suggested task. Suggest and your AI agents follow every note here until you remove it.")}</p>
+      ${notes.length ? `<ul class="note-list">${items}</ul>` : `<p class="note-empty">${t("No feedback yet. Press Write feedback on a suggested task to add some.")}</p>`}
+    </article>`;
+  }
+  /** Draw the feedback card again in place, putting focus on the next remove button, or the card, when `focus`. */
+  function redrawNotesCard(focus = false) {
+    const card = root.querySelector<HTMLElement>("#notes-card");
+    if (!card || !state.snapshot) return;
+    card.outerHTML = notesCard(state.snapshot);
+    bindNotes(root);
+    if (focus) (root.querySelector<HTMLElement>("#notes-card [data-note-remove]") ?? root.querySelector<HTMLElement>("#notes-card h2"))?.focus({preventScroll: true});
+  }
+  function bindNotes(scope: ParentNode) {
+    scope.querySelectorAll<HTMLButtonElement>("#notes-card [data-note-remove]").forEach(btn => btn.onclick = () => void action(async () => {
+      const result = await request<{note: SuggestionNote; undo: Record<string, unknown>}>("suggestion_note_remove", {id: btn.dataset.noteRemove});
+      await refreshNotes(true);
+      offerUndo(t("Removed the feedback “{note}”.", {note: result.note.text}), async () => {
+        await request("suggestion_note_restore", result.undo);
+        await refreshNotes();
+        state.notice = t("The feedback “{note}” is back.", {note: result.note.text});
+      });
+    }));
+  }
+  /** Load the notes again and redraw only their card, so the rest of Settings keeps what is typed in it. */
+  async function refreshNotes(focus = false) {
+    const snapshot = await request<Snapshot>("status_snapshot");
+    if (state.snapshot) state.snapshot.suggestionNotes = snapshot.suggestionNotes ?? [];
+    redrawNotesCard(focus);
+  }
   /** Who receives what Suggest sends: Anthropic, or the host at the address of an OpenAI-compatible service. */
   function serviceOf(provider: AiProvider, address: string) {
     if (provider === "anthropic") return "Anthropic";
@@ -1356,6 +1398,76 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-less]").forEach(btn => btn.onclick = () => {
       const item = find(btn.dataset.suggestionLess);
       if (item) rejectSuggestion(item, btn, {fewer: true});
+    });
+    scope.querySelectorAll<HTMLButtonElement>("[data-suggestion-write]").forEach(btn => btn.onclick = () => {
+      const id = btn.dataset.suggestionWrite!;
+      if (state.board.suggestionFeedback?.id === id) { closeFeedback(s, id); return; }
+      state.board.suggestionFeedback = {id, draft: "", reject: true};
+      redrawBoard(s);
+      root.querySelector<HTMLTextAreaElement>(`#board-area form[data-suggestion-feedback="${quoted(id)}"] textarea`)?.focus();
+    });
+    scope.querySelectorAll<HTMLFormElement>("form[data-suggestion-feedback]").forEach(form => {
+      const item = find(form.dataset.suggestionFeedback);
+      if (item) bindFeedbackForm(form, item, s);
+    });
+  }
+  /** A value made safe inside a quoted attribute selector. */
+  const quoted = (value: string) => value.replace(/["\\]/g, "\\$&");
+  /** Close the feedback form on a suggestion, and put focus back on the button that opened it. */
+  function closeFeedback(s: Snapshot, id: string) {
+    state.board.suggestionFeedback = null;
+    redrawBoard(s);
+    root.querySelector<HTMLElement>(`#board-area [data-suggestion-write="${quoted(id)}"]`)?.focus({preventScroll: true});
+  }
+  /** The feedback form on a suggestion: Enter (or Save feedback) saves it, Shift+Enter starts a new line, Escape
+   *  closes it. The text and the reject box live in the board state, so a redraw keeps them. */
+  function bindFeedbackForm(form: HTMLFormElement, item: SuggestionItem, s: Snapshot) {
+    const input = form.querySelector<HTMLTextAreaElement>('[name="suggestionFeedback"]')!;
+    const reject = form.querySelector<HTMLInputElement>('[name="suggestionFeedbackReject"]')!;
+    const mine = () => state.board.suggestionFeedback?.id === item.id ? state.board.suggestionFeedback : null;
+    input.addEventListener("input", () => { const writing = mine(); if (writing) writing.draft = input.value; });
+    reject.addEventListener("change", () => { const writing = mine(); if (writing) writing.reject = reject.checked; });
+    form.querySelector<HTMLButtonElement>("[data-suggestion-feedback-close]")!.onclick = () => closeFeedback(s, item.id);
+    form.addEventListener("keydown", event => {
+      if (event.key === "Escape") { event.preventDefault(); closeFeedback(s, item.id); }
+      else if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.target === input) { event.preventDefault(); form.requestSubmit(); }
+    });
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const text = input.value.trim();
+      if (!text) {
+        form.classList.remove("shake");
+        void form.offsetWidth;
+        form.classList.add("shake");
+        input.focus();
+        return;
+      }
+      saveFeedback(item, text, reject.checked, form);
+    });
+  }
+  /** Save what the user wrote about a suggestion, so every later suggestion follows it; with `reject`, the
+   *  suggestion is turned down too. The notice can take back both. */
+  function saveFeedback(item: SuggestionItem, text: string, reject: boolean, form: HTMLElement) {
+    void action(async () => {
+      const exit = reject ? leave(form.closest<HTMLElement>(".suggestion")) : {done: Promise.resolve(), revert: () => {}};
+      let result: {rejected: boolean; undo: Record<string, unknown> | null};
+      try { result = await request<{rejected: boolean; undo: Record<string, unknown> | null}>("suggestion_note_add", {id: item.id, text, reject}); }
+      catch (error) { exit.revert(); throw error; }
+      state.board.suggestionFeedback = null;
+      await exit.done;
+      await reload({morph: true});
+      const notice = result.rejected
+        ? t("Rejected “{task}” and saved your feedback. Suggestions follow it from now on.", {task: item.description})
+        : t("Saved your feedback. Suggestions follow it from now on.");
+      const token = result.undo;
+      if (!token) { state.notice = notice; return; }
+      offerUndo(notice, async () => {
+        await request(result.rejected ? "suggestion_undo" : "suggestion_note_remove", token);
+        await reload({morph: true});
+        state.notice = result.rejected
+          ? t("“{task}” is waiting for your review again, and your feedback is gone.", {task: item.description})
+          : t("Your feedback is gone.");
+      });
     });
   }
   /** More like this: remember it, so the connected model and agents lean toward such tasks, then ask the connected
@@ -1906,7 +2018,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
   }
   function settings(s: Snapshot) {
     const files = {settings: t("General settings"), odd: t("Odd week schedule"), even: t("Even week schedule"), habits: t("Habits"), deadlines: t("Deadlines"), profile: t("Profile")};
-    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div>${remindersCard(state.reminders.data, {paused: modeOf() === "p", error: state.reminders.error})}<section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${memoryCard(s)}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
+    return `<div class="page-heading"><div><p class="eyebrow">${t("MAKE IT YOURS")}</p><h1>${t("Your workspace, your rules")}<span class="accent-dot">.</span></h1><p class="muted">${t("All changes are saved to your computer.")}</p></div></div>${remindersCard(state.reminders.data, {paused: modeOf() === "p", error: state.reminders.error})}<section class="split-grid"><div>${languageCard()}${openCard()}${aiCard()}${notesCard(s)}${memoryCard(s)}${pluginsCard(s)}<article class="card"><h2>${t("Reminder preferences")}</h2><p class="muted">${modeOf() === "p" ? t("P mode · selected event alarms paused · overview shows tasks only") : t("J mode · all reminders allowed · full structured overview")}</p>${button("mode", modeOf() === "p" ? t("Switch to J mode") : t("Switch to P mode"), icons.settings)}<hr><label>${t("Active schedule")}<select name="configId">${state.workspace?.configIds?.map(id => `<option value="${id}" ${id === s.config.activeId ? "selected" : ""}>${t("Schedule {id}", {id})}</option>`).join("") ?? ""}</select></label><div class="button-row">${button("switch", t("Activate"))}${button("update", t("Reload reminders"), icons.refresh)}${button("stop", t("Stop reminders"), "", "button ghost danger")}</div><p class="muted path">${e(s.config.rootDir)}</p><hr><h3>${t("Task & deadline types")}</h3><p class="muted">${t("Types are managed on the task board: add one with New type on the shelf below the board, and rename or delete one from its ⋯ menu. Deadlines share the same types.")}</p><div class="button-row"><button type="button" class="button ghost" data-page="today">${icons.tasks}<span>${t("Open the task board")}</span></button></div><hr>${button("shutdown", t("Close browser service"), "", "button ghost")}</article>${displayCard(s)}</div><article class="card"><h2>${t("Configuration editor")}</h2><p class="muted">${t("Edit your schedules, habits, settings, or profile here. Syntax is checked before saving.")}</p>${state.config ? `<label>${t("File")}<select name="configFile">${Object.entries(files).map(([id, label]) => `<option value="${id}" ${id === state.config!.file ? "selected" : ""}>${label}</option>`).join("")}</select></label><label>${t("Contents")}<textarea class="code-editor" name="configContent" rows="22" spellcheck="false">${e(state.config.content)}</textarea></label>${button("config-save", t("Save changes"), icons.check, "button primary")}` : button("open-config", t("Open editor"), icons.settings)}<p class="muted">${t("Saved edits reload the installed reminder service when available.")}</p></article></section>`;
   }
 
   // ----- Activity bindings ---------------------------------------------------
@@ -2292,7 +2404,7 @@ export async function renderApp(root: HTMLElement, client: BridgeClient): Promis
     });
   }
 
-  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || ["settings", "schedule", "activity", "glossary"].includes(state.page) || pluginPageId(state.page) !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
+  root.addEventListener("workspace-refresh", () => { if (state.busy || document.hidden || root.querySelector("dialog[open]") || state.calendar.day || state.conferences.menuOpen || state.board.menu || state.board.renaming || state.board.deleting || state.board.newType || state.board.subtaskComposer || state.board.suggestionFeedback || ["settings", "schedule", "activity", "glossary"].includes(state.page) || pluginPageId(state.page) !== null || ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName ?? "")) return; void reload().catch(() => { state.notice = t("Could not refresh. Check the local server connection."); status(); }); }, {signal});
   root.addEventListener("workspace-activate", () => { state.notice = t("Your existing workspace is ready."); status(); }, {signal});
   root.addEventListener("pointerdown", event => {
     if (state.board.menu && event.target instanceof Element && !event.target.closest(".group-badge")) closeTypeMenu();

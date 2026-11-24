@@ -21,7 +21,7 @@ pub const VIEW_COMMANDS: [&str; 5] =
 
 /// Everything the workspace page shows when it loads: `workspace` (config
 /// sets, mode, language), today's `schedule`, `tasks`, `deadlines`,
-/// `habits`, `suggestions`, `plugins`, `ai` and `memory` (the
+/// `habits`, `suggestions`, `suggestionNotes`, `plugins`, `ai` and `memory` (the
 /// `status_snapshot` command's fields), and `views`, which names the commands
 /// for the rest.
 pub fn document() -> WebResult {
@@ -105,6 +105,7 @@ mod tests {
                 "history",
                 "timedDone",
                 "suggestions",
+                "suggestionNotes",
                 "plugins",
                 "ai",
                 "memory",

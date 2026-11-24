@@ -520,6 +520,23 @@ hr { border: 0; height: 10px; margin: 22px 0; background: radial-gradient(circle
 .suggestion-tune button:hover { background: var(--surface-sunk); color: var(--text); }
 .suggestion-tune .suggestion-more[aria-pressed="true"] { background: color-mix(in oklab, var(--accent) 10%, transparent); color: var(--accent-ink); }
 .suggestion-tune .suggestion-less:hover { color: var(--critical-ink); }
+.suggestion-tune .suggestion-write[aria-expanded="true"] { background: color-mix(in oklab, var(--accent) 10%, transparent); color: var(--accent-ink); }
+/* Written feedback: what every later suggestion should keep in mind, and whether this one goes too. */
+.suggestion-feedback { margin-top: 8px; padding: 10px 12px 11px; border: 1px solid color-mix(in oklab, var(--accent) 35%, var(--line)); border-radius: 16px; background: var(--surface-solid); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 9%, transparent); animation: panel-in .35s var(--spring); }
+.suggestion-feedback.shake { animation: shake .42s var(--ease); }
+.suggestion-feedback .suggestion-feedback-label { flex-direction: row; align-items: center; gap: 6px; margin: 0 0 7px; color: var(--text); font-size: 12px; font-weight: 650; }
+.suggestion-feedback-label svg { width: 14px; height: 14px; color: var(--accent); }
+.suggestion-feedback textarea { min-height: 56px; padding: 8px 11px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; }
+.suggestion-feedback .suggestion-feedback-reject { flex-direction: row; align-items: center; gap: 7px; width: fit-content; margin: 8px 0 0; color: var(--text); font-size: 12px; cursor: pointer; }
+.suggestion-feedback-reject input { width: 15px; height: 15px; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
+.suggestion-feedback-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
+.suggestion-feedback-actions button { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--surface-solid); color: var(--text); font-size: 12px; font-weight: 650; transition: background .2s, color .2s, border-color .2s, transform .3s var(--spring); }
+.suggestion-feedback-actions svg { width: 14px; height: 14px; }
+.suggestion-feedback-actions .suggestion-feedback-save { background: var(--accent); border-color: transparent; color: #fff; }
+.suggestion-feedback-actions .suggestion-feedback-save:hover { background: var(--good-strong); transform: translateY(-1px); }
+.suggestion-feedback-actions .suggestion-feedback-close { border-color: transparent; background: transparent; color: var(--muted); }
+.suggestion-feedback-actions .suggestion-feedback-close:hover { background: var(--surface-sunk); color: var(--text); }
+.suggestion-feedback-hint { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
 .suggestion.is-leaving { pointer-events: none; animation: suggestion-out .4s var(--ease) forwards; }
 /* A folded group only says how many suggestions wait, and opens to show them. */
 .suggestion-note { display: flex; align-items: center; gap: 7px; width: 100%; margin-top: 10px; padding: 9px 12px; border: 1.5px dashed color-mix(in oklab, var(--accent) 45%, var(--line-strong)); border-radius: 16px; background: color-mix(in oklab, var(--accent) 6%, transparent); color: var(--text); font-size: 12px; text-align: left; transition: border-color .2s, background .2s; }
@@ -1719,8 +1736,8 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .content.enter .day-panel .highlight { animation: rise .6s var(--ease) both; animation-delay: calc(.2s + var(--i) * 90ms); }
 
 /* Settings: the board's layout, the workload theme with its levels, and how today's progress counts tasks. */
-.display-card h2, .language-card h2, .ai-card h2, .open-card h2, .memory-card h2 { display: flex; align-items: center; gap: 8px; }
-.display-card h2 svg, .language-card h2 svg, .ai-card h2 svg, .open-card h2 svg, .memory-card h2 svg { color: var(--accent); }
+.display-card h2, .language-card h2, .ai-card h2, .open-card h2, .memory-card h2, .notes-card h2 { display: flex; align-items: center; gap: 8px; }
+.display-card h2 svg, .language-card h2 svg, .ai-card h2 svg, .open-card h2 svg, .memory-card h2 svg, .notes-card h2 svg { color: var(--accent); }
 /* Settings → Reminders: a switch per kind with its times beside it, the schedule's blocks and messages one by one,
    and quiet days. The groups flow in columns, so the long schedule group sits beside the shorter ones. */
 .reminders-card { margin-bottom: 22px; }
@@ -1778,6 +1795,17 @@ button.heat-cell:hover { transform: scale(1.35); z-index: 5; }
 .memory-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }
 .memory-card .memory-synced, .memory-card .memory-error, .memory-card .memory-change { margin: 10px 0 0; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
 .memory-card code { font-size: 11.5px; }
+/* Settings → Feedback on suggestions. */
+.notes-card h2:focus { outline: none; }
+.note-list { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+.note-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 16px; background: var(--surface-sunk); animation: panel-in .35s var(--spring) both; }
+.note-body { flex: 1; min-width: 0; }
+.note-text { margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.note-meta { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.note-item .note-remove { width: 30px; height: 30px; border-color: transparent; background: transparent; color: var(--muted); }
+.note-item .note-remove svg { width: 15px; height: 15px; }
+.note-item .note-remove:hover:not(:disabled) { color: var(--critical-ink); background: color-mix(in oklab, var(--critical) 9%, transparent); }
+.note-empty { margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .ai-status { display: flex; align-items: center; gap: 7px; margin: 14px 0 0; padding: 9px 12px; border-radius: 14px; background: var(--surface-sunk); color: var(--muted); font-size: 12px; line-height: 1.45; }
 .ai-status.is-ready { background: color-mix(in oklab, var(--accent) 9%, transparent); color: var(--text); }
 .ai-status svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent); }

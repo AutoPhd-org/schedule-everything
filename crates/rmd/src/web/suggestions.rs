@@ -1,7 +1,7 @@
 //! The board's side of agent suggestions (see `crate::suggestions`): show the
 //! pending ones, and let the user accept one (it becomes a normal task, as
 //! suggested or as they adjusted it), reject it, ask for more or fewer like
-//! it, or take any of these back.
+//! it, write feedback for whoever suggests tasks, or take any of these back.
 
 use std::collections::HashSet;
 
@@ -10,8 +10,9 @@ use serde_json::{Value, json};
 use crate::data::{load_task_log, load_tasks, save_task_log};
 use crate::py::{self, Dict};
 use crate::suggestions::{
-    ACCEPTED, LESS_LIKE, MORE_LIKE, PENDING, REJECTED, SuggestionError, description_of, feedback_of, find_pending,
-    id_of, load_suggestions, pending_rows, save_suggestions, status_of,
+    ACCEPTED, LESS_LIKE, MORE_LIKE, PENDING, REJECTED, SuggestionError, add_note, description_of, feedback_of,
+    find_pending, id_of, load_suggestions, note_row, note_rows, pending_rows, remove_note, restore_note,
+    save_suggestions, status_of,
 };
 use crate::web::services::{
     WebError, WebResult, default_task_type, invalid, iso_date, load_task_types, log_task_or_error, os_error,
@@ -36,6 +37,11 @@ fn is_task(task: &Value, description: &str) -> bool {
 /// The suggestions waiting for review, for the status snapshot.
 pub fn snapshot_rows() -> Vec<Value> {
     pending_rows(&load_suggestions(), &load_task_types())
+}
+
+/// The notes the user wrote for whoever suggests tasks, for the status snapshot.
+pub fn snapshot_notes() -> Vec<Value> {
+    note_rows()
 }
 
 /// The pending suggestion that `payload["id"]` names.
@@ -173,10 +179,63 @@ pub fn suggestion_feedback(payload: &Dict) -> WebResult {
     Ok(result)
 }
 
+/// Save feedback the user wrote for whoever suggests tasks, such as "I'm not
+/// taking CSE201, so skip anything about it": `text`, and optionally the
+/// pending suggestion `id` it is about. With `reject`, that suggestion is
+/// turned down too. Agents and the Suggest button read every note from then on.
+/// The result says whether the note is new (the same words are not saved
+/// twice) and carries an `undo` token: for `suggestion_undo` when the
+/// suggestion was turned down, else for `suggestion_note_remove` (null when
+/// there is nothing to take back).
+pub fn suggestion_note_add(payload: &Dict) -> WebResult {
+    let text = payload.get("text").and_then(Value::as_str).unwrap_or_default();
+    let reject = payload.get("reject").and_then(Value::as_bool).unwrap_or(false);
+    let mut items = load_suggestions();
+    let index = match payload.get("id") {
+        None | Some(Value::Null) if reject => return Err(invalid("Name the suggestion to reject with id.")),
+        None | Some(Value::Null) => None,
+        Some(_) => Some(pending_index(&items, payload)?),
+    };
+    let (note, created) = add_note(text, index.map(|i| &items[i]), &load_task_types()).map_err(web_error)?;
+    let note_id = id_of(&note);
+    let undo = match index.filter(|_| reject) {
+        Some(index) => {
+            decide(&mut items[index], REJECTED);
+            if let Err(error) = save_suggestions(&items) {
+                if created {
+                    let _ = remove_note(&note_id);
+                }
+                return Err(web_error(error));
+            }
+            json!({"id": id_of(&items[index]), "note": created.then_some(&note_id)})
+        }
+        None if created => json!({"id": note_id}),
+        None => Value::Null,
+    };
+    Ok(json!({"note": note_row(&note), "created": created, "rejected": reject, "undo": undo}))
+}
+
+/// Remove a note. The result carries an `undo` token for `suggestion_note_restore`.
+pub fn suggestion_note_remove(payload: &Dict) -> WebResult {
+    let id = require_text(payload, "id")?;
+    let note = remove_note(&id).map_err(web_error)?;
+    Ok(json!({"note": note_row(&note), "undo": {"note": Value::Object(note)}}))
+}
+
+/// Put back a note that `suggestion_note_remove` took away.
+pub fn suggestion_note_restore(payload: &Dict) -> WebResult {
+    let Some(Value::Object(note)) = payload.get("note") else {
+        return Err(invalid("note must be the note to put back."));
+    };
+    let note = restore_note(note).map_err(web_error)?;
+    Ok(json!({"note": note_row(&note)}))
+}
+
 /// Take back an accept or a reject with the `undo` token it returned: the
 /// suggestion waits for review again, and an accepted one leaves the task list
 /// along with the history entry it wrote. A token with `feedback` also puts
-/// back what the user had said about the suggestion before (none when null).
+/// back what the user had said about the suggestion before (none when null),
+/// and one with `note` removes the note written when it was turned down.
 pub fn suggestion_undo(payload: &Dict) -> WebResult {
     let id = require_text(payload, "id")?;
     let mut items = load_suggestions();
@@ -235,6 +294,13 @@ pub fn suggestion_undo(payload: &Dict) -> WebResult {
     }
     let description = description_of(item);
     save_suggestions(&items).map_err(web_error)?;
+    if let Some(note) = payload.get("note").and_then(Value::as_str) {
+        // A note removed in Settings since is already gone.
+        match remove_note(note) {
+            Ok(_) | Err(SuggestionError::NotFound(_)) => {}
+            Err(error) => return Err(web_error(error)),
+        }
+    }
     Ok(json!({"id": id, "description": description}))
 }
 
@@ -414,6 +480,55 @@ mod tests {
 
         assert_eq!(code(suggestion_feedback(&payload(json!({"id": stamps, "feedback": "meh"})))), "invalid_input");
         assert_eq!(code(suggestion_feedback(&payload(json!({"id": "99", "feedback": "more"})))), "not_found");
+    }
+
+    #[test]
+    fn written_feedback_is_kept_and_can_turn_the_suggestion_down() {
+        let env = env();
+        let course = suggest("Submit CSE201 P3", NewSuggestion { task_type: Some("2".into()), ..Default::default() });
+        let stamps = suggest("Buy stamps", NewSuggestion::default());
+
+        // Feedback that turns the suggestion down: Undo brings it back and forgets the note.
+        let text = "Never suggest CSE201 work, I'm not taking it";
+        let saved = suggestion_note_add(&payload(json!({"id": course, "text": text, "reject": true}))).unwrap();
+        assert_eq!(saved["created"], true);
+        assert_eq!(saved["rejected"], true);
+        assert_eq!(saved["note"]["text"], text);
+        assert_eq!(saved["note"]["about"], "Submit CSE201 P3");
+        assert_eq!(saved["note"]["aboutType"], "Errands");
+        assert_eq!(saved["undo"], json!({"id": course, "note": "1"}));
+        assert_eq!(snapshot_rows().len(), 1);
+        assert_eq!(snapshot_notes().len(), 1);
+        suggestion_undo(&payload(saved["undo"].clone())).unwrap();
+        assert_eq!(snapshot_rows().len(), 2);
+        assert!(snapshot_notes().is_empty());
+
+        // Feedback that keeps it for review; Undo removes the note alone.
+        let kept =
+            suggestion_note_add(&payload(json!({"id": stamps, "text": "Errands can wait for weekends"}))).unwrap();
+        assert_eq!(kept["rejected"], false);
+        assert_eq!(kept["undo"], json!({"id": kept["note"]["id"]}));
+        assert_eq!(snapshot_rows().len(), 2);
+        // The same words again save nothing new, so there is nothing to take back.
+        let again = suggestion_note_add(&payload(json!({"text": "errands can wait for weekends"}))).unwrap();
+        assert_eq!(again["created"], false);
+        assert_eq!(again["undo"], Value::Null);
+        suggestion_note_remove(&payload(kept["undo"].clone())).unwrap();
+        assert!(snapshot_notes().is_empty());
+
+        // A note removed in Settings comes back with Undo.
+        let note = suggestion_note_add(&payload(json!({"text": "Keep weekends light"}))).unwrap();
+        let removed = suggestion_note_remove(&payload(json!({"id": note["note"]["id"]}))).unwrap();
+        assert!(snapshot_notes().is_empty());
+        assert_eq!(code(suggestion_note_remove(&payload(json!({"id": note["note"]["id"]})))), "not_found");
+        let back = suggestion_note_restore(&payload(removed["undo"].clone())).unwrap();
+        assert_eq!(back["note"], note["note"]);
+        assert_eq!(file(&env, "tasks/suggestion_notes.json").as_array().unwrap().len(), 1);
+
+        assert_eq!(code(suggestion_note_add(&payload(json!({"text": "  "})))), "invalid_input");
+        assert_eq!(code(suggestion_note_add(&payload(json!({"text": "x", "reject": true})))), "invalid_input");
+        assert_eq!(code(suggestion_note_add(&payload(json!({"id": "99", "text": "x"})))), "not_found");
+        assert_eq!(code(suggestion_note_restore(&payload(json!({"note": "x"})))), "invalid_input");
     }
 
     #[test]
